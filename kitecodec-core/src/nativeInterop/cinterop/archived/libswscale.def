@@ -1,0 +1,35 @@
+package = ffmpeg.libswscale
+language = C
+headers = libswscale/swscale.h libswscale/version.h
+headerFilter = libswscale/* libavutil/*
+linkerOpts.osx = -lswscale
+linkerOpts.linux = -lswscale
+linkerOpts.mingw = -lswscale
+
+---
+
+#include <stdint.h>
+#include <libswscale/swscale.h>
+#include <libavutil/frame.h>
+#include <libavutil/imgutils.h>
+
+/**
+ * Convenience converter: input frame → output frame in a different pixel format / size.
+ * Caller owns both frames; we only do the pixel-buffer copy. Returns 0 on success.
+ */
+static inline int ffkmp_sws_convert(
+    AVFrame *dst, int dst_w, int dst_h, int dst_fmt,
+    AVFrame *src, int src_w, int src_h, int src_fmt
+) {
+    struct SwsContext *sws = sws_getContext(
+        src_w, src_h, (enum AVPixelFormat)src_fmt,
+        dst_w, dst_h, (enum AVPixelFormat)dst_fmt,
+        SWS_BICUBIC, NULL, NULL, NULL);
+    if (!sws) return -1;
+    int rc = sws_scale(sws,
+        (const uint8_t * const *)src->data, src->linesize,
+        0, src_h,
+        dst->data, dst->linesize);
+    sws_freeContext(sws);
+    return rc < 0 ? rc : 0;
+}

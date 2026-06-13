@@ -1,0 +1,15 @@
+.idea/
+.gradle/
+.kotlin/
+build/
+**/build/
+local.properties
+.DS_Store
+captures/
+*.iml
+*.hprof
+**/.kotlin-build-tools/
+
+# Source tarballs / submodule build artefacts
+vendor/ffmpeg/build/
+native-libs/

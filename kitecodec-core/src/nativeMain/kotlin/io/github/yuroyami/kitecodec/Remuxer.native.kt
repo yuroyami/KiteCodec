@@ -1,0 +1,67 @@
+package io.github.yuroyami.kitecodec
+
+import ffmpeg.ffkmp_packet_pts
+import ffmpeg.ffkmp_rescale_q
+
+actual object Remuxer {
+
+    actual suspend fun remux(
+        input: String,
+        output: String,
+        streamIndices: List<Int>?,
+        startMicros: Long,
+        endMicros: Long,
+        metadata: Map<String, String>,
+        onProgress: ((packetsWritten: Long) -> Unit)?,
+    ) {
+        require(startMicros >= 0 && endMicros > startMicros) { "Invalid trim window [$startMicros, $endMicros]" }
+
+        MediaSource.open(input).use { source ->
+            val selected = if (streamIndices == null) {
+                source.streams.filter { it.type != MediaType.Unknown }
+            } else {
+                streamIndices.map { wanted ->
+                    source.streams.firstOrNull { it.index == wanted }
+                        ?: throw FFmpegException(FFmpegError.Internal("No stream with index $wanted in $input"))
+                }
+            }
+            if (selected.isEmpty()) {
+                throw FFmpegException(FFmpegError.Internal("Nothing to remux from $input"))
+            }
+            // Whoever carries video decides the stop point (sparse subtitle pts would stop late
+            // or never); otherwise the first selected stream does.
+            val leadIndex = (selected.firstOrNull { it.type == MediaType.Video } ?: selected.first()).index
+
+            if (startMicros > 0) source.seekMicros(startMicros)
+
+            MediaSink.open(output).use { sink ->
+                if (metadata.isNotEmpty()) sink.setMetadata(metadata)
+                val copies = selected.associate { it.index to sink.addCopyStream(source, it) }
+                // Write the header eagerly: a source with zero packets should still produce a
+                // valid (empty) container instead of no file at all.
+                sink.ensureHeaderWritten()
+                var written = 0L
+                source.demuxRouted(
+                    decode = emptyList(),
+                    copy = selected,
+                    onFrame = { it.close() },  // unreachable: nothing decodes
+                    onPacket = { packet, info ->
+                        val pts = ffkmp_packet_pts(packet)
+                        val micros = if (pts != FrameInfo.NOPTS) {
+                            ffkmp_rescale_q(pts, info.timeBase.num, info.timeBase.den, 1, 1_000_000)
+                        } else Long.MIN_VALUE
+                        if (micros != Long.MIN_VALUE && micros > endMicros) {
+                            if (info.index == leadIndex) throw StopDemux()
+                            // other streams: drop and wait for the lead to finish the window
+                        } else {
+                            copies.getValue(info.index).writeCopyPacket(packet)
+                            written += 1
+                            if (onProgress != null && written % 100 == 0L) onProgress(written)
+                        }
+                    },
+                )
+                onProgress?.invoke(written)
+            }
+        }
+    }
+}

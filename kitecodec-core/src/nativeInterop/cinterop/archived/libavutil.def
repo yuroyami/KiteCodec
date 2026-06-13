@@ -1,0 +1,114 @@
+package = ffmpeg.libavutil
+language = C
+headers = libavutil/avutil.h libavutil/error.h libavutil/dict.h libavutil/log.h libavutil/mem.h libavutil/opt.h libavutil/pixfmt.h libavutil/pixdesc.h libavutil/samplefmt.h libavutil/channel_layout.h libavutil/rational.h libavutil/frame.h libavutil/imgutils.h libavutil/buffer.h libavutil/hwcontext.h libavutil/version.h
+headerFilter = libavutil/*
+linkerOpts.osx = -lavutil
+linkerOpts.linux = -lavutil
+linkerOpts.mingw = -lavutil
+
+---
+
+#include <errno.h>
+#include <string.h>
+#include <stdint.h>
+#include <libavutil/error.h>
+#include <libavutil/frame.h>
+#include <libavutil/imgutils.h>
+#include <libavutil/dict.h>
+#include <libavutil/channel_layout.h>
+#include <libavutil/opt.h>
+#include <libavutil/pixdesc.h>
+#include <libavutil/samplefmt.h>
+
+/* ── Macros & errors ──────────────────────────────────────────────────── */
+
+static inline const char* ffkmp_strerror(int errnum) {
+    static __thread char buf[256];
+    av_strerror(errnum, buf, sizeof(buf));
+    return buf;
+}
+
+static inline int ffkmp_averror_eagain(void) { return AVERROR(EAGAIN); }
+static inline int ffkmp_averror_eof(void)    { return AVERROR_EOF; }
+static inline int ffkmp_averror_einval(void) { return AVERROR(EINVAL); }
+static inline int ffkmp_averror_enomem(void) { return AVERROR(ENOMEM); }
+
+/* ── AVFrame accessors ────────────────────────────────────────────────── */
+
+static inline AVFrame* ffkmp_frame_alloc(void) { return av_frame_alloc(); }
+static inline void     ffkmp_frame_free(AVFrame *f)  { if (f) { AVFrame *p = f; av_frame_free(&p); } }
+static inline void     ffkmp_frame_unref(AVFrame *f) { if (f) av_frame_unref(f); }
+static inline int      ffkmp_frame_ref(AVFrame *dst, AVFrame *src) { return av_frame_ref(dst, src); }
+
+static inline int64_t  ffkmp_frame_pts(const AVFrame *f)         { return f ? f->pts : AV_NOPTS_VALUE; }
+static inline int64_t  ffkmp_frame_pkt_dts(const AVFrame *f)     { return f ? f->pkt_dts : AV_NOPTS_VALUE; }
+static inline int64_t  ffkmp_frame_duration(const AVFrame *f)    { return f ? f->duration : 0; }
+static inline int      ffkmp_frame_format(const AVFrame *f)      { return f ? f->format : -1; }
+static inline int      ffkmp_frame_width(const AVFrame *f)       { return f ? f->width : 0; }
+static inline int      ffkmp_frame_height(const AVFrame *f)      { return f ? f->height : 0; }
+static inline int      ffkmp_frame_nb_samples(const AVFrame *f)  { return f ? f->nb_samples : 0; }
+static inline int      ffkmp_frame_sample_rate(const AVFrame *f) { return f ? f->sample_rate : 0; }
+static inline int      ffkmp_frame_channels(const AVFrame *f)    { return f ? f->ch_layout.nb_channels : 0; }
+static inline int      ffkmp_frame_key_frame(const AVFrame *f)   {
+    return f ? ((f->flags & AV_FRAME_FLAG_KEY) ? 1 : 0) : 0;
+}
+static inline int      ffkmp_frame_linesize(const AVFrame *f, int plane) {
+    return (f && plane >= 0 && plane < AV_NUM_DATA_POINTERS) ? f->linesize[plane] : 0;
+}
+static inline const uint8_t* ffkmp_frame_data(const AVFrame *f, int plane) {
+    return (f && plane >= 0 && plane < AV_NUM_DATA_POINTERS) ? f->data[plane] : NULL;
+}
+static inline void     ffkmp_frame_set_pts(AVFrame *f, int64_t pts) { if (f) f->pts = pts; }
+static inline void     ffkmp_frame_set_format(AVFrame *f, int v)     { if (f) f->format = v; }
+static inline void     ffkmp_frame_set_width(AVFrame *f, int v)      { if (f) f->width = v; }
+static inline void     ffkmp_frame_set_height(AVFrame *f, int v)     { if (f) f->height = v; }
+static inline void     ffkmp_frame_set_sample_rate(AVFrame *f, int v){ if (f) f->sample_rate = v; }
+static inline void     ffkmp_frame_set_nb_samples(AVFrame *f, int v) { if (f) f->nb_samples = v; }
+static inline int      ffkmp_frame_get_buffer(AVFrame *f, int align) { return av_frame_get_buffer(f, align); }
+static inline int      ffkmp_frame_make_writable(AVFrame *f) { return av_frame_make_writable(f); }
+
+/* Set ch_layout from a default-for-N-channels — works for 1,2,5.1,7.1 etc. */
+static inline void ffkmp_frame_set_ch_layout_default(AVFrame *f, int channels) {
+    if (!f) return;
+    av_channel_layout_uninit(&f->ch_layout);
+    av_channel_layout_default(&f->ch_layout, channels);
+}
+
+/* ── Pixel/sample format names ────────────────────────────────────────── */
+
+static inline const char* ffkmp_pix_fmt_name(int fmt)       { return av_get_pix_fmt_name(fmt); }
+static inline int         ffkmp_pix_fmt_from_name(const char *n) { return av_get_pix_fmt(n); }
+static inline const char* ffkmp_sample_fmt_name(int fmt)    { return av_get_sample_fmt_name(fmt); }
+static inline int         ffkmp_sample_fmt_from_name(const char *n) { return av_get_sample_fmt(n); }
+
+/* ── Image size & copy ────────────────────────────────────────────────── */
+
+static inline int ffkmp_image_get_buffer_size(int fmt, int w, int h, int align) {
+    return av_image_get_buffer_size(fmt, w, h, align);
+}
+
+/* Copy frame planes into a flat buffer caller owns (returns bytes written or AVERROR). */
+static inline int ffkmp_frame_copy_to_buffer(const AVFrame *f, uint8_t *dst, int dst_size) {
+    if (!f || !dst) return AVERROR(EINVAL);
+    return av_image_copy_to_buffer(
+        dst, dst_size,
+        (const uint8_t * const *)f->data,
+        f->linesize, f->format, f->width, f->height, 1);
+}
+
+/* ── AVDictionary iteration ───────────────────────────────────────────── */
+
+static inline AVDictionaryEntry* ffkmp_dict_get(const AVDictionary *d, const AVDictionaryEntry *prev) {
+    return av_dict_get(d, "", prev, AV_DICT_IGNORE_SUFFIX);
+}
+static inline const char* ffkmp_dict_entry_key(const AVDictionaryEntry *e)   { return e ? e->key : NULL; }
+static inline const char* ffkmp_dict_entry_value(const AVDictionaryEntry *e) { return e ? e->value : NULL; }
+
+/* ── AVOption setters used to drive codec contexts via the libav uniform API ── */
+
+static inline int ffkmp_opt_set(void *obj, const char *key, const char *val) {
+    return av_opt_set(obj, key, val, AV_OPT_SEARCH_CHILDREN);
+}
+static inline int ffkmp_opt_set_int(void *obj, const char *key, int64_t val) {
+    return av_opt_set_int(obj, key, val, AV_OPT_SEARCH_CHILDREN);
+}
