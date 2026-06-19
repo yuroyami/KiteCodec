@@ -14,8 +14,9 @@ import java.io.File
  *     need their own FFmpeg installed.
  *
  *   - **Vendored static** — for releases. We expect a directory tree like
- *     `<repoRoot>/native-libs/<targetTriple>/{include,lib}` populated by the `:buildFFmpegFor<Target>`
- *     tasks (see `BuildFFmpegTask.kt`). The resulting binaries fully embed FFmpeg.
+ *     `<repoRoot>/native-libs/<license>/<targetTriple>/{include,lib}` populated by the
+ *     `:buildFFmpegFor<Target>[Gpl]` tasks (see `BuildFFmpegTask.kt`). The resulting binaries fully
+ *     embed FFmpeg. The `<license>` segment (`lgpl` / `gpl`) keeps the two flavours from colliding.
  *
  * Layered: vendored static wins if present; otherwise fall back to the system install.
  */
@@ -25,8 +26,12 @@ data class FFmpegPaths(
     val isStaticVendored: Boolean,
 ) {
     companion object {
-        fun resolve(project: Project, target: TargetTriple): FFmpegPaths {
-            val vendored = project.rootDir.resolve("native-libs/${target.dirName}")
+        fun resolve(
+            project: Project,
+            target: TargetTriple,
+            license: FFmpegLicense = FFmpegLicense.LGPL,
+        ): FFmpegPaths {
+            val vendored = project.rootDir.resolve("native-libs/${license.dirName}/${target.dirName}")
             if (vendored.resolve("include").isDirectory && vendored.resolve("lib").isDirectory) {
                 return FFmpegPaths(
                     includeDir = vendored.resolve("include").absolutePath,
@@ -36,9 +41,10 @@ data class FFmpegPaths(
             }
             return resolveSystem(project, target)
                 ?: throw GradleException(
-                    "No FFmpeg install found for $target. Either install FFmpeg system-wide " +
-                        "(brew/apt/pkg-config) or run :buildFFmpegFor${target.gradleSuffix} " +
-                        "to vendor a static build into native-libs/${target.dirName}/.",
+                    "No FFmpeg install found for $target (${license.dirName}). Either install FFmpeg " +
+                        "system-wide (brew/apt/pkg-config) or run " +
+                        ":buildFFmpegFor${target.gradleSuffix}${license.taskSuffix} to vendor a static " +
+                        "build into native-libs/${license.dirName}/${target.dirName}/.",
                 )
         }
 
@@ -62,6 +68,23 @@ data class FFmpegPaths(
             else -> null
         }
     }
+}
+
+/**
+ * Which FFmpeg license profile a vendored build was produced under.
+ *
+ *   - [LGPL] is the default: no `--enable-gpl`, no x264 / x265. Hardware encoders (VideoToolbox /
+ *     MediaCodec) plus permissive software encoders (svtav1, vpx, aom, opus, mp3lame). Safe for the
+ *     App Store and closed-source distribution.
+ *   - [GPL] adds libx264 / libx265 for quality-focused software encode. Open-source / server use
+ *     only; it makes the linked binary GPL.
+ *
+ * The [dirName] segment keeps the two flavours apart under `native-libs/`; [taskSuffix] disambiguates
+ * the `:buildFFmpegFor<Target>` Gradle tasks.
+ */
+enum class FFmpegLicense(val dirName: String, val taskSuffix: String) {
+    LGPL("lgpl", ""),
+    GPL("gpl", "Gpl"),
 }
 
 enum class TargetTriple(val dirName: String, val gradleSuffix: String) {

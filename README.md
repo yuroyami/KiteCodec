@@ -4,14 +4,14 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/yuroyami/KiteCodec/ci.yml?label=CI)](https://github.com/yuroyami/KiteCodec/actions/workflows/ci.yml)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.20-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue)](LICENSE)
-![status](https://img.shields.io/badge/status-v0.3%20A%2FV%20transcoding%20live-7C5CFF)
+![status](https://img.shields.io/badge/status-A%2FV%20transcoding%20live-7C5CFF)
 
 **One coroutine-first codec API for Kotlin Multiplatform. Decode, encode, transcode and filter video and audio from common code, backed by FFmpeg.**
 
 > ## 📖 [Read the documentation →](https://yuroyami.github.io/KiteCodec/)
 > Getting started, the transcode pipeline, the FFmpeg build tasks, and the full API reference. **If you read one thing, read this.**
 
-KiteCodec gives Kotlin developers a single coroutine-first API for video and audio decode, encode, transcode and filter graphs. **v0.3** ships Kotlin/Native bindings to [FFmpeg](https://ffmpeg.org)'s libav* libraries (macOS, iOS, Linux, Windows). Android (JNI to bundled FFmpeg or platform `MediaCodec`) and Web (Wasm via `ffmpeg.wasm` / `WebCodecs`) substrates are on the roadmap, each fronting the same Kotlin API.
+KiteCodec gives Kotlin developers a single coroutine-first API for video and audio decode, encode, transcode and filter graphs. It ships Kotlin/Native bindings to [FFmpeg](https://ffmpeg.org)'s libav* libraries (macOS, iOS, Linux, Windows). Android (JNI to bundled FFmpeg or platform `MediaCodec`) and Web (Wasm via `ffmpeg.wasm` / `WebCodecs`) substrates are on the way, each fronting the same Kotlin API.
 
 It is distributed as two artifacts:
 
@@ -85,7 +85,7 @@ That's a real native Kotlin call. It opens the file via libavformat, demuxes **o
 | `Frame.copy()` | ✅ | O(1) owned snapshot to escape the reuse rule |
 | Multi-input filter graphs (overlay, amix) | ✅ | `buildVideoMulti` / `buildAudioMulti`, `[in0]...[inN-1]` -> `[out]` |
 | Hardware encode: `h264_videotoolbox` | ✅ | verified on macOS arm64; `allow_sw` option for VMs |
-| Hardware decode / CUDA / full hwframes pipeline | 🟨 | v0.4 |
+| Hardware decode / CUDA / full hwframes pipeline | 🟨 | on the way |
 | macOS arm64 | ✅ | verified end-to-end (video+audio, ffprobe-validated) |
 | Linux x64, Windows (mingw x64) | 🔄 | [CI](.github/workflows/ci.yml) builds + tests + e2e-transcodes on every push |
 | Android arm64/arm32/x64 (Kotlin/Native klib) | 🔄 | CI cross-compiles FFmpeg with the NDK (LGPL profile + MediaCodec) and builds the klib |
@@ -137,7 +137,7 @@ $KEXE remux input.mp4 clip.mp4 --ss 60 --to 120
 
 ## Install
 
-KiteCodec is **not yet on Maven Central** (that is a v0.4 roadmap item). Today you consume it by building from source through the Gradle FFmpeg build tasks, and you need FFmpeg present on the machine.
+KiteCodec is **not yet on Maven Central**. Today you consume it by building from source through the Gradle FFmpeg build tasks, and you need FFmpeg present on the machine.
 
 There are two FFmpeg-sourcing modes:
 
@@ -173,7 +173,7 @@ The Android FFmpeg profile is deliberately different from desktop:
 
 What this is **not** yet: an AAR a plain Android app can `implementation(...)`. Regular apps run Kotlin/JVM, which needs a JNI bridge over the same `ffkmp_*` C helpers. That substrate is the next milestone and shares this exact FFmpeg build.
 
-## v0.4 roadmap
+## What's next
 
 - **Android AAR**: a JNI substrate so `androidTarget` (regular apps) get the same API; FFmpegKit's retirement left that niche empty.
 - Maven Central publishing.

@@ -4,7 +4,7 @@ Learn how to install FFmpeg, wire the module, probe what your build can do, insp
 
 !!! note "Platform reality"
 
-    KiteCodec is **Kotlin/Native only** today, and **not yet on Maven Central** (that is a v0.4 roadmap item). You consume it by building from source against your own FFmpeg, or against a vendored static build produced by the Gradle tasks. macOS arm64 is verified end to end; Linux x64 and Windows (mingw x64) build and test in CI; Android compiles as a native klib; iOS code is written but not yet CI-verified. See [Platform support](platforms.md) for the full matrix.
+    KiteCodec is **Kotlin/Native only** today, and **not yet on Maven Central**. You consume it by building from source against your own FFmpeg, or against a vendored static build produced by the Gradle tasks. macOS arm64 is verified end to end; Linux x64 and Windows (mingw x64) build and test in CI; Android compiles as a native klib; iOS code is written but not yet CI-verified. See [Platform support](platforms.md) for the full matrix.
 
 ## Step 1: Get FFmpeg
 

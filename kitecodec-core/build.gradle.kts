@@ -1,4 +1,5 @@
 import io.github.yuroyami.kitecodec.buildtools.BuildFFmpegTask
+import io.github.yuroyami.kitecodec.buildtools.FFmpegLicense
 import io.github.yuroyami.kitecodec.buildtools.FFmpegPaths
 import io.github.yuroyami.kitecodec.buildtools.TargetTriple
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
@@ -37,8 +38,18 @@ kotlin {
         androidNativeX64()     to TargetTriple.AndroidX64,
     )
 
+    // Which FFmpeg flavour to link against locally: -Pkitecodec.ffmpeg.license=gpl for the GPL
+    // build, else the LGPL default. Android always links its LGPL MediaCodec profile.
+    val selectedLicense =
+        if (providers.gradleProperty("kitecodec.ffmpeg.license").orNull?.equals("gpl", ignoreCase = true) == true) {
+            FFmpegLicense.GPL
+        } else {
+            FFmpegLicense.LGPL
+        }
+
     knTargetMap.forEach { (target, triple) ->
-        val paths = runCatching { FFmpegPaths.resolve(project, triple) }.getOrNull() ?: return@forEach
+        val license = if (triple.isAndroid) FFmpegLicense.LGPL else selectedLicense
+        val paths = runCatching { FFmpegPaths.resolve(project, triple, license) }.getOrNull() ?: return@forEach
         target.compilations.getByName("main").cinterops {
             // One cinterop module for all six libav* libraries — this keeps AVCodec, AVFrame,
             // AVPacket etc. as a SINGLE Kotlin type across every binding (each cinterop module
@@ -82,16 +93,31 @@ kotlin {
     }
 }
 
-// Register a :buildFFmpegFor<Target> task per target. Users run these to populate
-// native-libs/<target> with static .a files; subsequent Gradle syncs pick them up automatically.
+// Register the :buildFFmpegFor<Target>[Gpl] tasks. Users run these to populate
+// native-libs/<license>/<target> with static .a files; subsequent Gradle syncs pick them up.
 TargetTriple.entries.forEach { triple ->
+    // LGPL flavour for every target (the default).
     tasks.register<BuildFFmpegTask>("buildFFmpegFor${triple.gradleSuffix}") {
         target = triple
+        license = FFmpegLicense.LGPL
+    }
+    // GPL flavour (libx264 / libx265) for desktop targets only — Android has no GPL build.
+    if (!triple.isAndroid) {
+        tasks.register<BuildFFmpegTask>("buildFFmpegFor${triple.gradleSuffix}Gpl") {
+            target = triple
+            license = FFmpegLicense.GPL
+        }
     }
 }
 
 tasks.register("buildFFmpegForAll") {
     group = "kitecodec"
-    description = "Cross-compile FFmpeg for every supported Kotlin/Native target."
+    description = "Cross-compile the LGPL FFmpeg for every supported Kotlin/Native target."
     dependsOn(TargetTriple.entries.map { "buildFFmpegFor${it.gradleSuffix}" })
+}
+
+tasks.register("buildFFmpegForAllGpl") {
+    group = "kitecodec"
+    description = "Cross-compile the GPL FFmpeg (x264 / x265) for every desktop target."
+    dependsOn(TargetTriple.entries.filterNot { it.isAndroid }.map { "buildFFmpegFor${it.gradleSuffix}Gpl" })
 }

@@ -14,7 +14,7 @@ Everything routes through a single demux pass. When you decode several streams, 
 
 ## Current Status
 
-KiteCodec is at **v0.3** and pre-1.0. The full **demux -> decode -> filter -> encode -> mux** pipeline is live for both video and audio, in a single pass. The table below is the honest summary of what works today.
+KiteCodec is pre-1.0 and actively developed. The full **demux -> decode -> filter -> encode -> mux** pipeline is live for both video and audio, in a single pass. The table below is the honest summary of what works today.
 
 | Surface | Status | Notes |
 |---|:---:|---|
@@ -34,7 +34,7 @@ KiteCodec is at **v0.3** and pre-1.0. The full **demux -> decode -> filter -> en
 | `Frame.copy()` | Yes | O(1) owned snapshot, escapes the reuse rule |
 | Multi-input filter graphs (overlay, amix) | Yes | `buildVideoMulti` / `buildAudioMulti`, `[in0]...[inN-1]` -> `[out]` |
 | Hardware encode: `h264_videotoolbox` | Yes | verified on macOS arm64; `allow_sw` option for VMs |
-| Hardware decode / full hwframes pipeline | v0.4 | roadmap |
+| Hardware decode / full hwframes pipeline | Planned | on the way |
 
 !!! note "Frame ownership"
     A `Frame` is valid only until the next emission or until the flow closes. The native `AVFrame*` is deliberately not exposed in `commonMain`. When you need to hold a frame past that window, call `Frame.copy()` for an O(1) owned snapshot.
@@ -48,13 +48,13 @@ KiteCodec is a Kotlin/Native library today. The matrix below records what is ver
 | macOS arm64 | Yes | verified end-to-end (video+audio, ffprobe-validated) |
 | Linux x64, Windows (mingw x64) | CI | builds, tests, and e2e transcodes on every push |
 | Android arm64/arm32/x64 (Kotlin/Native klib) | CI | FFmpeg cross-compiled with the NDK (LGPL profile + MediaCodec), klib built |
-| Android AAR for JVM apps | v0.4 | next milestone: JNI substrate over the same `ffkmp_*` C layer |
+| Android AAR for JVM apps | Planned | next milestone: JNI substrate over the same `ffkmp_*` C layer |
 | macOS x64, iOS arm64, iOS sim, Linux arm64 | Planned | code written; iOS needs vendored FFmpeg in CI |
 
 !!! warning "FFmpeg is a prerequisite"
-    KiteCodec is **not on Maven Central yet** (Central publishing is a v0.4 item). Today you build from source against an FFmpeg you provide, either installed through your package manager or produced by the bundled FFmpeg build tasks. The published coordinate is `io.github.yuroyami:kitecodec-core:0.0.1`, built locally for now.
+    KiteCodec is **not on Maven Central yet**. Today you build from source against an FFmpeg you provide, either installed through your package manager or produced by the bundled FFmpeg build tasks. The published coordinate is `io.github.yuroyami:kitecodec-core:0.0.1`, built locally for now.
 
-## v0.4 Roadmap
+## What's next
 
 - **Android AAR**: a JNI substrate so `androidTarget` (regular Android apps on Kotlin/JVM) gets the same API, over the same `ffkmp_*` C helpers. FFmpegKit's retirement left that niche empty.
 - **Maven Central publishing**: so consumers can `implementation(...)` instead of building from source.

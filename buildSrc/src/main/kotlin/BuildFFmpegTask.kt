@@ -9,23 +9,26 @@ import java.io.File
 import javax.inject.Inject
 
 /**
- * Cross-compiles a minimal FFmpeg from source for one [target] and writes the resulting static
- * archives + headers into `native-libs/<target.dirName>/{include,lib}`. The Kotlin cinterop step
- * picks them up via [FFmpegPaths].
+ * Cross-compiles a minimal FFmpeg from source for one [target] under one [license] and writes the
+ * resulting static archives + headers into `native-libs/<license>/<target.dirName>/{include,lib}`.
+ * The Kotlin cinterop step picks them up via [FFmpegPaths].
  *
- * Two profiles:
+ * Desktop targets (macOS / iOS / Linux / mingw) build in one of two licence flavours:
  *
- *   - **Desktop (GPL)** — `--enable-gpl --enable-version3` + libx264 / libx265 / libsvtav1 /
- *     libvpx / libaom / lame / opus / webp / freetype stack. Quality-focused software encode.
+ *   - [FFmpegLicense.LGPL] (default) — no `--enable-gpl`, no x264 / x265. VideoToolbox hardware
+ *     encode plus a permissive software stack (svtav1, vpx, aom, mp3lame, opus, webp, freetype /
+ *     harfbuzz / fribidi / ass). App-Store and closed-source safe.
+ *   - [FFmpegLicense.GPL] — the LGPL stack plus libx264 / libx265 (`--enable-gpl`). Quality-focused
+ *     software encode; open-source / server use only.
  *
- *   - **Android (LGPL, no third-party libs)** — nothing GPL, nothing external; hardware video
- *     encode/decode via MediaCodec (`h264_mediacodec`, `hevc_mediacodec`) plus FFmpeg's native
- *     software decoders and aac encoder. Safe for Play Store / closed-source distribution.
- *     Cross-compiled with the NDK toolchain (env `ANDROID_NDK_HOME` / `ANDROID_NDK_ROOT` /
- *     `ANDROID_NDK_LATEST_HOME`, falling back to the SDK's newest `ndk/<version>`).
+ * The **Android** profile is always LGPL regardless of [license]: nothing GPL, nothing external;
+ * hardware video encode/decode via MediaCodec (`h264_mediacodec`, `hevc_mediacodec`) plus FFmpeg's
+ * native software decoders and aac encoder. Cross-compiled with the NDK toolchain (env
+ * `ANDROID_NDK_HOME` / `ANDROID_NDK_ROOT` / `ANDROID_NDK_LATEST_HOME`, falling back to the SDK's
+ * newest `ndk/<version>`).
  *
- * Both share the same demuxer/decoder/filter core — the editor-relevant subset, ~75% smaller
- * than a "full" build (25 MB vs 110 MB per ABI).
+ * Every flavour shares the same demuxer/decoder/filter core — the editor-relevant subset, ~75%
+ * smaller than a "full" build (25 MB vs 110 MB per ABI).
  *
  * Expects an FFmpeg source tree at `vendor/ffmpeg`. Either a git submodule or a plain clone:
  * `git clone --depth 1 --branch n8.0 https://github.com/FFmpeg/FFmpeg vendor/ffmpeg`.
@@ -36,11 +39,15 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
     @get:Input
     abstract var target: TargetTriple
 
+    /** Licence flavour. Android always builds LGPL; only desktop targets honour [FFmpegLicense.GPL]. */
+    @get:Input
+    var license: FFmpegLicense = FFmpegLicense.LGPL
+
     @get:Internal
     val sourceDir: File get() = project.rootDir.resolve("vendor/ffmpeg")
 
     @get:OutputDirectory
-    val outputDir: File get() = project.rootDir.resolve("native-libs/${target.dirName}")
+    val outputDir: File get() = project.rootDir.resolve("native-libs/${license.dirName}/${target.dirName}")
 
     init {
         group = "kitecodec"
@@ -49,6 +56,10 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
 
     @TaskAction
     fun run() {
+        require(!(target.isAndroid && license == FFmpegLicense.GPL)) {
+            "Android uses the LGPL MediaCodec profile only; there is no GPL Android build " +
+                "(libx264 / libx265 are not part of the Android profile)."
+        }
         require(sourceDir.exists()) {
             "FFmpeg source not found at $sourceDir. Run:\n" +
                 "  git clone --depth 1 --branch n8.0 https://github.com/FFmpeg/FFmpeg vendor/ffmpeg\n" +
@@ -59,10 +70,16 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
             return
         }
         outputDir.mkdirs()
-        val buildDir = sourceDir.resolve("build/${target.dirName}").also { it.mkdirs() }
+        val buildDir = sourceDir.resolve("build/${license.dirName}/${target.dirName}").also { it.mkdirs() }
 
-        val configureArgs = sharedCoreArgs() +
-            (if (target.isAndroid) androidArgs() else desktopExtraArgs() + desktopTargetArgs()) +
+        val licenseArgs = if (target.isAndroid) {
+            androidArgs()
+        } else {
+            desktopBaseArgs() +
+                (if (license == FFmpegLicense.GPL) desktopGplArgs() else emptyList()) +
+                desktopTargetArgs()
+        }
+        val configureArgs = sharedCoreArgs() + licenseArgs +
             listOf("--prefix=${outputDir.absolutePath}")
         runIn(buildDir, listOf(sourceDir.resolve("configure").absolutePath) + configureArgs)
         runIn(buildDir, listOf("make", "-j${Runtime.getRuntime().availableProcessors()}"))
@@ -93,11 +110,12 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
         "--enable-runtime-cpudetect",
     )
 
-    /** Desktop quality stack — GPL ladder + third-party encoders. */
-    private fun desktopExtraArgs(): List<String> = listOf(
-        "--enable-gpl", "--enable-version3",
-        "--enable-encoder=libx264,libx265,libsvtav1,aac,libmp3lame,libopus,png,mjpeg",
-        "--enable-libx264", "--enable-libx265",
+    /**
+     * Desktop LGPL stack: permissive software encoders + the text/subtitle rendering libs. No
+     * `--enable-gpl`, no x264 / x265. The default flavour.
+     */
+    private fun desktopBaseArgs(): List<String> = listOf(
+        "--enable-encoder=libsvtav1,aac,libmp3lame,libopus,png,mjpeg",
         "--enable-libsvtav1",
         "--enable-libvpx", "--enable-libaom",
         "--enable-libmp3lame", "--enable-libopus",
@@ -105,6 +123,17 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
         "--enable-libfreetype", "--enable-libharfbuzz", "--enable-libfribidi",
         "--enable-libass",
         "--enable-zlib", "--enable-bzlib",
+    )
+
+    /**
+     * Desktop GPL add-on: libx264 / libx265 software encoders. Layered on top of [desktopBaseArgs]
+     * only when [license] is [FFmpegLicense.GPL]. FFmpeg's configure accumulates repeated
+     * `--enable-encoder` flags, so this extends rather than replaces the base encoder list.
+     */
+    private fun desktopGplArgs(): List<String> = listOf(
+        "--enable-gpl", "--enable-version3",
+        "--enable-encoder=libx264,libx265",
+        "--enable-libx264", "--enable-libx265",
     )
 
     private fun desktopTargetArgs(): List<String> = when (target) {

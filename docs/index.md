@@ -40,7 +40,7 @@ Everything routes through one demux pass. When you decode several streams, or co
 
 ## Install
 
-KiteCodec is **not on Maven Central yet** (Central publishing is a v0.4 roadmap item). Today you consume it by building from source against an FFmpeg you provide. The Gradle build discovers a system FFmpeg or cross-compiles a vendored static one through its own build tasks.
+KiteCodec is **not on Maven Central yet**. Today you consume it by building from source against an FFmpeg you provide. The Gradle build discovers a system FFmpeg or cross-compiles a vendored static one through its own build tasks.
 
 !!! warning "FFmpeg is a prerequisite"
     The bindings link against libav\*. You need FFmpeg present at build and run time, either installed through your package manager or produced by the bundled FFmpeg build tasks.
@@ -156,6 +156,6 @@ See **[Filtering](filtering.md)**.
 
 ## Status
 
-KiteCodec is at v0.3. The full demux -> decode -> filter -> encode -> mux pipeline is live for video and audio, including frame-exact trim, audio and subtitle stream copy, multi-input filter graphs, lossless remux, thumbnails, and hardware H.264 encode via VideoToolbox on macOS. Hardware decode and full zero-copy hwframes pipelines are on the roadmap for v0.4, alongside Maven Central publishing and an Android AAR.
+KiteCodec is pre-1.0 and actively developed. The full demux -> decode -> filter -> encode -> mux pipeline is live for video and audio, including frame-exact trim, audio and subtitle stream copy, multi-input filter graphs, lossless remux, thumbnails, and hardware H.264 encode via VideoToolbox on macOS. Hardware decode and full zero-copy hwframes pipelines, Maven Central publishing, and an Android AAR are on the way.
 
-For the project's design, FFmpeg sourcing modes, and the full roadmap, see **[About KiteCodec](about.md)**.
+For the project's design, FFmpeg sourcing modes, and what is next, see **[About KiteCodec](about.md)**.

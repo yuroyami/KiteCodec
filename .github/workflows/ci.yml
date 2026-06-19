@@ -93,8 +93,8 @@ jobs:
       - uses: actions/cache@v4
         id: ffmpeg-android
         with:
-          path: native-libs/android-arm64
-          key: ffmpeg-android-arm64-n8.0-api24-${{ hashFiles('buildSrc/src/main/kotlin/BuildFFmpegTask.kt') }}
+          path: native-libs/lgpl/android-arm64
+          key: ffmpeg-android-arm64-lgpl-n8.0-api24-${{ hashFiles('buildSrc/src/main/kotlin/BuildFFmpegTask.kt') }}
       - name: Build FFmpeg for Android (NDK)
         if: steps.ffmpeg-android.outputs.cache-hit != 'true'
         run: |
@@ -123,8 +123,9 @@ jobs:
           path: ~/.konan
           key: konan-windows-x64-${{ hashFiles('gradle/libs.versions.toml') }}
       # The shared (DLL) mingw build carries include/ + lib/ import libraries — exactly the
-      # layout FFmpegPaths expects under native-libs/<target>/. GPL variant so the e2e's
-      # libx264 encode works; CI never redistributes the binaries.
+      # layout FFmpegPaths expects under native-libs/<license>/<target>/. It is the GPL variant
+      # (libx264 for the e2e encode), so it lands under the `gpl` flavour and the Gradle calls
+      # select it with -Pkitecodec.ffmpeg.license=gpl. CI never redistributes the binaries.
       - name: Download FFmpeg (BtbN win64 gpl shared)
         shell: pwsh
         run: |
@@ -132,12 +133,12 @@ jobs:
           Invoke-WebRequest -Uri $url -OutFile ffmpeg.zip
           Expand-Archive ffmpeg.zip -DestinationPath ffmpeg-tmp
           $dir = Get-ChildItem ffmpeg-tmp -Directory | Select-Object -First 1
-          New-Item -ItemType Directory -Force -Path native-libs | Out-Null
-          Move-Item $dir.FullName native-libs/mingw-x64
-          Add-Content -Path $env:GITHUB_PATH -Value "${{ github.workspace }}\native-libs\mingw-x64\bin"
+          New-Item -ItemType Directory -Force -Path native-libs/gpl | Out-Null
+          Move-Item $dir.FullName native-libs/gpl/mingw-x64
+          Add-Content -Path $env:GITHUB_PATH -Value "${{ github.workspace }}\native-libs\gpl\mingw-x64\bin"
       - name: Unit + native tests
-        run: ./gradlew :kitecodec-core:mingwX64Test --stacktrace
+        run: ./gradlew :kitecodec-core:mingwX64Test -Pkitecodec.ffmpeg.license=gpl --stacktrace
       - name: Link sample
-        run: ./gradlew :kitecodec-sample:linkDebugExecutableMingwX64
+        run: ./gradlew :kitecodec-sample:linkDebugExecutableMingwX64 -Pkitecodec.ffmpeg.license=gpl
       - name: End-to-end transcode
         run: scripts/e2e.sh kitecodec-sample/build/bin/mingwX64/debugExecutable/kitecodec-sample.exe ffmpeg ffprobe

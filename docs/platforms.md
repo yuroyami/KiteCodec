@@ -24,7 +24,7 @@ Decode, encode, transcode, remux, and filter video and audio from shared Kotlin 
 
 ## FFmpeg is a prerequisite
 
-KiteCodec links FFmpeg's libav\* libraries. It does not ship them in the published `0.0.1` artifact, and the library is **not on Maven Central yet** (that is a v0.4 roadmap item). Today you consume KiteCodec by building from source, which means you must have FFmpeg available in one of two forms.
+KiteCodec links FFmpeg's libav\* libraries. It does not ship them in the published `0.0.1` artifact, and the library is **not on Maven Central yet**. Today you consume KiteCodec by building from source, which means you must have FFmpeg available in one of two forms.
 
 ### Mode 1: dynamic against system FFmpeg
 
