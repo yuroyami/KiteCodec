@@ -1,0 +1,91 @@
+name: Docs
+
+# Builds the MkDocs Material site + the Dokka API reference and deploys both to
+# GitHub Pages (https://yuroyami.github.io/KiteCodec/). The API reference lands at
+# /api/ to match the "API reference ▸" link in mkdocs.yml.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - '**/*.kt'
+      - '**/build.gradle.kts'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment; don't cancel an in-progress run.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install MkDocs Material
+        run: pip install -r docs/requirements.txt
+
+      - name: Build the docs site
+        run: mkdocs build --strict --site-dir site
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # KiteCodec links FFmpeg from its Kotlin/Native code, so the Dokka job
+      # needs the FFmpeg dev libraries present on the runner to analyze/compile
+      # the native source sets. Install them before any gradle step.
+      - name: Install FFmpeg dev libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libavformat-dev libavcodec-dev libavfilter-dev \
+            libavutil-dev libswscale-dev libswresample-dev
+
+      # The Dokka generation + merge is best-effort: building the FFmpeg-linked
+      # Kotlin/Native code in CI is heavy and may fail. continue-on-error keeps
+      # the MkDocs site deploying even if the API reference can't be built.
+      - name: Generate the Dokka API reference and merge it into the site
+        continue-on-error: true
+        run: |
+          ./gradlew dokkaGenerate --no-configuration-cache
+          mkdir -p site/api
+          cp -r build/dokka/html/. site/api/
+
+      - name: Disable Jekyll processing
+        run: touch site/.nojekyll
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,8 +1,10 @@
 [versions]
-kotlin = "2.3.20"
+kotlin = "2.4.0"
 
 coroutines = "1.10.2"
 atomicfu = "0.31.0"
+dokka = "2.0.0"
+
 
 [libraries]
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
@@ -11,3 +13,4 @@ kotlinx-atomicfu = { module = "org.jetbrains.kotlinx:atomicfu", version.ref = "a
 [plugins]
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlinx-atomicfu = { id = "org.jetbrains.kotlinx.atomicfu", version.ref = "atomicfu" }
+dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }
