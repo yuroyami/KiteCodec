@@ -157,22 +157,27 @@ The mechanism is `frameSize`: an opened `AudioEncoder` reports the samples-per-f
 
 ```kotlin
 import io.github.yuroyami.kitecodec.FilterGraph
+import io.github.yuroyami.kitecodec.MediaSource
+
+val source = MediaSource.open("input.mp4")
+val audioStream = source.primaryAudio ?: error("no audio track")
+val inAudio = audioStream.audio!!            // AudioStreamInfo: the stream's audio detail block
 
 val audio = sink.addAudioEncoder(AudioEncoderSpec(codec = CodecId.Aac))
 
 val graph = FilterGraph.buildAudio(
     description = "anull",
-    sampleRate = source.audio!!.sampleRate,
-    sampleFormat = source.audio!!.sampleFormat,
-    channels = source.audio!!.channels,
-    timeBase = sourceStream.timeBase,
+    sampleRate = inAudio.sampleRate,
+    sampleFormat = inAudio.sampleFormat,
+    channels = inAudio.channels,
+    timeBase = audioStream.timeBase,
     outputSampleRate = audio.sampleRate,
     outputSampleFormat = audio.sampleFormat,
     outputChannels = audio.channels,
 )
 graph.setOutputFrameSize(audio.frameSize)   // 1024: the graph re-chunks to exact AAC frames
 
-audio.drive(graph.process(rawAudioFrames))
+audio.drive(graph.process(source.decodedFrames(audioStream)))
 ```
 
 The graph re-chunks the audio stream into exact 1024-sample frames before they reach the encoder. [Transcoder](transcoding.md) wires this up automatically, reading `frameSize` off the encoder and calling `setOutputFrameSize` for you. When you drive `MediaSink` by hand, this one call is what keeps AAC happy.
@@ -284,14 +289,15 @@ MediaSink.open("output.mp4").use { sink ->
         AudioEncoderSpec(codec = CodecId.Aac)
     )
 
-    coroutineScope {
-        launch { video.drive(videoFrames) }
-        launch { audio.drive(audioFrames) }
-    }
+    video.drive(videoFrames)
+    audio.drive(audioFrames)
 }   // close() flushes both encoders, then writes the trailer
 ```
 
-The muxer interleaves packets from both encoders into the container as they arrive. `close()` waits until both encoders have flushed before writing the trailer, so the file is complete and seekable.
+The muxer interleaves packets from both encoders into the container. `close()` waits until both encoders have flushed before writing the trailer, so the file is complete and seekable.
+
+!!! warning "Do not drive one sink's encoders from concurrent coroutines"
+    All encoders attached to a `MediaSink` share the underlying muxer, and libav contexts are not thread-safe. Drive them from a single coroutine, one after the other as above — or, when both streams come from the same input file, use `decodeStreams` (one demux pass, frames already interleaved) and route each frame to the right encoder as it arrives, which is what [Transcoder](transcoding.md) does internally. See [Concurrency](concurrency.md) for the full threading rules.
 
 For the common case of demux one file, re-encode, and mux, the [Transcoder](transcoding.md) already orchestrates this interleaving for you, including the AAC frame-size wiring and the trim rebasing. Reach for raw `MediaSink` when your frames come from somewhere a single input file cannot describe.
 
@@ -327,7 +333,7 @@ The encoders (`VideoEncoder`, `AudioEncoder`) are also `AutoCloseable`, but `dri
 
 ## Errors
 
-Every libav failure surfaces as an [`FFmpegException`](https://yuroyami.github.io/KiteCodec/api/) wrapping an `FFmpegError`. A concrete `AVERROR_*` from the library arrives as `FFmpegError.AvError`; a library-side invariant violation arrives as `FFmpegError.Internal`. Both expose a numeric `code`:
+Every libav failure surfaces as an [`FFmpegException`](https://yuroyami.github.io/KiteCodec/api/) wrapping an `FFmpegError` — a sealed hierarchy of semantic categories (`FileNotFound`, `EncoderNotFound`, `MuxerNotFound`, `InvalidData`, …) mapped from the raw `AVERROR_*` codes. Unmapped codes arrive as `FFmpegError.AvError`; a library-side invariant violation arrives as `FFmpegError.Internal`. Every subclass exposes the numeric `code`:
 
 ```kotlin
 import io.github.yuroyami.kitecodec.FFmpegException

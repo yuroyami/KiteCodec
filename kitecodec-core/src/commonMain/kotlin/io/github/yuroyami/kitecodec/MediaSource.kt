@@ -7,35 +7,42 @@ import kotlinx.coroutines.flow.Flow
  * closing tears everything down. Confined to one coroutine context — libav* objects are not
  * safe to call concurrently.
  */
-expect class MediaSource : AutoCloseable {
+public expect class MediaSource : AutoCloseable {
 
-    val streams: List<StreamInfo>
-    val durationMicros: Long?
-    val formatName: String
-    val metadata: Map<String, String>
+    public val streams: List<StreamInfo>
+    public val durationMicros: Long?
+    public val formatName: String
+    public val metadata: Map<String, String>
 
-    val primaryVideo: StreamInfo?
-    val primaryAudio: StreamInfo?
+    public val primaryVideo: StreamInfo?
+    public val primaryAudio: StreamInfo?
 
     /**
-     * Decode this stream and emit each decoded frame as a [Frame]. The frame is owned by the
-     * downstream collector; once the next frame is emitted, the previous one's buffers may be
-     * recycled, so copy with [Frame.copyPlanesToByteArray] if you need to hold onto pixels.
+     * Decode this stream and emit each decoded frame as an OWNED [Frame]: every emitted frame
+     * stays valid until you close it, so buffering operators (`buffer()`, `toList()`) are safe.
+     * Close each collected frame — unclosed frames leak native buffers.
      *
-     * The decoder + AVFrame are freed in `finally` when collection completes or is cancelled.
+     * Only one decode flow may collect at a time (the demuxer is a single cursor); starting a
+     * second concurrent collection throws [IllegalStateException] — use [decodeStreams] to read
+     * several streams together. The decoder is freed when collection completes or is cancelled.
      */
-    fun decodedFrames(stream: StreamInfo): Flow<Frame>
+    public fun decodedFrames(stream: StreamInfo): Flow<Frame>
 
     /**
      * Decode several streams in ONE demuxer pass, emitting frames interleaved in container
      * order (tag: [FrameInfo.streamIndex]). This is the only correct way to transcode
      * video + audio together — two concurrent [decodedFrames] flows would race on the
-     * underlying demuxer.
+     * underlying demuxer, so that is rejected with [IllegalStateException].
      */
-    fun decodeStreams(streams: List<StreamInfo>): Flow<Frame>
+    public fun decodeStreams(streams: List<StreamInfo>): Flow<Frame>
 
-    /** Seek the demuxer to [micros] (microseconds). Next [decodedFrames] resumes from there. */
-    suspend fun seekMicros(micros: Long)
+    /**
+     * Seek the demuxer to [micros] (microseconds). The next decode flow resumes from there.
+     * Not allowed while a decode flow is collecting (the demuxer cursor is shared).
+     *
+     * @throws FFmpegException when the seek fails
+     */
+    public suspend fun seekMicros(micros: Long)
 
     /**
      * Decode and return the frame at (or first after) [atMicros] — thumbnail extraction.
@@ -45,12 +52,18 @@ expect class MediaSource : AutoCloseable {
      *
      * @param stream which stream to read; default = primary video
      */
-    suspend fun extractFrame(atMicros: Long, stream: StreamInfo? = null): Frame
+    public suspend fun extractFrame(atMicros: Long, stream: StreamInfo? = null): Frame
 
     override fun close()
 
-    companion object {
-        /** Open a local file or URL. */
-        fun open(path: String): MediaSource
+    public companion object {
+        /**
+         * Open a local file or URL.
+         *
+         * Blocking call — network URLs run I/O inside `avformat_open_input`, so call from a
+         * background dispatcher (`Dispatchers.IO` or your media dispatcher), never the UI thread.
+         */
+        @Throws(FFmpegException::class)
+        public fun open(path: String): MediaSource
     }
 }

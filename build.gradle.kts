@@ -6,6 +6,8 @@ plugins {
     // Applied (not deferred) at the root so `dokkaGenerate` aggregates every
     // library module into one API site at build/dokka/html (deployed to /api/).
     alias(libs.plugins.dokka)
+    // Guards the public API surface of :kitecodec-core (apiDump / apiCheck, klib-aware).
+    alias(libs.plugins.binary.compatibility.validator)
 }
 
 allprojects {
@@ -20,4 +22,15 @@ dependencies {
 
 dokka {
     moduleName.set("KiteCodec")
+}
+
+apiValidation {
+    // Only :kitecodec-core is a published library with a guarded API surface.
+    ignoredProjects += listOf("kitecodec-sample", "kitecodec-gradle-plugin")
+
+    // :kitecodec-core is Kotlin/Native-only, so its API surface lives in klibs.
+    @OptIn(kotlinx.validation.ExperimentalBCVApi::class)
+    klib {
+        enabled = true
+    }
 }

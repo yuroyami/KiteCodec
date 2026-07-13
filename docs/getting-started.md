@@ -28,15 +28,21 @@ KiteCodec links against FFmpeg's libav* libraries. You need them present before 
 
 === "Vendored static build"
 
-    For a release where you do not want a runtime FFmpeg dependency, build a minimal static FFmpeg from source with the Gradle task. It drops `.a` libraries under `native-libs/<target>/`, and `FFmpegPaths` switches the cinterop to static linking automatically.
+    For a release where you do not want a runtime FFmpeg dependency, build a minimal static FFmpeg from source with the Gradle task. It drops `.a` libraries under `native-libs/<license>/<target>/`, and `FFmpegPaths` switches the cinterop to static linking automatically.
+
+    The task expects the FFmpeg source tree at `vendor/ffmpeg` — cloning it is a **mandatory first step**:
 
     ```bash
+    git clone --depth 1 --branch n8.0 https://github.com/FFmpeg/FFmpeg vendor/ffmpeg
+
     ./gradlew :kitecodec-core:buildFFmpegForMacosArm64
     # or build every target you have toolchains for:
     ./gradlew :kitecodec-core:buildFFmpegForAll
     ```
 
-    The resulting executable carries everything it needs (around 25 MB).
+    You also need FFmpeg's usual build prerequisites on the machine: `make`, a C toolchain, `nasm`/`yasm` for the x86 assembly, `pkg-config`, and the third-party encoder libraries the profile enables (svt-av1, libvpx, aom, opus, lame, webp, freetype, harfbuzz, fribidi, libass — on macOS: `brew install nasm pkg-config svt-av1 libvpx aom opus lame webp freetype harfbuzz fribidi libass`). See [Troubleshooting](troubleshooting.md#vendored-build-prerequisites) if configure fails.
+
+    The default flavour is **LGPL** (no libx264 / libx265). For the GPL flavour, run the `Gpl` task variants (for example `buildFFmpegForMacosArm64Gpl`) and build with `-Pkitecodec.ffmpeg.license=gpl`. The resulting executable carries everything it needs (around 25 MB).
 
 !!! tip "Android"
 
@@ -149,8 +155,8 @@ fun main() = runBlocking {
 }
 ```
 
-!!! note "Libx264 needs the GPL artifact"
-    `CodecId.Libx264` is software x264, which ships only in the optional `kitecodec-gpl` add-on. The default `kitecodec-core` (LGPL) gives you hardware H.264 / H.265 (VideoToolbox, MediaCodec, NVENC) and royalty-free software AV1 instead. Pick one of those for an App-Store-safe build. See the licensing notes in [Platform support](platforms.md).
+!!! note "Libx264 needs a GPL FFmpeg"
+    `CodecId.Libx264` is software x264, which is only present in a GPL-flavour FFmpeg. A system FFmpeg from Homebrew or apt usually includes it (those are GPL builds), which is why this snippet works on a dev machine. In a **vendored** build, the LGPL default excludes it — the GPL opt-in (`buildFFmpegFor<Target>Gpl` + `-Pkitecodec.ffmpeg.license=gpl`) is currently the only route to libx264. The LGPL flavour gives you hardware H.264 / H.265 (VideoToolbox, MediaCodec) and royalty-free software AV1 (`libsvtav1`) instead — pick one of those for an App-Store-safe build. See [Platform support](platforms.md#licensing) and [Licensing](licensing.md).
 
 A few defaults worth knowing:
 
@@ -226,5 +232,7 @@ Reading the sample source is the fastest way to see each API used against real a
 - **[Filtering](filtering.md)**: build single-input and multi-input `FilterGraph`s for scaling, overlay, and audio mixing.
 - **[Encoding & muxing](encoding-muxing.md)**: drive `VideoEncoder` / `AudioEncoder` directly through a `MediaSink`.
 - **[Remuxing](remuxing.md)**: lossless `Remuxer.remux(...)` and stream-copy.
+- **[Concurrency](concurrency.md)**: the threading, confinement, and cancellation rules.
 - **[Recipes](recipes.md)**: copy-paste patterns for common tasks.
+- **[Troubleshooting](troubleshooting.md)**: FFmpeg not found, Windows setup, VideoToolbox on VMs.
 - **[API reference](https://yuroyami.github.io/KiteCodec/api/)**: every public type and signature.

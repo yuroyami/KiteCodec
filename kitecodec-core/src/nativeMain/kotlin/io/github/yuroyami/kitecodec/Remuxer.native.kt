@@ -1,11 +1,12 @@
 package io.github.yuroyami.kitecodec
 
+import ffmpeg.ffkmp_packet_dts
 import ffmpeg.ffkmp_packet_pts
 import ffmpeg.ffkmp_rescale_q
 
-actual object Remuxer {
+public actual object Remuxer {
 
-    actual suspend fun remux(
+    public actual suspend fun remux(
         input: String,
         output: String,
         streamIndices: List<Int>?,
@@ -46,9 +47,12 @@ actual object Remuxer {
                     copy = selected,
                     onFrame = { it.close() },  // unreachable: nothing decodes
                     onPacket = { packet, info ->
-                        val pts = ffkmp_packet_pts(packet)
-                        val micros = if (pts != FrameInfo.NOPTS) {
-                            ffkmp_rescale_q(pts, info.timeBase.num, info.timeBase.den, 1, 1_000_000)
+                        // Gate the end bound on dts (monotonic in demux order); pts reorders
+                        // around B-frames and would stop the demux a GOP early.
+                        val dts = ffkmp_packet_dts(packet)
+                        val ts = if (dts != FrameInfo.NOPTS) dts else ffkmp_packet_pts(packet)
+                        val micros = if (ts != FrameInfo.NOPTS) {
+                            ffkmp_rescale_q(ts, info.timeBase.num, info.timeBase.den, 1, 1_000_000)
                         } else Long.MIN_VALUE
                         if (micros != Long.MIN_VALUE && micros > endMicros) {
                             if (info.index == leadIndex) throw StopDemux()

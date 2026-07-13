@@ -187,7 +187,8 @@ This opens the source once, keeps only the primary video and audio, copies the k
 
 Failures surface as `FFmpegException`, carrying an `FFmpegError`:
 
-- `FFmpegError.AvError` wraps a concrete `AVERROR_*` from libav, for example when a codec cannot be muxed into the chosen container, or the input cannot be opened.
+- Semantic subclasses (`FFmpegError.FileNotFound`, `FFmpegError.MuxerNotFound`, `FFmpegError.InvalidData`, …) classify the common `AVERROR_*` codes — for example when a codec cannot be muxed into the chosen container, or the input cannot be opened.
+- `FFmpegError.AvError` carries any code without a dedicated category.
 - `FFmpegError.Internal` signals a library-side invariant failure.
 
 ```kotlin

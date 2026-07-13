@@ -1,6 +1,8 @@
 package io.github.yuroyami.kitecodec.buildtools
 
 import org.gradle.api.DefaultTask
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.OutputDirectory
@@ -30,54 +32,68 @@ import javax.inject.Inject
  * Every flavour shares the same demuxer/decoder/filter core — the editor-relevant subset, ~75%
  * smaller than a "full" build (25 MB vs 110 MB per ABI).
  *
- * Expects an FFmpeg source tree at `vendor/ffmpeg`. Either a git submodule or a plain clone:
+ * Expects an FFmpeg source tree at [sourceDir] (`vendor/ffmpeg` by convention). Either a git
+ * submodule or a plain clone:
  * `git clone --depth 1 --branch n8.0 https://github.com/FFmpeg/FFmpeg vendor/ffmpeg`.
- * The task is idempotent — it skips when the output dir is already populated.
+ * Up-to-date checking is input/output based: [sourceRef] pins the FFmpeg commit/tag the checkout is
+ * expected to hold, so bumping it (or changing target/licence/configure flags) triggers a rebuild
+ * while an already-populated output directory keeps the task UP-TO-DATE.
  */
 abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
 
     @get:Input
-    abstract var target: TargetTriple
+    abstract val target: Property<TargetTriple>
 
     /** Licence flavour. Android always builds LGPL; only desktop targets honour [FFmpegLicense.GPL]. */
     @get:Input
-    var license: FFmpegLicense = FFmpegLicense.LGPL
+    abstract val license: Property<FFmpegLicense>
 
+    /**
+     * The FFmpeg tag/commit the [sourceDir] checkout is pinned to (for example `n8.0`). Declared as
+     * an input so bumping the vendored FFmpeg invalidates previously built outputs — hashing the
+     * whole FFmpeg source tree as an input directory would be prohibitively slow.
+     */
+    @get:Input
+    abstract val sourceRef: Property<String>
+
+    /** The FFmpeg source checkout, `<repoRoot>/vendor/ffmpeg`. Tracked via [sourceRef], not by content. */
     @get:Internal
-    val sourceDir: File get() = project.rootDir.resolve("vendor/ffmpeg")
+    abstract val sourceDir: DirectoryProperty
 
     @get:OutputDirectory
-    val outputDir: File get() = project.rootDir.resolve("native-libs/${license.dirName}/${target.dirName}")
+    abstract val outputDir: DirectoryProperty
 
     init {
         group = "kitecodec"
         description = "Cross-compile FFmpeg for the given Kotlin/Native target."
+        license.convention(FFmpegLicense.LGPL)
     }
 
     @TaskAction
     fun run() {
+        val target = target.get()
+        val license = license.get()
+        val sourceDir = sourceDir.get().asFile
+        val outputDir = outputDir.get().asFile
+
         require(!(target.isAndroid && license == FFmpegLicense.GPL)) {
             "Android uses the LGPL MediaCodec profile only; there is no GPL Android build " +
                 "(libx264 / libx265 are not part of the Android profile)."
         }
         require(sourceDir.exists()) {
             "FFmpeg source not found at $sourceDir. Run:\n" +
-                "  git clone --depth 1 --branch n8.0 https://github.com/FFmpeg/FFmpeg vendor/ffmpeg\n" +
+                "  git clone --depth 1 --branch ${sourceRef.get()} https://github.com/FFmpeg/FFmpeg vendor/ffmpeg\n" +
                 "(or add it as a git submodule for reproducible builds)"
-        }
-        if (outputDir.resolve("lib/libavformat.a").exists()) {
-            logger.lifecycle("Vendored FFmpeg already present at $outputDir — skipping rebuild.")
-            return
         }
         outputDir.mkdirs()
         val buildDir = sourceDir.resolve("build/${license.dirName}/${target.dirName}").also { it.mkdirs() }
 
         val licenseArgs = if (target.isAndroid) {
-            androidArgs()
+            androidArgs(target)
         } else {
             desktopBaseArgs() +
                 (if (license == FFmpegLicense.GPL) desktopGplArgs() else emptyList()) +
-                desktopTargetArgs()
+                desktopTargetArgs(target)
         }
         val configureArgs = sharedCoreArgs() + licenseArgs +
             listOf("--prefix=${outputDir.absolutePath}")
@@ -136,7 +152,7 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
         "--enable-libx264", "--enable-libx265",
     )
 
-    private fun desktopTargetArgs(): List<String> = when (target) {
+    private fun desktopTargetArgs(target: TargetTriple): List<String> = when (target) {
         TargetTriple.MacosArm64 -> listOf(
             "--arch=arm64", "--target-os=darwin",
             "--cc=clang -arch arm64",
@@ -150,7 +166,7 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
             "--enable-videotoolbox",
         )
         TargetTriple.IosArm64 -> {
-            val sdk = "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk"
+            val sdk = xcrunSdkPath("iphoneos")
             listOf(
                 "--arch=arm64", "--target-os=darwin",
                 "--cc=clang -arch arm64 -isysroot $sdk -mios-version-min=14.0",
@@ -160,7 +176,7 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
             )
         }
         TargetTriple.IosSimulatorArm64 -> {
-            val sdk = "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator.sdk"
+            val sdk = xcrunSdkPath("iphonesimulator")
             listOf(
                 "--arch=arm64", "--target-os=darwin",
                 "--cc=clang -arch arm64 -isysroot $sdk -mios-simulator-version-min=14.0",
@@ -169,7 +185,7 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
             )
         }
         TargetTriple.IosX64 -> {
-            val sdk = "/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator.sdk"
+            val sdk = xcrunSdkPath("iphonesimulator")
             listOf(
                 "--arch=x86_64", "--target-os=darwin",
                 "--cc=clang -arch x86_64 -isysroot $sdk -mios-simulator-version-min=14.0",
@@ -191,13 +207,25 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
         else -> error("desktopTargetArgs called for non-desktop target $target")
     }
 
+    /** Resolves an Apple SDK sysroot via `xcrun`, so the path tracks the installed Xcode. */
+    private fun xcrunSdkPath(sdkName: String): String {
+        val proc = ProcessBuilder("xcrun", "--sdk", sdkName, "--show-sdk-path")
+            .redirectErrorStream(true)
+            .start()
+        val output = proc.inputStream.bufferedReader().readText().trim()
+        check(proc.waitFor() == 0 && output.isNotEmpty()) {
+            "xcrun --sdk $sdkName --show-sdk-path failed: $output"
+        }
+        return output
+    }
+
     /**
      * Android profile: LGPL (no `--enable-gpl`, no third-party libs), NDK clang toolchain,
      * MediaCodec hardware video encode/decode. `--enable-jni` is required by the MediaCodec
      * wrapper; at runtime the app must hand FFmpeg its JavaVM via `av_jni_set_java_vm` before
      * using `*_mediacodec` codecs (the surrounding KiteCodec Android substrate will own that call).
      */
-    private fun androidArgs(): List<String> {
+    private fun androidArgs(target: TargetTriple): List<String> {
         val (arch, cpu, ccPrefix) = when (target) {
             TargetTriple.AndroidArm64 -> Triple("aarch64", "armv8-a", "aarch64-linux-android")
             TargetTriple.AndroidArm32 -> Triple("arm", "armv7-a", "armv7a-linux-androideabi")
@@ -261,5 +289,8 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
     companion object {
         /** minSdk the native libs are built against — AMediaCodec needs 21+, 24 is a safe floor. */
         const val ANDROID_API = 24
+
+        /** The FFmpeg tag `vendor/ffmpeg` is expected to be checked out at. */
+        const val DEFAULT_SOURCE_REF = "n8.0"
     }
 }

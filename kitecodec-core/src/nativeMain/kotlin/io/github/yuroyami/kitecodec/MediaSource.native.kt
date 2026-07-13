@@ -45,11 +45,14 @@ import ffmpeg.ffkmp_stream_avg_frame_rate
 import ffmpeg.ffkmp_stream_codecpar
 import ffmpeg.ffkmp_stream_duration_micros
 import ffmpeg.ffkmp_stream_index
+import ffmpeg.ffkmp_stream_metadata
+import ffmpeg.ffkmp_stream_start_time
 import ffmpeg.ffkmp_stream_time_base
 import ffmpeg.ffkmp_dict_entry_key
 import ffmpeg.ffkmp_dict_entry_value
 import ffmpeg.ffkmp_dict_get
-import kotlinx.atomicfu.atomic
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 import kotlinx.cinterop.Arena
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.CPointerVar
@@ -60,27 +63,51 @@ import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.toKString
 import kotlinx.cinterop.value
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
-actual class MediaSource internal constructor(
+public actual class MediaSource internal constructor(
     private val ctx: CPointer<AVFormatContext>,
-    actual val streams: List<StreamInfo>,
-    actual val durationMicros: Long?,
-    actual val formatName: String,
-    actual val metadata: Map<String, String>,
+    public actual val streams: List<StreamInfo>,
+    public actual val durationMicros: Long?,
+    public actual val formatName: String,
+    public actual val metadata: Map<String, String>,
 ) : AutoCloseable {
 
-    private val closed = atomic(false)
-    private val activeDecodes = atomic(0)
+    /**
+     * Guards the {closed, demuxing} state machine. The demuxer is ONE cursor: exactly one
+     * decode pass may run at a time, seek is rejected while a pass runs, and close is
+     * rejected until the pass ends — turning would-be native crashes into
+     * [IllegalStateException]s.
+     */
+    private val stateLock = SynchronizedObject()
+    private var closed = false
+    private var demuxing = false
 
-    actual val primaryVideo: StreamInfo? get() = streams.firstOrNull { it.type == MediaType.Video }
-    actual val primaryAudio: StreamInfo? get() = streams.firstOrNull { it.type == MediaType.Audio }
+    private fun beginDemux() = synchronized(stateLock) {
+        check(!closed) { "MediaSource is closed" }
+        check(!demuxing) {
+            "Another decode flow is already collecting on this MediaSource — the demuxer is a " +
+                "single cursor. Use decodeStreams(listOf(a, b)) to read several streams in one pass."
+        }
+        demuxing = true
+    }
 
-    actual fun decodedFrames(stream: StreamInfo): Flow<Frame> = decodeStreams(listOf(stream))
+    private fun endDemux() = synchronized(stateLock) { demuxing = false }
 
-    actual fun decodeStreams(streams: List<StreamInfo>): Flow<Frame> = flow {
-        demuxRouted(decode = streams, copy = emptyList(), onFrame = { emit(it) }, onPacket = { _, _ -> })
+    private val isClosed: Boolean get() = synchronized(stateLock) { closed }
+
+    public actual val primaryVideo: StreamInfo? get() = streams.firstOrNull { it.type == MediaType.Video }
+    public actual val primaryAudio: StreamInfo? get() = streams.firstOrNull { it.type == MediaType.Audio }
+
+    public actual fun decodedFrames(stream: StreamInfo): Flow<Frame> = decodeStreams(listOf(stream))
+
+    public actual fun decodeStreams(streams: List<StreamInfo>): Flow<Frame> = flow {
+        // Emit OWNED clones (O(1) refcount bumps): collectors may buffer or hold frames and
+        // must close each one. The internal reusable landing frame never escapes this call.
+        demuxRouted(decode = streams, copy = emptyList(), onFrame = { emit(it.copy()) }, onPacket = { _, _ -> })
     }
 
     /**
@@ -95,35 +122,37 @@ actual class MediaSource internal constructor(
         onFrame: suspend (Frame) -> Unit,
         onPacket: (CPointer<AVPacket>, StreamInfo) -> Unit,
     ) {
-        check(!closed.value) { "MediaSource is closed" }
         val all = decode + copy
         require(all.isNotEmpty()) { "Need at least one stream to demux" }
         require(decode.all { it.type.isAv }) { "Only video/audio streams can be decoded" }
         require(all.distinctBy { it.index }.size == all.size) { "Duplicate stream indices" }
 
-        activeDecodes.incrementAndGet()
+        beginDemux()
         try {
             val copyByIndex = copy.associateBy { it.index }
             val decoders = decode.map { DecoderState.open(ctx, it) }
             try {
-                val packet = ffkmp_packet_alloc()
-                    ?: throw FFmpegException(FFmpegError.Internal("av_packet_alloc returned NULL"))
+                // Frame first, packet second: if the second alloc throws, the first is
+                // released by its own factory's failure path plus this try/finally shape.
                 val frame = FrameOps.acquire()
                 try {
-                    pump(decoders, copyByIndex, packet, frame, onFrame, onPacket)
-                } catch (_: StopDemux) {
-                    // A callback decided it has everything it needs (trim end bound, frame
-                    // found). Buffered decoder frames are FUTURE frames — deliberately not
-                    // flushed; we fall through to normal resource teardown.
+                    withPacket { packet ->
+                        try {
+                            pump(decoders, copyByIndex, packet, frame, onFrame, onPacket)
+                        } catch (_: StopDemux) {
+                            // A callback decided it has everything it needs (trim end bound,
+                            // frame found). Buffered decoder frames are FUTURE frames —
+                            // deliberately not flushed; fall through to normal teardown.
+                        }
+                    }
                 } finally {
                     frame.close()
-                    ffkmp_packet_free(packet)
                 }
             } finally {
                 decoders.forEach { it.free() }
             }
         } finally {
-            activeDecodes.decrementAndGet()
+            endDemux()
         }
     }
 
@@ -138,7 +167,9 @@ actual class MediaSource internal constructor(
         val decoderByIndex = decoders.associateBy { it.stream.index }
         val eof = FFErrors.EOF
         while (true) {
-            check(!closed.value) { "MediaSource closed during decode" }
+            // Honor cancellation between packets: copy-only pipelines (Remuxer) otherwise
+            // never hit a suspension point and would run to completion after cancel.
+            currentCoroutineContext().ensureActive()
             val readRc = ffkmp_fmt_read_frame(ctx, packet)
             if (readRc == eof) break
             if (readRc < 0) throw FFmpegException(avError(readRc))
@@ -200,22 +231,33 @@ actual class MediaSource internal constructor(
         }
     }
 
-    actual suspend fun seekMicros(micros: Long) {
-        check(!closed.value) { "MediaSource is closed" }
+    public actual suspend fun seekMicros(micros: Long) {
+        synchronized(stateLock) {
+            check(!closed) { "MediaSource is closed" }
+            check(!demuxing) { "Cannot seek while a decode flow is collecting — the demuxer cursor is shared" }
+        }
         val rc = ffkmp_fmt_seek_micros(ctx, -1, micros)
         if (rc < 0) throw FFmpegException(avError(rc))
     }
 
     /** Native codec parameters of a stream — for stream-copy setups ([MediaSink.addCopyStream]). */
     internal fun codecparOf(stream: StreamInfo): CPointer<ffmpeg.AVCodecParameters>? {
-        check(!closed.value) { "MediaSource is closed" }
+        check(!isClosed) { "MediaSource is closed" }
         return ffkmp_fmt_stream(ctx, stream.index.toUInt())?.let { ffkmp_stream_codecpar(it) }
     }
 
-    actual suspend fun extractFrame(atMicros: Long, stream: StreamInfo?): Frame {
+    public actual suspend fun extractFrame(atMicros: Long, stream: StreamInfo?): Frame {
         val target = stream ?: primaryVideo
             ?: throw FFmpegException(FFmpegError.Internal("No video stream to extract a frame from"))
-        seekMicros(atMicros)
+        // Containers may start at a nonzero timestamp (MPEG-TS commonly ~1.4s): [atMicros] is
+        // relative to the media start, frame pts are absolute — shift by the stream's start.
+        val startOffsetMicros = run {
+            val st = ffkmp_fmt_stream(ctx, target.index.toUInt())?.let { ffkmp_stream_start_time(it) } ?: 0L
+            if (st == FrameInfo.NOPTS || st <= 0L) 0L
+            else ffkmp_rescale_q(st, target.timeBase.num, target.timeBase.den, 1, 1_000_000)
+        }
+        val absoluteTarget = atMicros + startOffsetMicros
+        seekMicros(absoluteTarget)
         var result: Frame? = null
         demuxRouted(
             decode = listOf(target),
@@ -224,7 +266,7 @@ actual class MediaSource internal constructor(
                 val ptsMicros = if (frame.info.hasPts) {
                     ffkmp_rescale_q(frame.info.pts, target.timeBase.num, target.timeBase.den, 1, 1_000_000)
                 } else Long.MAX_VALUE  // no pts → accept the first frame we see
-                if (ptsMicros >= atMicros) {
+                if (ptsMicros >= absoluteTarget) {
                     result = frame.copy()
                     frame.close()
                     throw StopDemux()
@@ -238,12 +280,14 @@ actual class MediaSource internal constructor(
     }
 
     actual override fun close() {
-        if (closed.value) return
-        check(activeDecodes.value == 0) {
-            "Cannot close MediaSource while ${activeDecodes.value} decode flow(s) are collecting — " +
-                "cancel/finish collection first (freeing the demuxer under an active decode would crash)."
+        synchronized(stateLock) {
+            if (closed) return
+            check(!demuxing) {
+                "Cannot close MediaSource while a decode flow is collecting — cancel/finish " +
+                    "collection first (freeing the demuxer under an active decode would crash)."
+            }
+            closed = true
         }
-        if (!closed.compareAndSet(expect = false, update = true)) return
         memScoped {
             val pp = alloc<CPointerVar<AVFormatContext>>()
             pp.value = ctx
@@ -251,8 +295,8 @@ actual class MediaSource internal constructor(
         }
     }
 
-    actual companion object {
-        actual fun open(path: String): MediaSource = openMediaSource(path)
+    public actual companion object {
+        public actual fun open(path: String): MediaSource = openMediaSource(path)
     }
 }
 
@@ -363,6 +407,7 @@ private fun buildStreams(ctx: CPointer<AVFormatContext>): List<StreamInfo> {
                 channels = ffkmp_codecpar_channels(par),
                 sampleFormat = sampleFormatFromAv(ffkmp_codecpar_format(par)),
             ) else null,
+            metadata = readMetadata(ffkmp_stream_metadata(s)),
         )
     }
     return out

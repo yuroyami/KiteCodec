@@ -3,7 +3,7 @@ package io.github.yuroyami.kitecodec
 import kotlinx.coroutines.flow.Flow
 
 /** Per-input description for [FilterGraph.buildVideoMulti]. */
-data class VideoInput(
+public data class VideoInput(
     val width: Int,
     val height: Int,
     val pixelFormat: PixelFormat,
@@ -13,7 +13,7 @@ data class VideoInput(
 )
 
 /** Per-input description for [FilterGraph.buildAudioMulti]. */
-data class AudioInput(
+public data class AudioInput(
     val sampleRate: Int,
     val sampleFormat: SampleFormat,
     val channels: Int,
@@ -32,44 +32,47 @@ data class AudioInput(
  * Multi-input descriptions reference pads by label: inputs are `[in0]`…`[inN-1]`, the output is
  * `[out]`, e.g. `"[in0][in1]overlay=10:10[out]"` or `"[in0][in1]amix=inputs=2[out]"`.
  */
-expect class FilterGraph : AutoCloseable {
+public expect class FilterGraph : AutoCloseable {
 
     /** Number of buffersrc inputs this graph was built with. */
-    val inputCount: Int
+    public val inputCount: Int
 
     /** Time-base of frames leaving the graph — filters like `fps`/`atempo` may change it. */
-    val outputTimeBase: Rational
+    public val outputTimeBase: Rational
 
     /**
      * Fixed-size sample chunking for the buffersink (audio graphs only). Encoders such as AAC
      * accept exactly `frameSize` samples per call; setting this makes the graph emit that.
      */
-    fun setOutputFrameSize(samples: Int)
+    @Throws(FFmpegException::class)
+    public fun setOutputFrameSize(samples: Int)
 
     /**
      * Push one frame into input [index]; every output frame that becomes available is handed
-     * to [onOutput]. Closes [frame] (the graph keeps its own reference). Output frames follow
-     * the usual ownership rule — valid until the next callback; [Frame.copy] to keep one.
+     * to [onOutput]. Closes [frame] (the graph keeps its own reference). Output frames are
+     * valid only for the duration of the callback; [Frame.copy] to keep one.
      */
-    fun feedInput(index: Int, frame: Frame, onOutput: (Frame) -> Unit)
+    @Throws(FFmpegException::class)
+    public fun feedInput(index: Int, frame: Frame, onOutput: (Frame) -> Unit)
 
     /**
      * Signal EOF on input [index] and drain whatever the graph can produce. Filters like
      * `overlay` only emit their tail once ALL inputs are flushed — flush every input, in any
      * order; the final call delivers the remainder.
      */
-    fun flushInput(index: Int, onOutput: (Frame) -> Unit)
+    @Throws(FFmpegException::class)
+    public fun flushInput(index: Int, onOutput: (Frame) -> Unit)
 
     /**
-     * Drive [input] through the graph (single-input graphs); emit each processed frame as it
-     * leaves the buffersink. Closes every input frame after it is consumed and closes the
-     * graph when the flow ends.
+     * Drive [input] through the graph (single-input graphs); emit each processed frame as an
+     * OWNED [Frame] (valid until you close it — buffering operators are safe; close each one).
+     * Closes every input frame after it is consumed and closes the graph when the flow ends.
      */
-    fun process(input: Flow<Frame>): Flow<Frame>
+    public fun process(input: Flow<Frame>): Flow<Frame>
 
     override fun close()
 
-    companion object {
+    public companion object {
         /**
          * @param description filter chain, e.g. `scale=1280:720,eq=brightness=0.1,format=yuv420p`
          * @param width  input frame width
@@ -79,7 +82,8 @@ expect class FilterGraph : AutoCloseable {
          * @param frameRate frame rate of input — used by `setpts`/`fps`-style filters
          * @param sampleAspectRatio SAR of input frames; default 1:1 for square pixels
          */
-        fun buildVideo(
+        @Throws(FFmpegException::class)
+        public fun buildVideo(
             description: String,
             width: Int,
             height: Int,
@@ -100,7 +104,8 @@ expect class FilterGraph : AutoCloseable {
          * @param channels input channel count
          * @param timeBase pts time-base of input frames
          */
-        fun buildAudio(
+        @Throws(FFmpegException::class)
+        public fun buildAudio(
             description: String,
             sampleRate: Int,
             sampleFormat: SampleFormat,
@@ -115,14 +120,16 @@ expect class FilterGraph : AutoCloseable {
          * N-input video graph — compositions: `"[in0][in1]overlay=W-w-10:H-h-10[out]"` puts
          * input 1 as a watermark in input 0's bottom-right corner.
          */
-        fun buildVideoMulti(description: String, inputs: List<VideoInput>): FilterGraph
+        @Throws(FFmpegException::class)
+        public fun buildVideoMulti(description: String, inputs: List<VideoInput>): FilterGraph
 
         /**
          * N-input audio graph — `"[in0][in1]amix=inputs=2:duration=longest[out]"` mixes two
          * tracks. Output pins behave like [buildAudio]'s (skipped when the description labels
          * `[out]` explicitly AND pins are zero/None).
          */
-        fun buildAudioMulti(
+        @Throws(FFmpegException::class)
+        public fun buildAudioMulti(
             description: String,
             inputs: List<AudioInput>,
             outputSampleRate: Int = 0,

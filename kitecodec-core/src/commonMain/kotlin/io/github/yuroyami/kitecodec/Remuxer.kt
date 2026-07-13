@@ -6,7 +6,7 @@ package io.github.yuroyami.kitecodec
  * quality is preserved. Use it to change containers (mp4 → mkv), strip streams, cut on
  * keyframes, or re-wrap after a download.
  */
-expect object Remuxer {
+public expect object Remuxer {
 
     /**
      * Copy [streamIndices] (default: every stream the demuxer understands) from [input] into a
@@ -22,7 +22,7 @@ expect object Remuxer {
      * @param metadata container tags written into the output header (`title`, `artist`, …)
      * @param onProgress invoked every ~100 packets with the running packet count
      */
-    suspend fun remux(
+    public suspend fun remux(
         input: String,
         output: String,
         streamIndices: List<Int>? = null,

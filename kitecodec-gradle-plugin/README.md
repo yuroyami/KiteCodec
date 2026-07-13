@@ -17,13 +17,17 @@ kitecodec {
     ffmpeg {
         version = "n8.0"                 // pinned FFmpeg release
         source  = FFmpegSource.Prebuilt  // Prebuilt (default) | System | BuildFromSource
-        license = FFmpegLicense.LGPL     // LGPL default; GPL is a loud opt-in
+        license = FFmpegLicense.LGPL     // REQUIRED — no default; see below
     }
 }
 ```
 
 For every Kotlin/Native target you enable, the plugin maps it to an FFmpeg build, ensures the binaries
 are present, and adds the `-L<libdir>` linker flag so the final native link resolves.
+
+The `license` choice is **mandatory** (except for purely-Android projects, which always get the LGPL
+MediaCodec build): the flavour decides your app's legal obligations, so the plugin refuses to pick one
+for you and fails configuration with instructions when it is missing.
 
 ## Sources
 
@@ -35,6 +39,7 @@ are present, and adds the `-L<libdir>` linker flag so the final native link reso
 
 ## Licence flavours
 
-`LGPL` (default) is App-Store and closed-source safe: no `--enable-gpl`, no x264 / x265. `GPL` adds
-libx264 / libx265 for quality-focused software encode and makes the linked binary GPL, so it is for
-open-source or server use only.
+`LGPL` is App-Store and closed-source safe: no `--enable-gpl`, no x264 / x265. `GPL` adds
+libx264 / libx265 for quality-focused software encode and makes the whole linked application GPL-3.0,
+so it is for open-source or server use only — selecting it logs a warning spelling out those
+obligations.

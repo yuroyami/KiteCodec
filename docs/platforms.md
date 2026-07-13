@@ -12,7 +12,7 @@ Decode, encode, transcode, remux, and filter video and audio from shared Kotlin 
 | **Linux x64** | CI | Built, tested, and e2e-transcoded on every push (FFmpeg 6.1). |
 | **Windows** (mingwX64) | CI | Built, tested, and e2e-transcoded on every push (BtbN mingw build). |
 | **Android native** (arm64 / arm32 / x64) | CI klib | CI cross-compiles FFmpeg with the NDK (LGPL + MediaCodec) and builds the `.klib`. |
-| **macOS x64** | code written | `macosX64` deprecated by Kotlin 2.3.20; not CI-verified. |
+| **macOS x64** | code written | `macosX64` is a deprecated Kotlin/Native target (still deprecated in Kotlin 2.4.0); not CI-verified. |
 | **iOS arm64** | code written | Needs vendored FFmpeg in CI; not yet verified. |
 | **iOS Simulator** (arm64) | code written | Not yet CI-verified. |
 | **Linux arm64** | code written | Not yet CI-verified. |
@@ -49,15 +49,50 @@ This is the default, and what the macOS arm64 build does today. The Gradle build
 
 ### Mode 2: vendored static (release)
 
-For a self-contained binary, build a minimal FFmpeg from source. The Gradle task cross-compiles a pinned codec and filter set and drops `.a` libraries under `native-libs/<target>/`. `FFmpegPaths` notices and switches cinterop to static linking; the resulting executable carries everything it needs, around 25 MB.
+For a self-contained binary, build a minimal FFmpeg from source. The build expects the FFmpeg source tree at `vendor/ffmpeg`, so clone it first:
 
 ```bash
+git clone --depth 1 --branch n8.0 https://github.com/FFmpeg/FFmpeg vendor/ffmpeg
+
 ./gradlew :kitecodec-core:buildFFmpegForMacosArm64
 # or build every configured target at once:
 ./gradlew :kitecodec-core:buildFFmpegForAll
 ```
 
-The static profile enables the GPL codec ladder (x264 / x265 / svtav1 / aom / vpx / opus). If you ship through a GPL-hostile channel (for example the iOS App Store), turn `--enable-gpl` off in [`BuildFFmpegTask.kt`](https://github.com/yuroyami/KiteCodec/blob/main/buildSrc/src/main/kotlin/BuildFFmpegTask.kt). See [Licensing](#licensing) below.
+The Gradle task cross-compiles a pinned codec and filter set and drops `.a` libraries under `native-libs/<license>/<target>/` (`lgpl` or `gpl`). `FFmpegPaths` notices and switches cinterop to static linking; the resulting executable carries everything it needs, around 25 MB.
+
+The static profile is **LGPL by default**: no `--enable-gpl`, no libx264 / libx265; instead you get VideoToolbox hardware encode plus a permissive software stack (svtav1, vpx, aom, opus, mp3lame). That is the App-Store- and closed-source-safe flavour.
+
+Want libx264 / libx265? That is the **GPL flavour, and it is opt-in** — currently the only route to libx264 in a vendored build:
+
+```bash
+# builds --enable-gpl --enable-version3 + libx264/libx265 into native-libs/gpl/<target>/
+./gradlew :kitecodec-core:buildFFmpegForMacosArm64Gpl     # or :buildFFmpegForAllGpl
+
+# then select the GPL tree when building KiteCodec:
+./gradlew build -Pkitecodec.ffmpeg.license=gpl
+```
+
+See [Licensing](#licensing) below before you ship a GPL-flavour binary.
+
+## Windows (mingwX64)
+
+Windows has **no system-FFmpeg discovery**: `FFmpegPaths` resolves macOS (Homebrew) and Linux (apt) installs, but for `mingwX64` it requires a populated `native-libs/<license>/mingw-x64/` tree. You provide it in one of two ways.
+
+**Option A — drop in a BtbN build (what CI does).** The [BtbN FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds/releases) shared builds carry `include/` and `lib/` (import libraries) in exactly the layout `FFmpegPaths` expects. Download one, unzip, and move it into place:
+
+```powershell
+# Note: the "gpl" BtbN variant contains libx264 — it lands under the gpl flavour.
+Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip" -OutFile ffmpeg.zip
+Expand-Archive ffmpeg.zip -DestinationPath ffmpeg-tmp
+Move-Item ffmpeg-tmp\ffmpeg-master-latest-win64-gpl-shared native-libs\gpl\mingw-x64
+```
+
+Then build with `-Pkitecodec.ffmpeg.license=gpl` (matching the flavour directory), and make sure the `bin\` directory with the DLLs is on `PATH` at run time. An LGPL BtbN variant exists too (`...-win64-lgpl-shared.zip`); put it under `native-libs\lgpl\mingw-x64` and skip the property. This is exactly how [CI](https://github.com/yuroyami/KiteCodec/blob/main/.github/workflows/ci.yml) runs the Windows tests and e2e transcode on every push.
+
+**Option B — vendored static cross-compile.** Run `:kitecodec-core:buildFFmpegForMingwX64` (or the `Gpl` variant) with a mingw-w64 cross toolchain (`x86_64-w64-mingw32-gcc`) available. This is realistic from a Linux host or MSYS2; it needs the `vendor/ffmpeg` clone described above.
+
+Honest status: Windows builds, tests, and e2e-transcodes in CI via Option A. There is no one-command onboarding path on a bare Windows machine yet — you must stage the FFmpeg tree yourself.
 
 ## Android NDK build profile
 
@@ -84,18 +119,22 @@ The Android FFmpeg profile is deliberately different from the desktop one:
 
 ## Licensing
 
-The Apache 2.0 licence covers KiteCodec's own Kotlin code. The FFmpeg you link against carries its own licence, and that is what determines whether your binary is App-Store-safe. KiteCodec is planned as two artifacts to make the choice explicit.
+The Apache 2.0 licence covers KiteCodec's own Kotlin code. The FFmpeg you link against carries its own licence, and that is what determines whether your binary is App-Store-safe. The choice is made at the FFmpeg build level, as two flavours:
 
-| Artifact | FFmpeg licence | Encoders | Use for |
+| Flavour | FFmpeg licence | Encoders | Use for |
 |---|---|---|---|
-| **`kitecodec-core`** | LGPL-2.1+ build (no `--enable-gpl`) | Platform hardware (VideoToolbox / MediaCodec) for H.264 / H.265 | Commercial / closed-source / App Store distribution |
-| **`kitecodec-gpl`** | GPL-2.0+ add-on | Adds libx264 / libx265 for quality-focused software encode | GPL-compatible projects only (open-source apps, server tools, internal use) |
+| **LGPL** (default) | LGPL-2.1+ (no `--enable-gpl`) | Platform hardware (VideoToolbox / MediaCodec) for H.264 / H.265, plus svtav1 / opus / mp3lame software | Commercial / closed-source / App Store distribution (mind the [LGPL obligations](licensing.md)) |
+| **GPL** (opt-in) | GPL — effectively **GPL-3.0**, since the build also sets `--enable-version3` | Adds libx264 / libx265 for quality-focused software encode | GPL-compatible projects only (open-source apps, server tools, internal use) |
+
+The LGPL flavour is what `buildFFmpegFor<Target>` produces and what the build links by default. The GPL flavour is a loud opt-in: build with `buildFFmpegFor<Target>Gpl` and select it with `-Pkitecodec.ffmpeg.license=gpl`. This GPL opt-in is currently the **only** route to libx264 / libx265 in a vendored build.
 
 !!! warning "GPL is not App-Store-safe"
-    `kitecodec-gpl` adds libx264 / libx265 by enabling `--enable-gpl`. A binary that links those is GPL-2.0+ and must not ship through the iOS App Store or any other closed-source / commercial channel. For those, stay on `kitecodec-core` (LGPL) and use the hardware encoders.
+    The GPL flavour adds libx264 / libx265 by enabling `--enable-gpl` (and `--enable-version3`, making the effective licence GPL-3.0). A binary that links those must not ship through the iOS App Store or any other closed-source / commercial channel. For those, stay on the LGPL flavour and use the hardware encoders.
 
 !!! note "`kitecodec-gpl` is planned, not published"
-    Today only `kitecodec-core` exists. The split is reflected at the FFmpeg build level: the static build task enables `--enable-gpl` by default, and you toggle it off in [`BuildFFmpegTask.kt`](https://github.com/yuroyami/KiteCodec/blob/main/buildSrc/src/main/kotlin/BuildFFmpegTask.kt) for an LGPL-only binary.
+    A separate `kitecodec-gpl` artifact that packages the GPL flavour as a drop-in dependency is planned but does not exist yet — it is a README-only skeleton, commented out of `settings.gradle.kts`. Today the GPL flavour is reached only through the build tasks and the `kitecodec.ffmpeg.license` property described above.
+
+For distribution obligations (shipping licence texts, offering FFmpeg source, the LGPL relinking requirement for static builds), see the [Licensing guide](licensing.md).
 
 ### Picking an encoder per platform
 

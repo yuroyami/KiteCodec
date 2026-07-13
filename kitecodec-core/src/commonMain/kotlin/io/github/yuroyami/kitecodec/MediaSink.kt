@@ -7,13 +7,15 @@ import kotlinx.coroutines.flow.Flow
  * header freezes the stream list), then push frames through the encoders; close to write
  * the trailer and flush buffers.
  */
-expect class MediaSink : AutoCloseable {
+public expect class MediaSink : AutoCloseable {
 
     /** Add a video encoder. Must be called before any frame is written. */
-    fun addVideoEncoder(spec: VideoEncoderSpec): VideoEncoder
+    @Throws(FFmpegException::class)
+    public fun addVideoEncoder(spec: VideoEncoderSpec): VideoEncoder
 
     /** Add an audio encoder. Must be called before any frame is written. */
-    fun addAudioEncoder(spec: AudioEncoderSpec): AudioEncoder
+    @Throws(FFmpegException::class)
+    public fun addAudioEncoder(spec: AudioEncoderSpec): AudioEncoder
 
     /**
      * Add an output stream that copies [stream]'s packets verbatim from [source] — no decode,
@@ -24,26 +26,42 @@ expect class MediaSink : AutoCloseable {
      * Must be called before any frame/packet is written. Packets are pulled by [Remuxer] or
      * [Transcoder]; this only declares the mapping.
      */
-    fun addCopyStream(source: MediaSource, stream: StreamInfo): CopyStream
+    @Throws(FFmpegException::class)
+    public fun addCopyStream(source: MediaSource, stream: StreamInfo): CopyStream
 
     /**
      * Container-level metadata tags (`title`, `artist`, `comment`, …). Call before any
      * frame/packet is written — tags ride in the header.
      */
-    fun setMetadata(metadata: Map<String, String>)
+    @Throws(FFmpegException::class)
+    public fun setMetadata(metadata: Map<String, String>)
 
+    /**
+     * Writes the trailer and frees the muxer.
+     *
+     * @throws FFmpegException when the trailer fails — the file on disk is broken then
+     *         (e.g. an mp4 whose moov atom never landed); surfacing that beats silence.
+     */
     override fun close()
 
-    companion object {
-        /** Open a sink writing to [path]. Format inferred from extension. */
-        fun open(path: String): MediaSink
+    public companion object {
+        /**
+         * Open a sink writing to [path].
+         *
+         * @param format container short name (`mp4`, `matroska`, `mpegts`, …) — null infers
+         *               from the [path] extension
+         * @param options muxer private options applied before the header is written —
+         *                `"movflags" to "+faststart"` (mp4 web-ready), `"movie_timescale"`, …
+         */
+        @Throws(FFmpegException::class)
+        public fun open(path: String, format: String? = null, options: Map<String, String> = emptyMap()): MediaSink
     }
 }
 
 /** An output stream fed by stream-copy. Opaque handle; packets flow through [Remuxer]/[Transcoder]. */
-expect class CopyStream
+public expect class CopyStream
 
-data class VideoEncoderSpec(
+public data class VideoEncoderSpec(
     val codec: CodecId,
     val width: Int,
     val height: Int,
@@ -58,7 +76,7 @@ data class VideoEncoderSpec(
     val options: Map<String, String> = emptyMap(),
 )
 
-data class AudioEncoderSpec(
+public data class AudioEncoderSpec(
     val codec: CodecId,
     val sampleRate: Int = 44_100,
     val channels: Int = 2,
@@ -77,12 +95,12 @@ data class AudioEncoderSpec(
  * Incoming frame pts are rescaled from the frame's own time-base onto the encoder's; frames
  * without pts fall back to a frame counter. Either way output timestamps stay monotonic.
  */
-expect class VideoEncoder : AutoCloseable {
+public expect class VideoEncoder : AutoCloseable {
     /**
      * Drain [input] into this encoder + the parent muxer. Returns when the flow completes.
      * Reports progress every [progressEveryNFrames] via [onProgress] (the encoded-frame count).
      */
-    suspend fun drive(input: Flow<Frame>, onProgress: ((framesEncoded: Long) -> Unit)? = null, progressEveryNFrames: Int = 30)
+    public suspend fun drive(input: Flow<Frame>, onProgress: ((framesEncoded: Long) -> Unit)? = null, progressEveryNFrames: Int = 30)
     override fun close()
 }
 
@@ -91,15 +109,15 @@ expect class VideoEncoder : AutoCloseable {
  * need input chunked accordingly — route frames through [FilterGraph.buildAudio] and call
  * [FilterGraph.setOutputFrameSize] with [frameSize] (Transcoder does this automatically).
  */
-expect class AudioEncoder : AutoCloseable {
+public expect class AudioEncoder : AutoCloseable {
     /** Samples the codec wants per frame; 0 when the codec takes arbitrary chunk sizes. */
-    val frameSize: Int
+    public val frameSize: Int
     /** The sample format actually negotiated (resolves [AudioEncoderSpec.sampleFormat] = None). */
-    val sampleFormat: SampleFormat
-    val sampleRate: Int
-    val channels: Int
+    public val sampleFormat: SampleFormat
+    public val sampleRate: Int
+    public val channels: Int
 
     /** Drain [input] into this encoder + the parent muxer. Returns when the flow completes. */
-    suspend fun drive(input: Flow<Frame>)
+    public suspend fun drive(input: Flow<Frame>)
     override fun close()
 }

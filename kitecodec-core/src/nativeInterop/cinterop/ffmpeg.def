@@ -141,6 +141,40 @@ static inline int ffkmp_samples_copy_to_buffer(AVFrame *f, uint8_t *dst, int dst
     return needed;
 }
 
+/* Reverse of ffkmp_frame_copy_to_buffer: fill an allocated video frame's planes from a
+   tightly-packed (align=1) buffer. Frame must already carry width/height/format and have
+   buffers (av_frame_get_buffer). */
+static inline int ffkmp_frame_fill_video(AVFrame *f, const uint8_t *src, int src_size) {
+    if (!f || !src || f->width <= 0 || f->height <= 0) return AVERROR(EINVAL);
+    int needed = av_image_get_buffer_size(f->format, f->width, f->height, 1);
+    if (needed < 0) return needed;
+    if (src_size < needed) return AVERROR(EINVAL);
+    uint8_t *tmp_data[4]; int tmp_linesize[4];
+    int rc = av_image_fill_arrays(tmp_data, tmp_linesize, src, f->format, f->width, f->height, 1);
+    if (rc < 0) return rc;
+    av_image_copy(f->data, f->linesize, (const uint8_t **)tmp_data, tmp_linesize,
+                  f->format, f->width, f->height);
+    return 0;
+}
+
+/* Reverse of ffkmp_samples_copy_to_buffer: fill an allocated audio frame's planes from a
+   flat buffer (planar: plane-after-plane; packed: interleaved). ≤ 8 channels (AVFrame.data). */
+static inline int ffkmp_frame_fill_audio(AVFrame *f, const uint8_t *src, int src_size) {
+    if (!f || !src || f->nb_samples <= 0) return AVERROR(EINVAL);
+    int ch = f->ch_layout.nb_channels;
+    if (ch <= 0 || ch > AV_NUM_DATA_POINTERS) return AVERROR(EINVAL);
+    int needed = av_samples_get_buffer_size(NULL, ch, f->nb_samples, f->format, 1);
+    if (needed < 0) return needed;
+    if (src_size < needed) return AVERROR(EINVAL);
+    int planes = av_sample_fmt_is_planar(f->format) ? ch : 1;
+    int plane_size = needed / planes;
+    for (int p = 0; p < planes; p++) {
+        if (!f->extended_data[p]) return AVERROR(EINVAL);
+        memcpy(f->extended_data[p], src + (size_t)p * plane_size, plane_size);
+    }
+    return 0;
+}
+
 /* ════════════ Pixel/sample format names ════════════ */
 
 static inline const char* ffkmp_pix_fmt_name(int fmt)              { return av_get_pix_fmt_name(fmt); }
@@ -333,6 +367,19 @@ static inline int  ffkmp_fmt_alloc_output(AVFormatContext **out, const char *pat
     int rc = avformat_alloc_output_context2(&c, NULL, NULL, path);
     if (rc < 0 || !c) { *out = NULL; return rc < 0 ? rc : AVERROR_UNKNOWN; }
     *out = c; return 0;
+}
+/* Like ffkmp_fmt_alloc_output but with an explicit container short name ("mp4", "matroska");
+   NULL/empty format falls back to extension inference. */
+static inline int  ffkmp_fmt_alloc_output2(AVFormatContext **out, const char *path, const char *format) {
+    AVFormatContext *c = NULL;
+    int rc = avformat_alloc_output_context2(&c, NULL, (format && format[0]) ? format : NULL, path);
+    if (rc < 0 || !c) { *out = NULL; return rc < 0 ? rc : AVERROR_UNKNOWN; }
+    *out = c; return 0;
+}
+/* Muxer private options (movflags, …) — AV_OPT_SEARCH_CHILDREN reaches oformat priv_data. */
+static inline int  ffkmp_fmt_set_opt(AVFormatContext *c, const char *k, const char *v) {
+    if (!c) return AVERROR(EINVAL);
+    return av_opt_set(c, k, v, AV_OPT_SEARCH_CHILDREN);
 }
 static inline void ffkmp_fmt_free_output(AVFormatContext **ctx) {
     if (ctx && *ctx) {

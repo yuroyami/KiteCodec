@@ -2,6 +2,10 @@
 # the `io.github.yuroyami.kitecodec` Gradle plugin fetches. Assets are named
 # `ffmpeg-<version>-<license>-<triple>.zip` (+ `.sha256`) and attached to the `ffmpeg-<version>` tag.
 #
+# Structure: every build job uploads its zips as workflow artifacts; the single `publish` job at the
+# end downloads them all, attests build provenance, and creates/updates the release exactly once
+# (avoids the race of several jobs mutating the same release tag concurrently).
+#
 # COVERAGE IS PARTIAL ON PURPOSE. This builds the targets that are self-contained or whose build
 # dependencies install cleanly on a stock runner:
 #   - android arm64 / arm32 / x64 (lgpl) — the Android profile pulls in NO third-party libs, so these
@@ -29,7 +33,7 @@ on:
         default: "n8.0"
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-ffmpeg-${{ github.event.inputs.ffmpeg_version }}
@@ -62,14 +66,15 @@ jobs:
           ./gradlew :kitecodec-core:buildFFmpegFor${{ matrix.task }} --stacktrace
       - name: Package
         run: bash .github/scripts/package-ffmpeg.sh "${{ github.event.inputs.ffmpeg_version }}" lgpl ${{ matrix.triple }}
-      - name: Publish to the ffmpeg-${{ github.event.inputs.ffmpeg_version }} release
-        uses: softprops/action-gh-release@v2
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ffmpeg-${{ github.event.inputs.ffmpeg_version }}
-          name: FFmpeg binaries ${{ github.event.inputs.ffmpeg_version }}
-          files: |
+          name: ffmpeg-lgpl-${{ matrix.triple }}
+          path: |
             dist/*.zip
             dist/*.sha256
+          if-no-files-found: error
+          retention-days: 7
 
   macos-desktop:
     name: macos-arm64 (${{ matrix.license }})
@@ -98,14 +103,15 @@ jobs:
           ./gradlew :kitecodec-core:buildFFmpegForMacosArm64${SUFFIX} --stacktrace
       - name: Package
         run: bash .github/scripts/package-ffmpeg.sh "${{ github.event.inputs.ffmpeg_version }}" ${{ matrix.license }} macos-arm64
-      - name: Publish to the ffmpeg-${{ github.event.inputs.ffmpeg_version }} release
-        uses: softprops/action-gh-release@v2
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ffmpeg-${{ github.event.inputs.ffmpeg_version }}
-          name: FFmpeg binaries ${{ github.event.inputs.ffmpeg_version }}
-          files: |
+          name: ffmpeg-${{ matrix.license }}-macos-arm64
+          path: |
             dist/*.zip
             dist/*.sha256
+          if-no-files-found: error
+          retention-days: 7
 
   linux-desktop:
     name: linux-x64 (${{ matrix.license }})
@@ -138,13 +144,61 @@ jobs:
           ./gradlew :kitecodec-core:buildFFmpegForLinuxX64${SUFFIX} --stacktrace
       - name: Package
         run: bash .github/scripts/package-ffmpeg.sh "${{ github.event.inputs.ffmpeg_version }}" ${{ matrix.license }} linux-x64
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-${{ matrix.license }}-linux-x64
+          path: |
+            dist/*.zip
+            dist/*.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+  # Single point of release creation: downloading every build artifact here and publishing once
+  # avoids three jobs racing to create/update the same release tag.
+  publish:
+    name: publish release
+    needs: [android, macos-desktop, linux-desktop]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write      # create/update the release + upload assets
+      id-token: write      # OIDC token for provenance attestation
+      attestations: write  # store the attestation
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ffmpeg-*
+          path: dist
+          merge-multiple: true
+      # LGPL/GPL source offer: the offer must stay valid for as long as the binaries are
+      # distributed, so the exact FFmpeg source is attached to the same release instead of only
+      # pointing at ffmpeg.org/GitHub (a URL we don't control). BUILD-INFO.txt inside each zip
+      # references this asset. NOTE: once desktop zips start static-bundling the LGPL third-party
+      # libs (mp3lame, fribidi), their sources must be attached here too.
+      - name: Fetch FFmpeg source tarball (source offer)
+        run: |
+          curl -fL --retry 3 \
+            -o "dist/ffmpeg-${{ github.event.inputs.ffmpeg_version }}-source.tar.gz" \
+            "https://github.com/FFmpeg/FFmpeg/archive/refs/tags/${{ github.event.inputs.ffmpeg_version }}.tar.gz"
+          (cd dist && shasum -a 256 "ffmpeg-${{ github.event.inputs.ffmpeg_version }}-source.tar.gz" \
+            > "ffmpeg-${{ github.event.inputs.ffmpeg_version }}-source.tar.gz.sha256")
+      - name: List release assets
+        run: ls -l dist/
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*.zip
       - name: Publish to the ffmpeg-${{ github.event.inputs.ffmpeg_version }} release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: ffmpeg-${{ github.event.inputs.ffmpeg_version }}
           name: FFmpeg binaries ${{ github.event.inputs.ffmpeg_version }}
+          fail_on_unmatched_files: true
           files: |
             dist/*.zip
+            dist/*.tar.gz
             dist/*.sha256
 
   # TODO cross targets — each needs a cross-compiled x264/x265/svt-av1/... stack before its

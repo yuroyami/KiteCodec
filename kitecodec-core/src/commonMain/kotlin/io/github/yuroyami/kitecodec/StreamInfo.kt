@@ -1,7 +1,7 @@
 package io.github.yuroyami.kitecodec
 
 /** Read-only snapshot of an input stream's metadata. */
-data class StreamInfo(
+public data class StreamInfo(
     val index: Int,
     val type: MediaType,
     val codec: CodecId,
@@ -10,9 +10,11 @@ data class StreamInfo(
     val bitrateBps: Long?,
     val video: VideoStreamInfo? = null,
     val audio: AudioStreamInfo? = null,
+    /** Per-stream tags — `language` (`eng`, `jpn`, …), `title`, `handler_name`, … */
+    val metadata: Map<String, String> = emptyMap(),
 )
 
-data class VideoStreamInfo(
+public data class VideoStreamInfo(
     val width: Int,
     val height: Int,
     val pixelFormat: PixelFormat,
@@ -20,14 +22,14 @@ data class VideoStreamInfo(
     val sampleAspectRatio: Rational,
 )
 
-data class AudioStreamInfo(
+public data class AudioStreamInfo(
     val sampleRate: Int,
     val channels: Int,
     val sampleFormat: SampleFormat,
 )
 
 /** Immutable per-frame metadata snapshot — no native handle, safe to hold forever. */
-data class FrameInfo(
+public data class FrameInfo(
     val streamIndex: Int,
     val type: MediaType,
     val pts: Long,
@@ -45,8 +47,8 @@ data class FrameInfo(
 
     val ptsSeconds: Double get() = if (hasPts) pts * timeBase.asDouble else Double.NaN
 
-    companion object {
+    public companion object {
         /** FFmpeg's `AV_NOPTS_VALUE` sentinel. */
-        const val NOPTS: Long = Long.MIN_VALUE
+        public const val NOPTS: Long = Long.MIN_VALUE
     }
 }

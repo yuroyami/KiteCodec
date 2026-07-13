@@ -3,10 +3,10 @@ package io.github.yuroyami.kitecodec
 import kotlin.jvm.JvmInline
 
 /** What kind of data flows on a stream / through a codec / out of a filter graph. */
-enum class MediaType {
+public enum class MediaType {
     Video, Audio, Subtitle, Data, Attachment, Unknown;
 
-    val isAv: Boolean get() = this == Video || this == Audio
+    public val isAv: Boolean get() = this == Video || this == Audio
 }
 
 /**
@@ -14,17 +14,25 @@ enum class MediaType {
  * the actual impl translates to `AV_PIX_FMT_*` integer values.
  */
 @JvmInline
-value class PixelFormat(val name: String) {
-    companion object {
-        val Yuv420p = PixelFormat("yuv420p")
-        val Yuv422p = PixelFormat("yuv422p")
-        val Yuv444p = PixelFormat("yuv444p")
-        val Nv12    = PixelFormat("nv12")
-        val Rgb24   = PixelFormat("rgb24")
-        val Rgba    = PixelFormat("rgba")
-        val Bgra    = PixelFormat("bgra")
-        val Gray8   = PixelFormat("gray")
-        val None    = PixelFormat("none")
+public value class PixelFormat(public val name: String) {
+    public companion object {
+        public val Yuv420p : PixelFormat = PixelFormat("yuv420p")
+        public val Yuv422p : PixelFormat = PixelFormat("yuv422p")
+        public val Yuv444p : PixelFormat = PixelFormat("yuv444p")
+        public val Nv12    : PixelFormat = PixelFormat("nv12")
+        public val Rgb24   : PixelFormat = PixelFormat("rgb24")
+        public val Rgba    : PixelFormat = PixelFormat("rgba")
+        public val Bgra    : PixelFormat = PixelFormat("bgra")
+        public val Gray8   : PixelFormat = PixelFormat("gray")
+
+        /** 10-bit formats — HDR / high-bit-depth pipelines (HEVC Main10, AV1 10-bit). */
+        public val Yuv420p10le : PixelFormat = PixelFormat("yuv420p10le")
+        public val Yuv422p10le : PixelFormat = PixelFormat("yuv422p10le")
+        public val Yuv444p10le : PixelFormat = PixelFormat("yuv444p10le")
+        /** Semi-planar 10-bit — what VideoToolbox / NVENC / MediaCodec hardware paths use. */
+        public val P010le      : PixelFormat = PixelFormat("p010le")
+
+        public val None    : PixelFormat = PixelFormat("none")
     }
 }
 
@@ -33,37 +41,42 @@ value class PixelFormat(val name: String) {
  * interleave channels. `s16` / `s16p` is the most common decoder output.
  */
 @JvmInline
-value class SampleFormat(val name: String) {
-    val isPlanar: Boolean get() = name.endsWith("p")
+public value class SampleFormat(public val name: String) {
+    /**
+     * Name-based heuristic (`…p` suffix) — correct for every FFmpeg sample format name;
+     * only meaningful for names FFmpeg actually knows.
+     */
+    public val isPlanar: Boolean get() = name.endsWith("p")
 
-    companion object {
-        val U8   = SampleFormat("u8");    val U8p  = SampleFormat("u8p")
-        val S16  = SampleFormat("s16");   val S16p = SampleFormat("s16p")
-        val S32  = SampleFormat("s32");   val S32p = SampleFormat("s32p")
-        val Flt  = SampleFormat("flt");   val FltP = SampleFormat("fltp")
-        val Dbl  = SampleFormat("dbl");   val DblP = SampleFormat("dblp")
-        val None = SampleFormat("none")
+    public companion object {
+        public val U8   : SampleFormat = SampleFormat("u8");    public val U8p  : SampleFormat = SampleFormat("u8p")
+        public val S16  : SampleFormat = SampleFormat("s16");   public val S16p : SampleFormat = SampleFormat("s16p")
+        public val S32  : SampleFormat = SampleFormat("s32");   public val S32p : SampleFormat = SampleFormat("s32p")
+        public val S64  : SampleFormat = SampleFormat("s64");   public val S64p : SampleFormat = SampleFormat("s64p")
+        public val Flt  : SampleFormat = SampleFormat("flt");   public val FltP : SampleFormat = SampleFormat("fltp")
+        public val Dbl  : SampleFormat = SampleFormat("dbl");   public val DblP : SampleFormat = SampleFormat("dblp")
+        public val None : SampleFormat = SampleFormat("none")
     }
 }
 
 /** Codec identifier — symbolic name (`h264`, `aac`, `libx264`). Matches `avcodec_find_*_by_name`. */
 @JvmInline
-value class CodecId(val name: String) {
-    companion object {
-        val H264   = CodecId("h264");        val Hevc   = CodecId("hevc")
-        val Av1    = CodecId("av1");         val Vp9    = CodecId("vp9")
-        val Vp8    = CodecId("vp8");         val Mjpeg  = CodecId("mjpeg")
-        val Aac    = CodecId("aac");         val Mp3    = CodecId("mp3")
-        val Opus   = CodecId("opus");        val Vorbis = CodecId("vorbis")
-        val Flac   = CodecId("flac");        val PcmS16 = CodecId("pcm_s16le")
-        val Libx264 = CodecId("libx264");    val Libx265 = CodecId("libx265")
-        val LibOpus = CodecId("libopus");    val LibMp3 = CodecId("libmp3lame")
-        val Png     = CodecId("png")
+public value class CodecId(public val name: String) {
+    public companion object {
+        public val H264   : CodecId = CodecId("h264");        public val Hevc   : CodecId = CodecId("hevc")
+        public val Av1    : CodecId = CodecId("av1");         public val Vp9    : CodecId = CodecId("vp9")
+        public val Vp8    : CodecId = CodecId("vp8");         public val Mjpeg  : CodecId = CodecId("mjpeg")
+        public val Aac    : CodecId = CodecId("aac");         public val Mp3    : CodecId = CodecId("mp3")
+        public val Opus   : CodecId = CodecId("opus");        public val Vorbis : CodecId = CodecId("vorbis")
+        public val Flac   : CodecId = CodecId("flac");        public val PcmS16 : CodecId = CodecId("pcm_s16le")
+        public val Libx264 : CodecId = CodecId("libx264");    public val Libx265 : CodecId = CodecId("libx265")
+        public val LibOpus : CodecId = CodecId("libopus");    public val LibMp3 : CodecId = CodecId("libmp3lame")
+        public val Png     : CodecId = CodecId("png")
 
         /** Hardware encoders — resolve at runtime only on FFmpeg builds with the matching hwaccel. */
-        val H264VideoToolbox = CodecId("h264_videotoolbox")
-        val HevcVideoToolbox = CodecId("hevc_videotoolbox")
-        val H264MediaCodec   = CodecId("h264_mediacodec")
-        val HevcMediaCodec   = CodecId("hevc_mediacodec")
+        public val H264VideoToolbox : CodecId = CodecId("h264_videotoolbox")
+        public val HevcVideoToolbox : CodecId = CodecId("hevc_videotoolbox")
+        public val H264MediaCodec   : CodecId = CodecId("h264_mediacodec")
+        public val HevcMediaCodec   : CodecId = CodecId("hevc_mediacodec")
     }
 }

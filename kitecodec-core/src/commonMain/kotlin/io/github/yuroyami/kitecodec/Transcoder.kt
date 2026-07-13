@@ -1,7 +1,7 @@
 package io.github.yuroyami.kitecodec
 
 /** Progress snapshot delivered during [Transcoder.transcode]. */
-data class TranscodeProgress(
+public data class TranscodeProgress(
     /** Video frames encoded so far (0 for audio-only transcodes). */
     val framesEncoded: Long,
     /** Where the output timeline currently ends, in microseconds. */
@@ -18,17 +18,22 @@ data class TranscodeProgress(
  * All selected streams are demuxed in a single pass and their packets interleaved into the
  * output as they are produced — constant memory regardless of input length.
  */
-expect object Transcoder {
+public expect object Transcoder {
 
     /**
      * Run a transcode end-to-end. Suspends until done.
      *
      * @param input  input file path
      * @param output output file path
-     * @param spec video encoder spec — null for audio-only output (input video, if any, is
-     *             dropped). When set but the input has no video stream, this throws.
+     * @param spec video encoder spec — null (with [videoCopy] false) for audio-only output
+     *             (input video, if any, is dropped). When set but the input has no video
+     *             stream, this throws.
      * @param videoFilter filter graph description applied to the video stream — null means
      *                    passthrough of decoded frames straight into the encoder. Requires [spec].
+     * @param videoCopy stream-copy the video instead of re-encoding (`-c:v copy`): bit-exact,
+     *                  near-free — the classic "keep video, fix audio" move combined with
+     *                  [audioSpec]. Mutually exclusive with [spec]/[videoFilter]. Trimming a
+     *                  copied video stream is keyframe-snapped, not frame-exact.
      * @param audioSpec audio encoder spec — null (with [audioCopy] false) drops audio. When set
      *                  but the input has no audio stream, the output is silently video-only.
      * @param audioFilter filter chain for the audio stream (e.g. `volume=0.5,atempo=1.25`) —
@@ -46,11 +51,12 @@ expect object Transcoder {
      * @param onProgress invoked every ~30 encoded video frames (or ~100 audio frames when
      *                   audio-only) with a [TranscodeProgress]
      */
-    suspend fun transcode(
+    public suspend fun transcode(
         input: String,
         output: String,
         spec: VideoEncoderSpec? = null,
         videoFilter: String? = null,
+        videoCopy: Boolean = false,
         audioSpec: AudioEncoderSpec? = null,
         audioFilter: String? = null,
         audioCopy: Boolean = false,

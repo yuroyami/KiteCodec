@@ -21,7 +21,7 @@ Transcoder.transcode(
 ```
 
 !!! note
-    `CodecId.Libx264` above is software x264 from the optional `kitecodec-gpl` add-on. The default `kitecodec-core` ships hardware H.264 / H.265 and royalty-free software AV1 under LGPL, which is the App-Store-safe path. See [Platform support](platforms.md).
+    `CodecId.Libx264` above is software x264, which only exists in a GPL-flavour FFmpeg (system installs usually have it; KiteCodec's vendored builds add it via an explicit GPL opt-in). The default LGPL flavour ships hardware H.264 / H.265 and royalty-free software AV1 instead, which is the App-Store-safe path. See [Platform support](platforms.md) and [Licensing](licensing.md).
 
 <div class="grid cards" markdown>
 
@@ -151,8 +151,11 @@ See **[Filtering](filtering.md)**.
 | **[Filtering](filtering.md)** | `FilterGraph` video and audio graphs, single and multi-input. |
 | **[Encoding & muxing](encoding-muxing.md)** | `MediaSink`, `VideoEncoder` / `AudioEncoder`, encoder specs and options. |
 | **[Remuxing](remuxing.md)** | Lossless container rewrite and keyframe-snapped trim. |
+| **[Concurrency](concurrency.md)** | Threading, confinement, and cancellation rules. |
 | **[Recipes](recipes.md)** | Copy-paste patterns for common tasks. |
 | **[Platform support](platforms.md)** | What runs where, and how FFmpeg is sourced. |
+| **[Licensing](licensing.md)** | LGPL/GPL flavours and what shipping them obligates. |
+| **[Troubleshooting](troubleshooting.md)** | FFmpeg discovery, Windows setup, VMs, NDK. |
 
 ## Status
 

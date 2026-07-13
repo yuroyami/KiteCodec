@@ -12,6 +12,25 @@ FFPROBE=${3:-ffprobe}
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
+# Stream assertions: prefer `ffprobe -of json` + jq (exact field match, no substring surprises);
+# fall back to the csv-substring grep when jq isn't installed.
+has_stream() { # <file> <codec_name> <codec_type>
+  if command -v jq >/dev/null 2>&1; then
+    "$FFPROBE" -v error -show_entries stream=codec_name,codec_type -of json "$1" \
+      | jq -e --arg c "$2" --arg t "$3" 'any(.streams[]; .codec_name == $c and .codec_type == $t)' >/dev/null
+  else
+    "$FFPROBE" -v error -show_entries stream=codec_name,codec_type -of csv=p=0 "$1" | grep -q "$2,$3"
+  fi
+}
+has_stream_type() { # <file> <codec_type>
+  if command -v jq >/dev/null 2>&1; then
+    "$FFPROBE" -v error -show_entries stream=codec_type -of json "$1" \
+      | jq -e --arg t "$2" 'any(.streams[]; .codec_type == $t)' >/dev/null
+  else
+    "$FFPROBE" -v error -show_entries stream=codec_type -of csv=p=0 "$1" | grep -q "$2"
+  fi
+}
+
 echo "== generate 3s A/V test clip (keyframe every second)"
 "$FFMPEG" -hide_banner -loglevel error -y \
   -f lavfi -i "testsrc=duration=3:size=320x240:rate=30" \
@@ -21,16 +40,33 @@ echo "== generate 3s A/V test clip (keyframe every second)"
 echo "== kitecodec probe"
 "$KEXE" probe "$WORK/in.mp4"
 
+echo "== error path: transcode of a nonexistent input must fail and create no output"
+if "$KEXE" transcode "$WORK/does-not-exist.mp4" "$WORK/should-not-exist.mp4" >/dev/null 2>&1; then
+  echo "FAIL: transcode of nonexistent input exited 0"; exit 1
+fi
+[ ! -e "$WORK/should-not-exist.mp4" ] || { echo "FAIL: output file created for nonexistent input"; exit 1; }
+
 echo "== kitecodec transcode A/V with filter chain"
 "$KEXE" transcode "$WORK/in.mp4" "$WORK/out.mp4" "scale=160:120,eq=brightness=0.05,format=yuv420p"
 
-streams=$("$FFPROBE" -v error -show_entries stream=codec_name,codec_type -of csv=p=0 "$WORK/out.mp4")
-echo "$streams"
-echo "$streams" | grep -q "h264,video" || { echo "FAIL: no h264 video stream in output"; exit 1; }
-echo "$streams" | grep -q "aac,audio"  || { echo "FAIL: no aac audio stream in output"; exit 1; }
+"$FFPROBE" -v error -show_entries stream=codec_name,codec_type -of csv=p=0 "$WORK/out.mp4"
+has_stream "$WORK/out.mp4" h264 video || { echo "FAIL: no h264 video stream in output"; exit 1; }
+has_stream "$WORK/out.mp4" aac audio  || { echo "FAIL: no aac audio stream in output"; exit 1; }
 
 width=$("$FFPROBE" -v error -select_streams v:0 -show_entries stream=width -of csv=p=0 "$WORK/out.mp4")
 [ "$width" = "160" ] || { echo "FAIL: output width $width != 160 (scale filter not applied?)"; exit 1; }
+
+# Content sanity beyond dimensions: the decoded first frame must not be a solid single color
+# (catches "filter graph produced garbage/black" while width/duration still look right).
+frame_stats=$("$FFMPEG" -hide_banner -loglevel error -i "$WORK/out.mp4" \
+  -vf "signalstats,metadata=print:file=-" -frames:v 1 -f null - | tr -d '\r')
+yavg=$(printf '%s\n' "$frame_stats" | sed -n 's/.*lavfi\.signalstats\.YAVG=//p' | head -1)
+ymin=$(printf '%s\n' "$frame_stats" | sed -n 's/.*lavfi\.signalstats\.YMIN=//p' | head -1)
+ymax=$(printf '%s\n' "$frame_stats" | sed -n 's/.*lavfi\.signalstats\.YMAX=//p' | head -1)
+awk -v a="$yavg" 'BEGIN { exit !(a > 16 && a < 235) }' \
+  || { echo "FAIL: first-frame YAVG $yavg outside sane range (black/white output?)"; exit 1; }
+awk -v lo="$ymin" -v hi="$ymax" 'BEGIN { exit !(hi - lo >= 16) }' \
+  || { echo "FAIL: first-frame luma range $ymin..$ymax too flat (solid-color output?)"; exit 1; }
 
 dur=$("$FFPROBE" -v error -show_entries format=duration -of csv=p=0 "$WORK/out.mp4")
 awk -v d="$dur" 'BEGIN { exit !(d > 2.5 && d < 3.5) }' \
@@ -43,8 +79,7 @@ audio_streams=$("$FFPROBE" -v error -select_streams a -show_entries stream=index
 
 echo "== kitecodec transcode with audio stream-copy (-acopy)"
 "$KEXE" transcode "$WORK/in.mp4" "$WORK/out_acopy.mp4" "scale=160:120,format=yuv420p" -acopy
-acopy_streams=$("$FFPROBE" -v error -show_entries stream=codec_name,codec_type -of csv=p=0 "$WORK/out_acopy.mp4")
-echo "$acopy_streams" | grep -q "aac,audio" || { echo "FAIL: copied aac stream missing"; exit 1; }
+has_stream "$WORK/out_acopy.mp4" aac audio || { echo "FAIL: copied aac stream missing"; exit 1; }
 # Stream copy must preserve the source audio bit-exactly — compare extracted packets.
 "$FFMPEG" -hide_banner -loglevel error -y -i "$WORK/in.mp4" -map 0:a:0 -c copy "$WORK/a_src.aac"
 "$FFMPEG" -hide_banner -loglevel error -y -i "$WORK/out_acopy.mp4" -map 0:a:0 -c copy "$WORK/a_copy.aac"
@@ -52,13 +87,20 @@ cmp -s "$WORK/a_src.aac" "$WORK/a_copy.aac" || { echo "FAIL: -acopy audio differ
 
 echo "== kitecodec remux mp4 → mkv (full stream copy)"
 "$KEXE" remux "$WORK/in.mp4" "$WORK/remuxed.mkv"
-remux_streams=$("$FFPROBE" -v error -show_entries stream=codec_name,codec_type -of csv=p=0 "$WORK/remuxed.mkv")
-echo "$remux_streams"
-echo "$remux_streams" | grep -q "h264,video" || { echo "FAIL: remux lost video stream"; exit 1; }
-echo "$remux_streams" | grep -q "aac,audio"  || { echo "FAIL: remux lost audio stream"; exit 1; }
+"$FFPROBE" -v error -show_entries stream=codec_name,codec_type -of csv=p=0 "$WORK/remuxed.mkv"
+has_stream "$WORK/remuxed.mkv" h264 video || { echo "FAIL: remux lost video stream"; exit 1; }
+has_stream "$WORK/remuxed.mkv" aac audio  || { echo "FAIL: remux lost audio stream"; exit 1; }
 remux_dur=$("$FFPROBE" -v error -show_entries format=duration -of csv=p=0 "$WORK/remuxed.mkv")
 awk -v d="$remux_dur" 'BEGIN { exit !(d > 2.5 && d < 3.5) }' \
   || { echo "FAIL: remux duration $remux_dur not ~3s"; exit 1; }
+
+echo "== kitecodec remux mkv → mp4 (round-trip back)"
+"$KEXE" remux "$WORK/remuxed.mkv" "$WORK/remuxed_back.mp4"
+has_stream "$WORK/remuxed_back.mp4" h264 video || { echo "FAIL: mkv→mp4 remux lost video stream"; exit 1; }
+has_stream "$WORK/remuxed_back.mp4" aac audio  || { echo "FAIL: mkv→mp4 remux lost audio stream"; exit 1; }
+back_dur=$("$FFPROBE" -v error -show_entries format=duration -of csv=p=0 "$WORK/remuxed_back.mp4")
+awk -v d="$back_dur" 'BEGIN { exit !(d > 2.5 && d < 3.5) }' \
+  || { echo "FAIL: mkv→mp4 remux duration $back_dur not ~3s"; exit 1; }
 
 echo "== kitecodec transcode with trim (--ss 1 --to 2, frame-exact)"
 "$KEXE" transcode "$WORK/in.mp4" "$WORK/out_trim.mp4" "scale=160:120,format=yuv420p" --ss 1 --to 2 --title "trimmed by kitecodec"
@@ -92,9 +134,8 @@ done
 echo "== kitecodec audio-only transcode (no video input)"
 "$FFMPEG" -hide_banner -loglevel error -y -f lavfi -i "sine=frequency=330:duration=2" -c:a pcm_s16le "$WORK/tone.wav"
 "$KEXE" transcode "$WORK/tone.wav" "$WORK/tone.m4a"
-ao_streams=$("$FFPROBE" -v error -show_entries stream=codec_name,codec_type -of csv=p=0 "$WORK/tone.m4a")
-echo "$ao_streams" | grep -q "aac,audio" || { echo "FAIL: audio-only output missing aac"; exit 1; }
-echo "$ao_streams" | grep -q "video" && { echo "FAIL: audio-only output has video"; exit 1; }
+has_stream "$WORK/tone.m4a" aac audio || { echo "FAIL: audio-only output missing aac"; exit 1; }
+if has_stream_type "$WORK/tone.m4a" video; then echo "FAIL: audio-only output has video"; exit 1; fi
 ao_dur=$("$FFPROBE" -v error -show_entries format=duration -of csv=p=0 "$WORK/tone.m4a")
 awk -v d="$ao_dur" 'BEGIN { exit !(d > 1.7 && d < 2.3) }' \
   || { echo "FAIL: audio-only duration $ao_dur not ~2s"; exit 1; }
@@ -104,8 +145,7 @@ printf '1\n00:00:00,500 --> 00:00:02,000\nkitecodec was here\n' > "$WORK/subs.sr
 "$FFMPEG" -hide_banner -loglevel error -y -i "$WORK/in.mp4" -i "$WORK/subs.srt" \
   -map 0 -map 1 -c copy -c:s srt "$WORK/in_subs.mkv"
 "$KEXE" transcode "$WORK/in_subs.mkv" "$WORK/out_subs.mkv" "scale=160:120,format=yuv420p" -scopy
-echo "$("$FFPROBE" -v error -show_entries stream=codec_type -of csv=p=0 "$WORK/out_subs.mkv")" \
-  | grep -q "subtitle" || { echo "FAIL: subtitle stream lost"; exit 1; }
+has_stream_type "$WORK/out_subs.mkv" subtitle || { echo "FAIL: subtitle stream lost"; exit 1; }
 
 if [ "$(uname)" = "Darwin" ]; then
   echo "== kitecodec VideoToolbox hardware encode (-vt)"

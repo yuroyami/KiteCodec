@@ -1,14 +1,21 @@
 package io.github.yuroyami.kitecodec.gradle
 
 import org.gradle.api.DefaultTask
+import org.gradle.api.GradleException
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.Optional
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.TaskAction
+import org.gradle.work.DisableCachingByDefault
 import java.io.File
+import java.io.IOException
 import java.net.HttpURLConnection
-import java.net.URL
+import java.net.URI
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.util.zip.ZipInputStream
 
@@ -16,7 +23,14 @@ import java.util.zip.ZipInputStream
  * Downloads one prebuilt FFmpeg archive, verifies its SHA-256, and unpacks it into [destDir]
  * (an `{include,lib}` tree under the Gradle user-home cache). Idempotent: it skips when the static
  * libs are already present, so it costs nothing on subsequent builds.
+ *
+ * The archive is downloaded and unpacked via siblings of [destDir] that are only moved into place
+ * once fully verified, so a killed build never leaves a half-populated cache directory behind.
  */
+@DisableCachingByDefault(
+    because = "the output lives in a shared Gradle-user-home cache and re-downloading beats " +
+        "shuttling a multi-hundred-MB FFmpeg tree through the build cache",
+)
 abstract class FetchFFmpegTask : DefaultTask() {
 
     @get:Input
@@ -24,6 +38,25 @@ abstract class FetchFFmpegTask : DefaultTask() {
 
     @get:Input
     abstract val sha256Url: Property<String>
+
+    /**
+     * SHA-256 pinned via `kitecodec { ffmpeg { pinnedSha256 } }`. When present it is authoritative
+     * and [sha256Url] is never fetched.
+     */
+    @get:Input
+    @get:Optional
+    abstract val expectedSha256: Property<String>
+
+    /**
+     * `kitecodec.ffmpeg.allowUnverified` Gradle property (default false). When true, a checksum
+     * that cannot be obtained downgrades from a build failure to a prominent warning.
+     */
+    @get:Input
+    abstract val allowUnverified: Property<Boolean>
+
+    /** `gradle.startParameter.isOffline`, captured at configuration time (configuration-cache safe). */
+    @get:Input
+    abstract val offline: Property<Boolean>
 
     @get:OutputDirectory
     abstract val destDir: DirectoryProperty
@@ -40,39 +73,97 @@ abstract class FetchFFmpegTask : DefaultTask() {
             logger.info("FFmpeg already present at $dest, skipping download.")
             return
         }
-        dest.mkdirs()
-        val archive = File.createTempFile("kitecodec-ffmpeg", ".zip")
+        if (offline.get()) {
+            throw GradleException(
+                "kitecodec: Gradle is running in offline mode and the FFmpeg build for this target " +
+                    "is not in the cache ($dest). Re-run without --offline to download " +
+                    "${downloadUrl.get()}.",
+            )
+        }
+        dest.parentFile.mkdirs()
+        // Siblings of dest so the final rename stays on one filesystem (atomic where supported).
+        val archive = File(dest.parentFile, "${dest.name}.zip.part")
+        val staging = File(dest.parentFile, "${dest.name}.staging")
         try {
             logger.lifecycle("[KiteCodec] downloading FFmpeg: ${downloadUrl.get()}")
-            download(downloadUrl.get(), archive)
+            withRetry("download ${downloadUrl.get()}") { download(downloadUrl.get(), archive) }
             verifyChecksum(archive)
-            unzip(archive, dest)
+            staging.deleteRecursively()
+            staging.mkdirs()
+            unzip(archive, staging)
+            check(staging.resolve("lib/libavformat.a").exists()) {
+                "The FFmpeg archive did not contain lib/libavformat.a (unpacked to $staging). " +
+                    "The Release asset layout may be wrong; expected {include,lib} at the archive root."
+            }
+            dest.deleteRecursively()
+            moveIntoPlace(staging, dest)
         } finally {
             archive.delete()
-        }
-        check(dest.resolve("lib/libavformat.a").exists()) {
-            "The FFmpeg archive did not contain lib/libavformat.a (unpacked to $dest). " +
-                "The Release asset layout may be wrong; expected {include,lib} at the archive root."
+            staging.deleteRecursively()
         }
     }
 
     private fun verifyChecksum(archive: File) {
-        val expected = runCatching { fetchText(sha256Url.get()) }
+        val pinned = expectedSha256.orNull?.trim()?.takeIf { it.isNotEmpty() }
+        val expected = pinned ?: fetchPublishedChecksum() ?: return // only reachable when unverified is allowed
+        val actual = sha256(archive)
+        if (!actual.equals(expected, ignoreCase = true)) {
+            throw GradleException(
+                "FFmpeg checksum mismatch for ${downloadUrl.get()}\n" +
+                    "  expected${if (pinned != null) " (pinned)" else ""}: $expected\n" +
+                    "  actual:   $actual",
+            )
+        }
+    }
+
+    /**
+     * Fetches the `.sha256` published next to the asset. Returns null only when the checksum is
+     * unobtainable AND `kitecodec.ffmpeg.allowUnverified=true`; otherwise the build fails — an
+     * unverified native binary must never be linked into a consumer app silently.
+     */
+    private fun fetchPublishedChecksum(): String? {
+        val fetched = runCatching { withRetry("fetch ${sha256Url.get()}") { fetchText(sha256Url.get()) } }
             .getOrNull()
             ?.trim()
             ?.substringBefore(' ')
             ?.takeIf { it.isNotEmpty() }
-        if (expected == null) {
+        if (fetched != null) return fetched
+        if (allowUnverified.get()) {
             logger.warn(
-                "[KiteCodec] no .sha256 alongside ${downloadUrl.get()}; skipping the integrity check.",
+                """
+                |[KiteCodec] WARNING: could not obtain a SHA-256 for ${downloadUrl.get()}.
+                |[KiteCodec] The archive's integrity is UNVERIFIED because kitecodec.ffmpeg.allowUnverified=true.
+                |[KiteCodec] Its native code will be linked into your binaries as-is. Prefer pinning the
+                |[KiteCodec] checksum via kitecodec { ffmpeg { pinnedSha256.put(<asset>, <sha256>) } }.
+                """.trimMargin(),
             )
-            return
+            return null
         }
-        val actual = sha256(archive)
-        check(actual.equals(expected, ignoreCase = true)) {
-            "FFmpeg checksum mismatch for ${downloadUrl.get()}\n" +
-                "  expected: $expected\n  actual:   $actual"
+        throw GradleException(
+            "kitecodec: could not obtain the SHA-256 for ${downloadUrl.get()} " +
+                "(no readable ${sha256Url.get()}), so the archive cannot be verified. " +
+                "Pin the checksum via kitecodec { ffmpeg { pinnedSha256.put(<asset>, <sha256>) } }, " +
+                "or — if you accept linking an unverified binary — set the Gradle property " +
+                "kitecodec.ffmpeg.allowUnverified=true.",
+        )
+    }
+
+    /** Retries [action] up to [MAX_ATTEMPTS] times with linear backoff on transient IO failures. */
+    private fun <T> withRetry(what: String, action: () -> T): T {
+        var lastFailure: IOException? = null
+        repeat(MAX_ATTEMPTS) { attempt ->
+            try {
+                return action()
+            } catch (e: IOException) {
+                lastFailure = e
+                if (attempt < MAX_ATTEMPTS - 1) {
+                    val backoffMs = RETRY_BACKOFF_MS * (attempt + 1)
+                    logger.info("[KiteCodec] attempt ${attempt + 1} to $what failed (${e.message}), retrying in ${backoffMs}ms")
+                    Thread.sleep(backoffMs)
+                }
+            }
         }
+        throw GradleException("kitecodec: failed to $what after $MAX_ATTEMPTS attempts", lastFailure)
     }
 
     private fun download(url: String, into: File) {
@@ -84,11 +175,15 @@ abstract class FetchFFmpegTask : DefaultTask() {
     private fun fetchText(url: String): String =
         open(url).inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
 
-    /** Opens an HTTP(S) connection, following redirects across protocols (GitHub -> object store). */
+    /** Opens an HTTPS connection, following redirects (GitHub -> object store). HTTPS only. */
     private fun open(url: String): HttpURLConnection {
         var current = url
         repeat(MAX_REDIRECTS) {
-            val conn = (URL(current).openConnection() as HttpURLConnection).apply {
+            val uri = URI(current)
+            check(uri.scheme.equals("https", ignoreCase = true)) {
+                "Refusing non-HTTPS URL while fetching $url: $current"
+            }
+            val conn = (uri.toURL().openConnection() as HttpURLConnection).apply {
                 instanceFollowRedirects = true
                 connectTimeout = 30_000
                 readTimeout = 60_000
@@ -104,7 +199,7 @@ abstract class FetchFFmpegTask : DefaultTask() {
                 }
                 else -> {
                     conn.disconnect()
-                    error("HTTP $code fetching $current")
+                    throw IOException("HTTP $code fetching $current")
                 }
             }
         }
@@ -145,7 +240,18 @@ abstract class FetchFFmpegTask : DefaultTask() {
         }
     }
 
+    /** Renames the fully verified [staging] tree to [dest], atomically where the OS supports it. */
+    private fun moveIntoPlace(staging: File, dest: File) {
+        try {
+            Files.move(staging.toPath(), dest.toPath(), StandardCopyOption.ATOMIC_MOVE)
+        } catch (_: AtomicMoveNotSupportedException) {
+            Files.move(staging.toPath(), dest.toPath())
+        }
+    }
+
     private companion object {
         const val MAX_REDIRECTS = 5
+        const val MAX_ATTEMPTS = 3
+        const val RETRY_BACKOFF_MS = 1_000L
     }
 }

@@ -44,6 +44,7 @@ suspend fun transcode(
     output: String,
     spec: VideoEncoderSpec? = null,
     videoFilter: String? = null,
+    videoCopy: Boolean = false,
     audioSpec: AudioEncoderSpec? = null,
     audioFilter: String? = null,
     audioCopy: Boolean = false,
@@ -59,8 +60,9 @@ suspend fun transcode(
 |---|---|---|
 | `input` | required | Input file path. |
 | `output` | required | Output file path. The container is chosen from the extension. |
-| `spec` | `null` | Video encoder spec. `null` produces audio-only output (any input video is dropped). |
+| `spec` | `null` | Video encoder spec. `null` (with `videoCopy` false) produces audio-only output (any input video is dropped). |
 | `videoFilter` | `null` | Filter graph for the video stream. `null` passes decoded frames straight to the encoder. Requires `spec`. |
+| `videoCopy` | `false` | Stream-copy video instead of re-encoding (`-c:v copy`) — bit-exact and near-free. Mutually exclusive with `spec` and `videoFilter`. Trimming a copied video stream is keyframe-snapped. |
 | `audioSpec` | `null` | Audio encoder spec. `null` (with `audioCopy` false) drops audio. |
 | `audioFilter` | `null` | Filter chain for the audio stream. `null` plain resamples and reformats to what the encoder needs. |
 | `audioCopy` | `false` | Stream-copy audio instead of re-encoding. Mutually exclusive with `audioSpec` and `audioFilter`. |
@@ -164,6 +166,20 @@ There are three ways to treat audio, and they are mutually exclusive.
 
     !!! warning
         `audioCopy = true` is mutually exclusive with `audioSpec` and `audioFilter`. Pass one or the other, not both.
+
+    The mirror image also works — keep the video bit-exact and only fix the audio (`-c:v copy -c:a aac`):
+
+    ```kotlin
+    Transcoder.transcode(
+        input  = "input.mp4",
+        output = "output.mp4",
+        videoCopy = true,                              // bit-exact video passthrough
+        audioSpec = AudioEncoderSpec(codec = CodecId.Aac),
+        audioFilter = "loudnorm",                      // e.g. fix loudness
+    )
+    ```
+
+    `videoCopy` is mutually exclusive with `spec` and `videoFilter`, and trimming a copied video stream is keyframe-snapped rather than frame-exact.
 
 === "Drop"
 
@@ -306,13 +322,16 @@ try {
     Transcoder.transcode(input, output, spec = videoSpec)
 } catch (e: FFmpegException) {
     when (val err = e.error) {
-        is FFmpegError.AvError  -> println("libav failed: ${err.message} (code ${err.code})")
-        is FFmpegError.Internal -> println("internal invariant: ${err.message}")
+        is FFmpegError.FileNotFound    -> println("input does not exist")
+        is FFmpegError.EncoderNotFound -> println("this FFmpeg build lacks the encoder")
+        is FFmpegError.InvalidData     -> println("corrupt or unrecognized input")
+        is FFmpegError.Internal        -> println("internal invariant: ${err.message}")
+        else                           -> println("libav failed: ${err.message} (code ${err.code})")
     }
 }
 ```
 
-`FFmpegError.AvError` wraps a concrete `AVERROR_*` from libav (a bad codec, an unsupported container combination, a missing stream). `FFmpegError.Internal` signals a library-side invariant failure. Asking for a `spec` when the input has no video stream throws; a missing audio stream with `audioSpec` set is tolerated and the output is silently video-only.
+`FFmpegError` is a sealed hierarchy of semantic categories mapped from the raw `AVERROR_*` codes — `FileNotFound`, `PermissionDenied`, `InvalidData`, `EncoderNotFound`, `DecoderNotFound`, `MuxerNotFound`, `FilterNotFound`, and more; anything unmapped arrives as `FFmpegError.AvError`, and every subclass keeps the raw code in `code`. `FFmpegError.Internal` signals a library-side invariant failure. Asking for a `spec` when the input has no video stream throws; a missing audio stream with `audioSpec` set is tolerated and the output is silently video-only.
 
 ## Complete example
 

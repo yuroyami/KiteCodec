@@ -34,7 +34,9 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: docs/requirements.txt
 
       - name: Install MkDocs Material
         run: pip install -r docs/requirements.txt
@@ -61,11 +63,9 @@ jobs:
             libavformat-dev libavcodec-dev libavfilter-dev \
             libavutil-dev libswscale-dev libswresample-dev
 
-      # The Dokka generation + merge is best-effort: building the FFmpeg-linked
-      # Kotlin/Native code in CI is heavy and may fail. continue-on-error keeps
-      # the MkDocs site deploying even if the API reference can't be built.
+      # The Dokka generation + merge is required: the deployed site must never
+      # silently lose its /api/ reference.
       - name: Generate the Dokka API reference and merge it into the site
-        continue-on-error: true
         run: |
           ./gradlew dokkaGenerate --no-configuration-cache
           mkdir -p site/api

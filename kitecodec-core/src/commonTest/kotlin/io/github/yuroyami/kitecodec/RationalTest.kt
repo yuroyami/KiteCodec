@@ -59,3 +59,54 @@ class RationalTest {
         assertEquals("1/25", Rational(1, 25).toString())
     }
 }
+
+class RationalEdgeCaseTest {
+
+    @Test
+    fun inverseStaysNormalized() {
+        // Regression: inverse used to bypass the normalizing constructor, producing a
+        // negative denominator that broke equals/toString.
+        val r = Rational(-1, 2).inverse
+        assertEquals(Rational(-2, 1), r)
+        assertTrue(r.den > 0, "denominator must stay positive, got ${r.num}/${r.den}")
+        assertEquals("-2", r.toString())
+    }
+
+    @Test
+    fun zeroHasNoInverse() {
+        assertFailsWith<IllegalArgumentException> { Rational.Zero.inverse }
+    }
+
+    @Test
+    fun intMinValueNormalizes() {
+        // Int.MIN_VALUE math must happen in Long — naive sign*num overflows.
+        val r = Rational(Int.MIN_VALUE, 2)
+        assertEquals(Int.MIN_VALUE / 2, r.num)
+        assertEquals(1, r.den)
+        val flipped = Rational(1, -2)
+        assertEquals(-1, flipped.num)
+        assertEquals(2, flipped.den)
+    }
+
+    @Test
+    fun comparisonIsExact() {
+        assertTrue(Rational(1, 30) < Rational(1, 25))
+        assertTrue(Rational.Fps2997 < Rational.Fps30)
+        assertTrue(Rational(-1, 2) < Rational.Zero)
+        assertEquals(0, Rational(2, 4).compareTo(Rational(1, 2)))
+    }
+
+    @Test
+    fun additionSubtractionDivision() {
+        assertEquals(Rational(5, 6), Rational(1, 2) + Rational(1, 3))
+        assertEquals(Rational(1, 6), Rational(1, 2) - Rational(1, 3))
+        assertEquals(Rational(3, 2), Rational(1, 2) / Rational(1, 3))
+        assertEquals(Rational(-1, 2), -Rational(1, 2))
+        assertFailsWith<IllegalArgumentException> { Rational(1, 2) / Rational.Zero }
+    }
+
+    @Test
+    fun scalarTimesOverflowThrowsInsteadOfWrapping() {
+        assertFailsWith<ArithmeticException> { Rational(1_000_000, 1) * Long.MAX_VALUE }
+    }
+}

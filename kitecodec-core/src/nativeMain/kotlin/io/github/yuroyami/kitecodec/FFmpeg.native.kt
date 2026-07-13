@@ -12,12 +12,12 @@ import ffmpeg.swresample_version
 import ffmpeg.swscale_version
 import kotlinx.cinterop.toKString
 
-actual object FFmpeg {
+public actual object FFmpeg {
 
-    actual val buildConfiguration: String
+    public actual val buildConfiguration: String
         get() = avcodec_configuration()?.toKString() ?: ""
 
-    actual val versions: Versions by lazy {
+    public actual val versions: Versions by lazy {
         Versions(
             avutil     = decodePackedVersion(avutil_version()),
             avcodec    = decodePackedVersion(avcodec_version()),
@@ -28,9 +28,9 @@ actual object FFmpeg {
         )
     }
 
-    actual fun hasEncoder(name: String): Boolean = avcodec_find_encoder_by_name(name) != null
-    actual fun hasDecoder(name: String): Boolean = avcodec_find_decoder_by_name(name) != null
-    actual fun hasFilter(name: String): Boolean  = avfilter_get_by_name(name) != null
+    public actual fun hasEncoder(name: String): Boolean = avcodec_find_encoder_by_name(name) != null
+    public actual fun hasDecoder(name: String): Boolean = avcodec_find_decoder_by_name(name) != null
+    public actual fun hasFilter(name: String): Boolean  = avfilter_get_by_name(name) != null
 }
 
 /**

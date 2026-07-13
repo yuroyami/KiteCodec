@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.gradle.plugin.publish)
     `java-gradle-plugin`
     `maven-publish`
 }
@@ -14,19 +15,70 @@ dependencies {
     // The Kotlin Gradle plugin types (KotlinMultiplatformExtension, KotlinNativeTarget) are present
     // in the consumer's build at apply time, so compile against them but do not bundle them.
     compileOnly(libs.kotlin.gradle.plugin)
+
+    testImplementation(gradleTestKit())
+    testImplementation(kotlin("test"))
 }
 
 gradlePlugin {
+    website = "https://github.com/yuroyami/KiteCodec"
+    vcsUrl = "https://github.com/yuroyami/KiteCodec.git"
+    testSourceSets(sourceSets.test.get())
     plugins {
         create("kitecodec") {
             id = "io.github.yuroyami.kitecodec"
             implementationClass = "io.github.yuroyami.kitecodec.gradle.KiteCodecPlugin"
             displayName = "KiteCodec FFmpeg provisioning"
             description = "Fetches and links the prebuilt FFmpeg binaries KiteCodec needs, one per Kotlin/Native target."
+            tags = listOf("kotlin-multiplatform", "kotlin-native", "ffmpeg", "codec", "video", "audio")
         }
     }
 }
 
-// `java-gradle-plugin` + `maven-publish` already publish the plugin and its marker artifact to
-// mavenLocal / Maven Central. To publish to the Gradle Plugin Portal instead, add the
-// `com.gradle.plugin-publish` plugin and point it at the repository metadata.
+publishing {
+    publications.withType<MavenPublication>().configureEach {
+        pom {
+            name = "KiteCodec Gradle Plugin"
+            description = "Fetches and links the prebuilt FFmpeg binaries KiteCodec needs, one per Kotlin/Native target."
+            url = "https://github.com/yuroyami/KiteCodec"
+            licenses {
+                license {
+                    name = "The Apache License, Version 2.0"
+                    url = "https://www.apache.org/licenses/LICENSE-2.0.txt"
+                    distribution = "repo"
+                }
+            }
+            developers {
+                developer {
+                    id = "yuroyami"
+                    name = "yuroyami"
+                    url = "https://github.com/yuroyami"
+                }
+            }
+            scm {
+                url = "https://github.com/yuroyami/KiteCodec"
+                connection = "scm:git:git://github.com/yuroyami/KiteCodec.git"
+                developerConnection = "scm:git:ssh://git@github.com/yuroyami/KiteCodec.git"
+            }
+        }
+    }
+    repositories {
+        // Consumed by the TestKit functional test: the plugin (and its marker) are resolved from
+        // here so they share a classloader with the Kotlin Multiplatform plugin. A TestKit-injected
+        // classpath (withPluginClasspath) cannot see externally resolved plugins' classes, and this
+        // plugin reacts to KotlinNativeTarget, so injection would NoClassDefFoundError.
+        maven {
+            name = "testLocal"
+            url = uri(layout.buildDirectory.dir("test-local-repo"))
+        }
+    }
+}
+
+val testLocalRepoDir = layout.buildDirectory.dir("test-local-repo")
+
+tasks.test {
+    dependsOn(tasks.named("publishAllPublicationsToTestLocalRepository"))
+    systemProperty("kitecodec.test.repo", testLocalRepoDir.get().asFile.absolutePath)
+    systemProperty("kitecodec.test.pluginVersion", version.toString())
+    systemProperty("kitecodec.test.kotlinVersion", libs.versions.kotlin.get())
+}

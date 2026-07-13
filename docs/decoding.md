@@ -110,11 +110,11 @@ source.decodedFrames(video).collect { frame ->
 The flow is cold. Nothing decodes until you collect, and each fresh collection restarts from the demuxer's current position. The loop drains the decoder correctly at end-of-stream, so you receive every buffered frame before the flow completes.
 
 !!! note "Best-effort timestamps"
-    Each frame's `pts` is promoted from FFmpeg's `best_effort_timestamp` (the same rule `ffmpeg.c` uses), so files with missing or irregular pts still decode with usable timestamps. When a frame genuinely has no timestamp, `info.hasPts` is false and `info.pts` equals `FrameInfo.NOPTS`. The full timestamp contract is in [About → Timestamps](about.md#timestamps).
+    Each frame's `pts` is promoted from FFmpeg's `best_effort_timestamp` (the same rule `ffmpeg.c` uses), so files with missing or irregular pts still decode with usable timestamps. When a frame genuinely has no timestamp, `info.hasPts` is false and `info.pts` equals `FrameInfo.NOPTS`. The full timestamp contract is in [About → Timestamps](about.md#timestamps-the-part-everyone-gets-wrong).
 
 ## Decoding several streams in one pass
 
-If you need both video and audio, do not open two flows. That would demux the file twice. `decodeStreams(streams)` runs a single demux pass and interleaves frames from every requested stream into one `Flow<Frame>`:
+If you need both video and audio, do not open two flows. Two concurrently collected `decodedFrames` flows **race on the shared demuxer** — a `MediaSource` wraps one `AVFormatContext`, which is not safe to drive from concurrent coroutines, so the result is corrupted reads, not just wasted work. `decodeStreams(streams)` is the only correct way to decode several streams together: it runs a single demux pass and interleaves frames from every requested stream into one `Flow<Frame>`:
 
 ```kotlin
 val wanted = listOfNotNull(source.primaryVideo, source.primaryAudio)
@@ -128,7 +128,7 @@ source.decodeStreams(wanted).collect { frame ->
 }
 ```
 
-Frames arrive in demux (roughly presentation) order, mixed across streams. Use `frame.info.streamIndex` or `frame.info.type` to route each one. This is the same single-pass machinery the [Transcoder](transcoding.md) uses internally.
+Frames arrive in demux (roughly presentation) order, mixed across streams. Use `frame.info.streamIndex` or `frame.info.type` to route each one. This is the same single-pass machinery the [Transcoder](transcoding.md) uses internally. The confinement rules for `MediaSource` as a whole are collected in [Concurrency](concurrency.md).
 
 !!! tip
     Pass only the streams you actually consume. Packets for streams you leave out of the list are skipped, so a video-only `decodeStreams(listOf(primaryVideo))` does no audio decode work at all.
@@ -174,38 +174,29 @@ val bytes = frame.copyPlanesToByteArray()
 
 The layout follows `info.pixelFormat` (video) or `info.sampleFormat` (audio). A planar format such as `Yuv420p` or `S16p` packs each plane back-to-back; an interleaved format such as `Rgb24` or `S16` packs samples together.
 
-### The buffer-reuse rule
+### Frame ownership
 
-Decoding reuses one underlying frame buffer for speed. A `Frame` you receive from a flow is valid only until the next emission, or until the flow closes. After that its backing buffer may be overwritten by the next decoded frame.
+Frames emitted by the flow APIs (`decodedFrames`, `decodeStreams`, `FilterGraph.process`) are **owned by you**: each one stays valid until you `close()` it, so buffering operators (`buffer()`, `toList()`, holding frames in a list) are safe. Internally these are O(1) reference-counted clones of the decoder's landing frame — no pixel copies are made.
 
-This is fine when you consume each frame inside the collector and move on. It is a bug if you stash the `Frame` in a list and read it later:
-
-```kotlin
-// WRONG: every entry aliases the same recycled buffer
-val frames = mutableListOf<Frame>()
-source.decodedFrames(video).collect { frames += it }   // do not do this
-```
-
-`copyPlanesToByteArray()` is safe regardless, because it copies into a new array the moment you call it. If you instead need to keep the whole `Frame` around (to feed an encoder or a filter later), call `copy()` to take an owned snapshot:
+The flip side: **close every frame you collect**, or its native buffers leak.
 
 ```kotlin
-// RIGHT: copy() detaches the frame from the recycled buffer
-val keep = mutableListOf<Frame>()
-source.decodedFrames(video).collect { frame ->
-    keep += frame.copy()   // O(1) owned snapshot, survives the next emission
-}
-// remember to close() each copy when done
-keep.forEach { it.close() }
+// Fine: frames stay valid past the next emission…
+val frames = source.decodedFrames(video).toList()
+// …but each one is yours to release.
+frames.forEach { it.close() }
 ```
 
-`copy()` is O(1): it shares the underlying pixel data via reference counting rather than duplicating bytes, but the result is owned and will not be recycled out from under you. A copied `Frame` is `AutoCloseable`; close it (or `use { }` it) when you are finished.
+Callback-style APIs are different: a frame handed to `FilterGraph.feedInput`'s `onOutput` callback is valid **only for the duration of the callback** — call `copy()` there to keep one.
+
+`copy()` is O(1): it shares the underlying pixel data via reference counting rather than duplicating bytes, and the result is owned. Both collected frames and copies are `AutoCloseable`; close them (or `use { }` them) when you are finished. `copyPlanesToByteArray()` is always safe — it copies into a fresh array the moment you call it.
 
 !!! note
     The native `AVFrame*` pointer is deliberately not exposed in common code. You interact with frames only through `info`, `copyPlanesToByteArray()`, `copy()`, and `encodeImage()`.
 
 ## Seeking
 
-`seekMicros(micros)` repositions the demuxer to (approximately) the requested time. FFmpeg seeks to the nearest keyframe at or before the target, so the next frames you decode may start slightly earlier than the exact microsecond you asked for:
+`seekMicros(micros)` is a `suspend` function that repositions the demuxer to (approximately) the requested time, so call it from a coroutine. FFmpeg seeks to the nearest keyframe at or before the target, so the next frames you decode may start slightly earlier than the exact microsecond you asked for:
 
 ```kotlin
 source.seekMicros(30_000_000)   // jump to ~30 seconds
@@ -218,7 +209,7 @@ Seeking affects the shared demuxer position, so it influences every flow you col
 
 ## Thumbnails
 
-To grab a single frame at a point in time, use `extractFrame(atMicros, stream)`. It seeks, decodes forward to the target, and returns one `Frame`. Pass a specific `stream`, or leave it null to use the primary video track:
+To grab a single frame at a point in time, use `extractFrame(atMicros, stream)` — also a `suspend` function. It seeks, decodes forward to the target, and returns one `Frame`. Pass a specific `stream`, or leave it null to use the primary video track:
 
 ```kotlin
 val thumb = source.extractFrame(atMicros = 90_000_000)   // one frame at 90s
@@ -256,8 +247,10 @@ try {
     }
 } catch (e: FFmpegException) {
     when (val err = e.error) {
-        is FFmpegError.AvError -> println("libav error ${err.code}: ${err.message}")
-        is FFmpegError.Internal -> println("internal: ${err.message}")
+        is FFmpegError.FileNotFound -> println("no such file")
+        is FFmpegError.InvalidData  -> println("corrupt or unrecognized input")
+        is FFmpegError.Internal     -> println("internal: ${err.message}")
+        else                        -> println("libav error ${err.code}: ${err.message}")
     }
 }
 ```

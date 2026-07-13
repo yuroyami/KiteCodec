@@ -16,28 +16,40 @@ import ffmpeg.ffkmp_frame_channels
 import ffmpeg.ffkmp_frame_clone
 import ffmpeg.ffkmp_frame_convert_pixfmt
 import ffmpeg.ffkmp_frame_copy_to_buffer
+import ffmpeg.ffkmp_frame_fill_audio
+import ffmpeg.ffkmp_frame_fill_video
 import ffmpeg.ffkmp_frame_format
 import ffmpeg.ffkmp_frame_free
+import ffmpeg.ffkmp_frame_get_buffer
 import ffmpeg.ffkmp_frame_height
 import ffmpeg.ffkmp_frame_width
 import ffmpeg.ffkmp_frame_nb_samples
 import ffmpeg.ffkmp_frame_pts
 import ffmpeg.ffkmp_frame_sample_rate
+import ffmpeg.ffkmp_frame_set_ch_layout_default
+import ffmpeg.ffkmp_frame_set_format
+import ffmpeg.ffkmp_frame_set_height
+import ffmpeg.ffkmp_frame_set_nb_samples
 import ffmpeg.ffkmp_frame_set_pts
+import ffmpeg.ffkmp_frame_set_sample_rate
+import ffmpeg.ffkmp_frame_set_width
 import ffmpeg.ffkmp_frame_unref
 import ffmpeg.ffkmp_image_get_buffer_size
 import ffmpeg.ffkmp_packet_alloc
 import ffmpeg.ffkmp_packet_data
 import ffmpeg.ffkmp_packet_free
 import ffmpeg.ffkmp_packet_size
+import ffmpeg.ffkmp_packet_unref
 import ffmpeg.ffkmp_samples_copy_to_buffer
 import ffmpeg.ffkmp_samples_get_buffer_size
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.CPointer
+import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.allocArray
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.readBytes
 import kotlinx.cinterop.reinterpret
+import kotlinx.cinterop.usePinned
 
 /**
  * AVFrame-backed [Frame] implementation. The native pointer ([nativeFrame]) is `internal` —
@@ -47,7 +59,7 @@ import kotlinx.cinterop.reinterpret
  * Construction: see [Frame.acquire] (alloc) and [Frame.wrap] (when an existing AVFrame should
  * be adopted, e.g. from a decoder).
  */
-actual class Frame internal constructor(
+public actual class Frame internal constructor(
     internal val nativeFrame: CPointer<AVFrame>,
     private val ownsPointer: Boolean,
     internal val streamIndex: Int,
@@ -57,7 +69,10 @@ actual class Frame internal constructor(
 
     private var closed = false
 
-    actual val info: FrameInfo by lazy {
+    private fun checkOpen() = check(!closed) { "Frame is closed — its native buffers are gone" }
+
+    public actual val info: FrameInfo by lazy {
+        checkOpen()
         FrameInfo(
             streamIndex   = streamIndex,
             type          = streamType,
@@ -73,10 +88,13 @@ actual class Frame internal constructor(
         )
     }
 
-    actual fun copyPlanesToByteArray(): ByteArray = when (streamType) {
-        MediaType.Video -> copyVideoPlanes()
-        MediaType.Audio -> copyAudioSamples()
-        else -> ByteArray(0)
+    public actual fun copyPlanesToByteArray(): ByteArray {
+        checkOpen()
+        return when (streamType) {
+            MediaType.Video -> copyVideoPlanes()
+            MediaType.Audio -> copyAudioSamples()
+            else -> ByteArray(0)
+        }
     }
 
     private fun copyVideoPlanes(): ByteArray = memScoped {
@@ -103,14 +121,18 @@ actual class Frame internal constructor(
         buf.readBytes(written)
     }
 
-    actual fun copy(): Frame {
+    public actual fun copy(): Frame {
+        checkOpen()
         val cloned = ffkmp_frame_clone(nativeFrame)
             ?: throw FFmpegException(FFmpegError.Internal("av_frame_clone returned NULL"))
         return Frame(cloned, ownsPointer = true, streamIndex = streamIndex, streamType = streamType, streamTimeBase = streamTimeBase)
     }
 
-    actual fun encodeImage(codec: CodecId): ByteArray {
-        check(streamType == MediaType.Video) { "encodeImage works on video frames" }
+    public actual fun encodeImage(codec: CodecId): ByteArray {
+        checkOpen()
+        if (streamType != MediaType.Video) {
+            throw FFmpegException(FFmpegError.Internal("encodeImage works on video frames, this is a $streamType frame"))
+        }
         val width = ffkmp_frame_width(nativeFrame)
         val height = ffkmp_frame_height(nativeFrame)
         val format = ffkmp_frame_format(nativeFrame)
@@ -151,13 +173,38 @@ actual class Frame internal constructor(
                     ?: throw FFmpegException(FFmpegError.Internal("av_packet_alloc returned NULL"))
                 try {
                     ffkmp_frame_set_pts(sendFrame, 0)
-                    check0(avcodec_send_frame(ctx, sendFrame), "avcodec_send_frame (image)")
-                    check0(avcodec_send_frame(ctx, null), "avcodec_send_frame (image flush)")
-                    check0(avcodec_receive_packet(ctx, packet), "avcodec_receive_packet (image)")
-                    val size = ffkmp_packet_size(packet)
-                    val data = ffkmp_packet_data(packet)
-                        ?: throw FFmpegException(FFmpegError.Internal("Image packet has no data"))
-                    return data.readBytes(size)
+                    val eagain = FFErrors.EAGAIN
+                    val eof = FFErrors.EOF
+                    var bytes: ByteArray? = null
+                    // EAGAIN-correct send/drain, same shape as the codec loops elsewhere —
+                    // image codecs emit one packet, but nothing in the API guarantees it.
+                    fun drainAll() {
+                        while (true) {
+                            val rc = avcodec_receive_packet(ctx, packet)
+                            if (rc == eagain || rc == eof) return
+                            check0(rc, "avcodec_receive_packet (image)")
+                            if (bytes == null) {
+                                val size = ffkmp_packet_size(packet)
+                                bytes = ffkmp_packet_data(packet)?.readBytes(size)
+                            }
+                            ffkmp_packet_unref(packet)
+                        }
+                    }
+                    while (true) {
+                        val rc = avcodec_send_frame(ctx, sendFrame)
+                        if (rc == 0) break
+                        if (rc == eagain) { drainAll(); continue }
+                        check0(rc, "avcodec_send_frame (image)")
+                    }
+                    while (true) {
+                        val rc = avcodec_send_frame(ctx, null)
+                        if (rc == 0 || rc == eof) break
+                        if (rc == eagain) { drainAll(); continue }
+                        check0(rc, "avcodec_send_frame (image flush)")
+                    }
+                    drainAll()
+                    return bytes
+                        ?: throw FFmpegException(FFmpegError.Internal("Image encoder produced no packet"))
                 } finally {
                     ffkmp_packet_free(packet)
                 }
@@ -176,6 +223,75 @@ actual class Frame internal constructor(
             ffkmp_frame_free(nativeFrame)
         } else {
             ffkmp_frame_unref(nativeFrame)
+        }
+    }
+
+    public actual companion object {
+
+        public actual fun ofVideo(
+            bytes: ByteArray,
+            width: Int,
+            height: Int,
+            pixelFormat: PixelFormat,
+            ptsMicros: Long,
+        ): Frame {
+            require(width > 0 && height > 0) { "Invalid dimensions ${width}x$height" }
+            val fmt = pixelFormatToAv(pixelFormat)
+            if (fmt < 0) throw FFmpegException(FFmpegError.Internal("Unknown pixel format '${pixelFormat.name}'"))
+            val raw = ffkmp_frame_alloc()
+                ?: throw FFmpegException(FFmpegError.Internal("av_frame_alloc returned NULL"))
+            try {
+                ffkmp_frame_set_width(raw, width)
+                ffkmp_frame_set_height(raw, height)
+                ffkmp_frame_set_format(raw, fmt)
+                check0(ffkmp_frame_get_buffer(raw, 0), "av_frame_get_buffer (video)")
+                bytes.usePinned { pinned ->
+                    check0(
+                        ffkmp_frame_fill_video(raw, pinned.addressOf(0).reinterpret(), bytes.size),
+                        "frame_fill_video (need packed ${pixelFormat.name} planes for ${width}x$height)",
+                    )
+                }
+                ffkmp_frame_set_pts(raw, ptsMicros)
+            } catch (t: Throwable) {
+                ffkmp_frame_free(raw)
+                throw t
+            }
+            return Frame(raw, ownsPointer = true, streamIndex = -1, streamType = MediaType.Video, streamTimeBase = Rational.Tb_us)
+        }
+
+        public actual fun ofAudio(
+            bytes: ByteArray,
+            sampleCount: Int,
+            sampleRate: Int,
+            channels: Int,
+            sampleFormat: SampleFormat,
+            ptsMicros: Long,
+        ): Frame {
+            require(sampleCount > 0) { "sampleCount must be positive" }
+            require(sampleRate > 0) { "sampleRate must be positive" }
+            require(channels in 1..8) { "channels must be 1..8 (got $channels)" }
+            val fmt = sampleFormatToAv(sampleFormat)
+            if (fmt < 0) throw FFmpegException(FFmpegError.Internal("Unknown sample format '${sampleFormat.name}'"))
+            val raw = ffkmp_frame_alloc()
+                ?: throw FFmpegException(FFmpegError.Internal("av_frame_alloc returned NULL"))
+            try {
+                ffkmp_frame_set_nb_samples(raw, sampleCount)
+                ffkmp_frame_set_sample_rate(raw, sampleRate)
+                ffkmp_frame_set_format(raw, fmt)
+                ffkmp_frame_set_ch_layout_default(raw, channels)
+                check0(ffkmp_frame_get_buffer(raw, 0), "av_frame_get_buffer (audio)")
+                bytes.usePinned { pinned ->
+                    check0(
+                        ffkmp_frame_fill_audio(raw, pinned.addressOf(0).reinterpret(), bytes.size),
+                        "frame_fill_audio (need $sampleCount ${sampleFormat.name} samples x $channels ch)",
+                    )
+                }
+                ffkmp_frame_set_pts(raw, ptsMicros)
+            } catch (t: Throwable) {
+                ffkmp_frame_free(raw)
+                throw t
+            }
+            return Frame(raw, ownsPointer = true, streamIndex = -1, streamType = MediaType.Audio, streamTimeBase = Rational.Tb_us)
         }
     }
 }

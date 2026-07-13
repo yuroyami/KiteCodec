@@ -90,8 +90,12 @@ nav:
       - Filter graphs: filtering.md
       - Encoding and muxing: encoding-muxing.md
       - Remuxing: remuxing.md
+      - Concurrency: concurrency.md
   - Reference:
       - Recipes: recipes.md
       - Platform support: platforms.md
+      - Gradle plugin: gradle-plugin.md
+      - Licensing: licensing.md
+      - Troubleshooting: troubleshooting.md
       - About and status: about.md
       - API reference ▸: https://yuroyami.github.io/KiteCodec/api/

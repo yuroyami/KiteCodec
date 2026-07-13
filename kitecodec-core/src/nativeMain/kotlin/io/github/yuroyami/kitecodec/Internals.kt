@@ -15,16 +15,16 @@ internal object FFErrors {
     val EOF: Int    by lazy { ffkmp_averror_eof() }
 }
 
-/** Wrap an FFmpeg int return code as a typed [FFmpegError]. */
-internal fun avError(code: Int): FFmpegError.AvError {
+/** Wrap an FFmpeg int return code as a typed [FFmpegError] (semantic classification). */
+internal fun avError(code: Int): FFmpegError {
     val msg = ffkmp_strerror(code)?.toKString() ?: "AVERROR($code)"
-    return FFmpegError.AvError(code = code, message = "$msg (code=$code)")
+    return FFmpegError.fromCode(code, "$msg (code=$code)")
 }
 
 internal fun check0(rc: Int, label: String) {
     if (rc < 0) {
         val err = avError(rc)
-        throw FFmpegException(FFmpegError.AvError(err.code, "$label: ${err.message}"))
+        throw FFmpegException(FFmpegError.fromCode(err.code, "$label: ${err.message}"))
     }
 }
 

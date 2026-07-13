@@ -2,7 +2,7 @@
 
 [![Docs](https://img.shields.io/badge/docs-kitecodec.github.io-1f6feb)](https://yuroyami.github.io/KiteCodec/)
 [![CI](https://img.shields.io/github/actions/workflow/status/yuroyami/KiteCodec/ci.yml?label=CI)](https://github.com/yuroyami/KiteCodec/actions/workflows/ci.yml)
-[![Kotlin](https://img.shields.io/badge/Kotlin-2.3.20-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.4.0-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue)](LICENSE)
 ![status](https://img.shields.io/badge/status-A%2FV%20transcoding%20live-7C5CFF)
 
@@ -13,10 +13,12 @@
 
 KiteCodec gives Kotlin developers a single coroutine-first API for video and audio decode, encode, transcode and filter graphs. It ships Kotlin/Native bindings to [FFmpeg](https://ffmpeg.org)'s libav* libraries (macOS, iOS, Linux, Windows). Android (JNI to bundled FFmpeg or platform `MediaCodec`) and Web (Wasm via `ffmpeg.wasm` / `WebCodecs`) substrates are on the way, each fronting the same Kotlin API.
 
-It is distributed as two artifacts:
+The published artifact is **`kitecodec-core`**, and the licence choice lives in the FFmpeg you link, not in the Kotlin code:
 
-- **`kitecodec-core`**: LGPL build. This is the default and is safe for commercial / App Store distribution. It bundles libav* plus platform hardware encoders (VideoToolbox / MediaCodec / NVENC) for H.264 / H.265, plus libsvtav1 (BSD-3) for royalty-free software AV1 encode.
-- **`kitecodec-gpl`**: GPL add-on. A drop-in replacement for `kitecodec-core` that adds libx264 / libx265 for quality-focused software encode. Use only in GPL-compatible projects (open-source apps, server tools, internal use). It is not for App Store / commercial closed-source.
+- **LGPL FFmpeg flavour** (the default): safe for commercial / App Store distribution. Platform hardware encoders (VideoToolbox / MediaCodec) for H.264 / H.265, plus libsvtav1 (BSD-3) for royalty-free software AV1 encode. Hardware NVENC support is on the roadmap, not in today's builds.
+- **GPL FFmpeg flavour** (opt-in): adds libx264 / libx265 for quality-focused software encode. Build it with the `buildFFmpegFor<Target>Gpl` Gradle tasks and select it with `-Pkitecodec.ffmpeg.license=gpl`. Use only in GPL-compatible projects (open-source apps, server tools, internal use) — not for App Store / commercial closed-source. See [Licensing](https://yuroyami.github.io/KiteCodec/licensing/).
+
+A separate `kitecodec-gpl` artifact that packages the GPL flavour as a drop-in dependency is planned but not yet built or published (see [`kitecodec-gpl/README.md`](kitecodec-gpl/README.md)).
 
 ## What works today
 
@@ -35,7 +37,7 @@ Transcoder.transcode(
     videoFilter = "scale=320:180,eq=brightness=0.1,vignette,format=yuv420p",
     audioSpec   = AudioEncoderSpec(codec = CodecId.Aac),   // null drops audio
     audioFilter = "volume=0.8",                            // optional
-    onProgress  = { frames -> println("encoded $frames frames") },
+    onProgress  = { p -> println("encoded ${p.framesEncoded} frames") },
 )
 ```
 
@@ -78,11 +80,13 @@ That's a real native Kotlin call. It opens the file via libavformat, demuxes **o
 | `MediaSink.addVideoEncoder(spec)` / `addAudioEncoder(spec)` | ✅ | shared EAGAIN-correct encode core, monotonic zero-based pts, per-encoder `options` (`crf`, `preset`) |
 | `MediaSink.addCopyStream(...)`: stream copy | ✅ | `-c copy`: no decode/encode, ts rescale only |
 | `Remuxer.remux(...)`: lossless container rewrite | ✅ | mp4 / mkv / mov in seconds, bit-exact, keyframe-snapped trim |
-| `Transcoder.transcode(...)` | ✅ | one-call A/V pipeline: trim (frame-exact), `audioCopy`, `subtitleCopy`, metadata, rich progress |
+| `Transcoder.transcode(...)` | ✅ | one-call A/V pipeline: trim (frame-exact), `videoCopy`, `audioCopy`, `subtitleCopy`, metadata, rich progress |
+| `Frame.ofVideo(bytes, ...)` / `Frame.ofAudio(bytes, ...)` | ✅ | build frames from raw bytes — images-to-video, generated audio |
+| Typed errors: `FFmpegError.FileNotFound / EncoderNotFound / InvalidData / …` | ✅ | semantic hierarchy over raw `AVERROR_*`, raw code retained |
 | Audio-only transcode (mp3 -> aac etc.) | ✅ | `spec = null` |
 | Trim / clip extraction (`startMicros` / `endMicros`) | ✅ | frame-exact re-encode; keyframe-snapped copy |
 | `MediaSource.extractFrame` + `Frame.encodeImage` | ✅ | thumbnails: seek -> decode -> jpg/png bytes |
-| `Frame.copy()` | ✅ | O(1) owned snapshot to escape the reuse rule |
+| `Frame.copy()` | ✅ | O(1) owned snapshot; flow-emitted frames are already owned (safe to buffer) |
 | Multi-input filter graphs (overlay, amix) | ✅ | `buildVideoMulti` / `buildAudioMulti`, `[in0]...[inN-1]` -> `[out]` |
 | Hardware encode: `h264_videotoolbox` | ✅ | verified on macOS arm64; `allow_sw` option for VMs |
 | Hardware decode / CUDA / full hwframes pipeline | 🟨 | on the way |
@@ -90,7 +94,7 @@ That's a real native Kotlin call. It opens the file via libavformat, demuxes **o
 | Linux x64, Windows (mingw x64) | 🔄 | [CI](.github/workflows/ci.yml) builds + tests + e2e-transcodes on every push |
 | Android arm64/arm32/x64 (Kotlin/Native klib) | 🔄 | CI cross-compiles FFmpeg with the NDK (LGPL profile + MediaCodec) and builds the klib |
 | Android AAR for JVM apps (`androidTarget`) | 🟨 | next milestone: JNI substrate over the same `ffkmp_*` C layer |
-| macOS x64, iOS arm64, iOS sim, Linux arm64 | 🟨 | code written; iOS needs vendored FFmpeg in CI, macosX64 deprecated by Kotlin 2.3.20 |
+| macOS x64, iOS arm64, iOS sim, Linux arm64 | 🟨 | code written; iOS needs vendored FFmpeg in CI, macosX64 is a deprecated Kotlin/Native target (still deprecated in Kotlin 2.4.0) |
 
 ## How it works inside
 
@@ -143,7 +147,9 @@ There are two FFmpeg-sourcing modes:
 
 1. **Dynamic against system FFmpeg** (default, what the macOS arm64 build does today). `FFmpegPaths` finds Homebrew on macOS (override with `kitecodec.macos.homebrew.prefix` in `gradle.properties`) or apt-installed libraries on Linux, then points cinterop at their headers and dylibs. Install FFmpeg with `brew install ffmpeg` or `apt install` the libav* dev packages.
 
-2. **Vendored static** (release). Run `:kitecodec-core:buildFFmpegForMacosArm64` (or `:buildFFmpegForAll`). The Gradle task cross-compiles a minimal FFmpeg from source (pinned codec/filter set, GPL ladder enabled, x264/x265/svtav1/aom/vpx/opus baked in) and drops `.a` libraries under `native-libs/<target>/`. `FFmpegPaths` notices and switches the cinterop to static linking, so the resulting executable carries everything it needs (~25 MB, versus FFmpegKit-Full's ~100 MB).
+2. **Vendored static** (release). Clone the FFmpeg source first (`git clone --depth 1 --branch n8.0 https://github.com/FFmpeg/FFmpeg vendor/ffmpeg`), then run `:kitecodec-core:buildFFmpegForMacosArm64` (or `:buildFFmpegForAll`). The Gradle task cross-compiles a minimal FFmpeg from source (pinned codec/filter set; LGPL by default with svtav1/aom/vpx/opus/mp3lame baked in) and drops `.a` libraries under `native-libs/<license>/<target>/`. `FFmpegPaths` notices and switches the cinterop to static linking, so the resulting executable carries everything it needs (~25 MB, versus FFmpegKit-Full's ~100 MB).
+
+   Need libx264 / libx265? That is the GPL flavour, and it is opt-in: run the `Gpl` task variants (`:kitecodec-core:buildFFmpegForMacosArm64Gpl`, or `:buildFFmpegForAllGpl`) and build with `-Pkitecodec.ffmpeg.license=gpl` so the cinterop links the GPL tree under `native-libs/gpl/<target>/`. This is currently the only route to libx264 in a vendored build. Mind the licence consequences below.
 
 ## Tests
 
@@ -184,4 +190,4 @@ What this is **not** yet: an AAR a plain Android app can `implementation(...)`. 
 
 ## Licence
 
-Apache 2.0 for this code. The FFmpeg you link against carries its own licence: typically LGPL-2.1+ when built without `--enable-gpl`, GPL-2.0+ with it. The [`BuildFFmpegTask.kt`](buildSrc/src/main/kotlin/BuildFFmpegTask.kt) script enables `--enable-gpl` by default for libx264/libx265 access; switch it off if you ship via a GPL-hostile distribution channel (for example the iOS App Store).
+Apache 2.0 for this code. The FFmpeg you link against carries its own licence: LGPL-2.1+ when built without `--enable-gpl`, GPL with it. [`BuildFFmpegTask.kt`](buildSrc/src/main/kotlin/BuildFFmpegTask.kt) builds **LGPL by default** — no `--enable-gpl`, no libx264 / libx265 — which is the App-Store- and closed-source-safe flavour. The GPL flavour is a deliberate opt-in via the `buildFFmpegFor<Target>Gpl` tasks plus `-Pkitecodec.ffmpeg.license=gpl`; because those builds also pass `--enable-version3`, the effective licence of a GPL-flavour binary is **GPL-3.0**. Do not ship it through a GPL-hostile distribution channel (for example the iOS App Store). Full compliance guidance: [Licensing](https://yuroyami.github.io/KiteCodec/licensing/).

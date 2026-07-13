@@ -1,0 +1,24 @@
+KiteCodec
+Copyright 2026 Yuroyami
+
+This product includes software developed as part of the KiteCodec project
+(https://github.com/yuroyami/KiteCodec), licensed under the Apache License,
+Version 2.0.
+
+Third-party components
+----------------------
+KiteCodec links against FFmpeg's libav* libraries (https://ffmpeg.org),
+licensed under the LGPL-2.1-or-later (or the GPL when built with
+--enable-gpl; KiteCodec's GPL build flavour is effectively GPL-3.0, as it
+also sets --enable-version3). FFmpeg is NOT covered by this NOTICE or by
+KiteCodec's Apache-2.0 license.
+
+Depending on the build flavour, the linked FFmpeg additionally bundles
+third-party codec and rendering libraries (SVT-AV1, libvpx, libaom, libopus,
+libmp3lame, libwebp, FreeType, HarfBuzz, FriBidi, libass, x264/x265 in the
+GPL flavour, and others), each under its own license.
+
+The complete component list, per-component licenses, and the distribution
+obligations they carry are documented at:
+https://yuroyami.github.io/KiteCodec/licensing/
+(source: docs/licensing.md in this repository).

@@ -16,8 +16,23 @@ kotlin {
         mingwX64()   to TargetTriple.MingwX64,
     )
 
+    // Targets whose FFmpeg is missing are skipped with a warning by default; releases must not
+    // silently drop targets, so -Pkitecodec.requireAllTargets=true makes it fail instead.
+    val requireAllTargets = providers.gradleProperty("kitecodec.requireAllTargets")
+        .map { it.toBoolean() }.getOrElse(false)
+
     executables.forEach { (target, triple) ->
-        val paths = runCatching { FFmpegPaths.resolve(project, triple) }.getOrNull()
+        val paths = try {
+            FFmpegPaths.resolve(project, triple)
+        } catch (e: GradleException) {
+            if (requireAllTargets) throw e
+            logger.lifecycle(
+                "warning: [KiteCodec] SKIPPING FFmpeg link setup for sample target '${triple.dirName}' " +
+                    "— no FFmpeg build found. ${e.message} " +
+                    "Set -Pkitecodec.requireAllTargets=true to fail the build instead.",
+            )
+            null
+        }
         target.binaries {
             executable {
                 entryPoint = "io.github.yuroyami.kitecodec.sample.main"

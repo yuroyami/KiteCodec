@@ -131,7 +131,7 @@ MediaSource.open("input.mp4").use { src ->
 `process` owns the lifecycle. It closes each input frame after the graph consumes it, and it closes the graph itself when the returned flow terminates. You do not call `close()` on a graph you drove with `process`.
 
 !!! warning "Frame ownership"
-    Output frames follow KiteCodec's standard rule: a frame is valid only until the next one is emitted. If you need to hold on to one past the next emission, take an O(1) owned snapshot with [`Frame.copy`](decoding.md).
+    Frames emitted by `process` are owned by the collector — they stay valid until you `close()` them, so buffering operators are safe. Close each one when done (see [frame ownership](decoding.md#frame-ownership)).
 
 ## Multi-input graphs
 
@@ -212,7 +212,7 @@ graph.feedInput(1, logoFrame) { composited ->
 }
 ```
 
-`feedInput` closes the frame you pass in. The graph keeps its own reference, so you must not touch that frame afterward. Output frames follow the ownership rule: valid until the next callback. Use [`Frame.copy`](decoding.md) to keep one.
+`feedInput` closes the frame you pass in. The graph keeps its own reference, so you must not touch that frame afterward. Output frames handed to the `onOutput` callback are valid **only for the duration of the callback** — use [`Frame.copy`](decoding.md#frame-ownership) to keep one.
 
 ### Flushing
 
@@ -263,7 +263,7 @@ A description referencing a filter that is not in the build fails when the graph
 
 ## Errors
 
-Graph construction and frame pushing surface FFmpeg failures as an `FFmpegException`. A malformed description, an unknown filter, or a format the chain cannot negotiate raises `FFmpegError.AvError` carrying the underlying `AVERROR_*` code; an internal invariant failure raises `FFmpegError.Internal`.
+Graph construction and frame pushing surface FFmpeg failures as an `FFmpegException`. An unknown filter raises `FFmpegError.FilterNotFound`; a malformed description or a format the chain cannot negotiate raises a semantic `FFmpegError` subclass (falling back to `FFmpegError.AvError` with the underlying `AVERROR_*` code); an internal invariant failure raises `FFmpegError.Internal`.
 
 ```kotlin
 import io.github.yuroyami.kitecodec.FFmpegException

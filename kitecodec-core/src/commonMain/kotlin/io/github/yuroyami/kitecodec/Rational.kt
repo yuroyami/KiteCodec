@@ -6,27 +6,59 @@ package io.github.yuroyami.kitecodec
  *
  * Always stored normalized: reduced by gcd, denominator positive. `Rational(2, 4) == Rational(1, 2)`.
  */
-class Rational private constructor(val num: Int, val den: Int) {
+public class Rational private constructor(public val num: Int, public val den: Int) : Comparable<Rational> {
 
-    val asDouble: Double get() = num.toDouble() / den.toDouble()
-    val asFloat: Float   get() = asDouble.toFloat()
+    public val asDouble: Double get() = num.toDouble() / den.toDouble()
+    public val asFloat: Float   get() = asDouble.toFloat()
 
-    /** Reciprocal — `Rational(1, 30).inverse == Rational(30, 1)`. */
-    val inverse: Rational get() = Rational(den, num)
+    /**
+     * Reciprocal — `Rational(1, 30).inverse == Rational(30, 1)`.
+     *
+     * @throws IllegalArgumentException on [Zero] (the reciprocal would need a zero denominator)
+     */
+    public val inverse: Rational
+        get() {
+            require(num != 0) { "Rational.Zero has no reciprocal" }
+            return invoke(den, num)
+        }
 
-    operator fun times(other: Rational): Rational =
+    public operator fun times(other: Rational): Rational =
         of(num.toLong() * other.num, den.toLong() * other.den)
+
+    public operator fun div(other: Rational): Rational {
+        require(other.num != 0) { "Division by Rational.Zero" }
+        return of(num.toLong() * other.den, den.toLong() * other.num)
+    }
+
+    public operator fun plus(other: Rational): Rational =
+        of(num.toLong() * other.den + other.num.toLong() * den, den.toLong() * other.den)
+
+    public operator fun minus(other: Rational): Rational =
+        of(num.toLong() * other.den - other.num.toLong() * den, den.toLong() * other.den)
+
+    public operator fun unaryMinus(): Rational = invoke(-num, den)
 
     /**
      * `scalar * num / den` with a Long intermediate. Multiplies after reducing
      * [scalar] against [den] first, so e.g. `pts * Rational(1, 1_000_000)` stays exact
      * far beyond what naive `scalar * num` would overflow at. For timestamp conversion
-     * between two arbitrary time-bases prefer the native `av_rescale_q` path.
+     * between two arbitrary time-bases prefer the native `av_rescale_q` path (128-bit).
+     *
+     * @throws ArithmeticException when the product overflows Long even after reduction
      */
-    operator fun times(scalar: Long): Long {
+    public operator fun times(scalar: Long): Long {
         val g = gcd(if (scalar < 0) -scalar else scalar, den.toLong())
-        return (scalar / g) * num / (den / g)
+        val reduced = scalar / g
+        val product = reduced * num
+        if (num != 0 && product / num != reduced) {
+            throw ArithmeticException("$scalar * $this overflows Long — use av_rescale_q-backed APIs for timestamp math")
+        }
+        return product / (den / g)
     }
+
+    /** Exact comparison — `Rational(1, 30) < Rational(1, 25)`. */
+    override fun compareTo(other: Rational): Int =
+        (num.toLong() * other.den).compareTo(other.num.toLong() * den)
 
     override fun equals(other: Any?): Boolean =
         other is Rational && num == other.num && den == other.den
@@ -35,13 +67,14 @@ class Rational private constructor(val num: Int, val den: Int) {
 
     override fun toString(): String = if (den == 1) "$num" else "$num/$den"
 
-    companion object {
-        operator fun invoke(num: Int, den: Int): Rational {
-            require(den != 0) { "Rational denominator can't be zero" }
-            val sign = if (den < 0) -1 else 1
-            val g = gcd(num.toLong(), den.toLong()).toInt().coerceAtLeast(1)
-            return Rational(sign * num / g, sign * den / g)
-        }
+    public companion object {
+        /**
+         * Build a normalized rational. All math happens in Long, so `Int.MIN_VALUE`
+         * numerators/denominators normalize correctly.
+         *
+         * @throws IllegalArgumentException when [den] is zero
+         */
+        public operator fun invoke(num: Int, den: Int): Rational = of(num.toLong(), den.toLong())
 
         /** Build from a Long-valued fraction, scaling down (with precision loss) only if it can't fit Int. */
         internal fun of(num: Long, den: Long): Rational {
@@ -63,13 +96,13 @@ class Rational private constructor(val num: Int, val den: Int) {
             return if (x == 0L) 1L else x
         }
 
-        val Zero    = Rational(0, 1)
-        val Tb_us   = Rational(1, 1_000_000)
-        val Fps24   = Rational(24, 1)
-        val Fps25   = Rational(25, 1)
-        val Fps30   = Rational(30, 1)
-        val Fps60   = Rational(60, 1)
-        val Fps2997 = Rational(30_000, 1001)
-        val Fps2398 = Rational(24_000, 1001)
+        public val Zero    : Rational = Rational(0, 1)
+        public val Tb_us   : Rational = Rational(1, 1_000_000)
+        public val Fps24   : Rational = Rational(24, 1)
+        public val Fps25   : Rational = Rational(25, 1)
+        public val Fps30   : Rational = Rational(30, 1)
+        public val Fps60   : Rational = Rational(60, 1)
+        public val Fps2997 : Rational = Rational(30_000, 1001)
+        public val Fps2398 : Rational = Rational(24_000, 1001)
     }
 }

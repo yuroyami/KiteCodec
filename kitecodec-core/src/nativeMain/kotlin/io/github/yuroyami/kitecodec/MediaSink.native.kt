@@ -31,8 +31,9 @@ import ffmpeg.ffkmp_packet_set_stream_index
 import ffmpeg.ffkmp_packet_unref
 import ffmpeg.AVFormatContext
 import ffmpeg.AVStream
-import ffmpeg.ffkmp_fmt_alloc_output
+import ffmpeg.ffkmp_fmt_alloc_output2
 import ffmpeg.ffkmp_fmt_free_output
+import ffmpeg.ffkmp_fmt_set_opt
 import ffmpeg.ffkmp_fmt_io_open
 import ffmpeg.ffkmp_fmt_new_stream
 import ffmpeg.ffkmp_fmt_set_metadata
@@ -45,6 +46,8 @@ import ffmpeg.ffkmp_stream_codecpar
 import ffmpeg.ffkmp_stream_index
 import ffmpeg.ffkmp_stream_set_time_base
 import ffmpeg.ffkmp_stream_time_base
+import kotlinx.atomicfu.locks.SynchronizedObject
+import kotlinx.atomicfu.locks.synchronized
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.CPointerVar
 import kotlinx.cinterop.IntVar
@@ -55,16 +58,43 @@ import kotlinx.cinterop.ptr
 import kotlinx.cinterop.value
 import kotlinx.coroutines.flow.Flow
 
-actual class MediaSink internal constructor(
+public actual class MediaSink internal constructor(
     private val ctx: CPointer<AVFormatContext>,
     private val outputPath: String,
 ) : AutoCloseable {
 
+    private enum class HeaderState { NotWritten, Written, Failed }
+
     private val encoderCores = mutableListOf<EncoderCore>()
-    private var headerWritten = false
+    private var headerState = HeaderState.NotWritten
     private var closed = false
 
-    actual fun addVideoEncoder(spec: VideoEncoderSpec): VideoEncoder {
+    /**
+     * Reentrant lock serializing everything that touches the shared muxer state: header
+     * write, `av_interleaved_write_frame`, and the shared timeline base. Encoding itself
+     * (separate AVCodecContexts) stays lock-free, so a video and an audio encoder driven
+     * from concurrent coroutines only serialize at the muxer boundary — which libavformat
+     * requires anyway.
+     */
+    private val muxLock = SynchronizedObject()
+
+    /**
+     * One timeline base for the WHOLE output, claimed by the first stream that produces a
+     * timestamp. Rebasing every stream by its own first ts would erase the relative offset
+     * between streams (video's first packet after a seek is the keyframe, audio's is later)
+     * and desync A/V by up to a GOP.
+     */
+    private var sharedBaseMicros = Long.MIN_VALUE
+
+    /** First caller wins; everyone rebases against the same origin. */
+    internal fun claimBaseMicros(candidateMicros: Long): Long = synchronized(muxLock) {
+        if (sharedBaseMicros == Long.MIN_VALUE) sharedBaseMicros = candidateMicros
+        sharedBaseMicros
+    }
+
+    private val headerWritten: Boolean get() = synchronized(muxLock) { headerState == HeaderState.Written }
+
+    public actual fun addVideoEncoder(spec: VideoEncoderSpec): VideoEncoder {
         val codecCtx = newEncoderContext(spec.codec.name) { codec, cc ->
             ffkmp_codecctx_set_video(
                 cc,
@@ -89,7 +119,7 @@ actual class MediaSink internal constructor(
         return VideoEncoder(core)
     }
 
-    actual fun addCopyStream(source: MediaSource, stream: StreamInfo): CopyStream {
+    public actual fun addCopyStream(source: MediaSource, stream: StreamInfo): CopyStream {
         check(!headerWritten) { "Cannot add streams after the muxer has started writing." }
         check(!closed) { "MediaSink is closed" }
 
@@ -107,7 +137,7 @@ actual class MediaSink internal constructor(
         return CopyStream(sink = this, stream = outStream, sourceTimeBase = stream.timeBase, sourceIndex = stream.index)
     }
 
-    actual fun addAudioEncoder(spec: AudioEncoderSpec): AudioEncoder {
+    public actual fun addAudioEncoder(spec: AudioEncoderSpec): AudioEncoder {
         var negotiatedFormat = spec.sampleFormat
         val codecCtx = newEncoderContext(spec.codec.name) { codec, cc ->
             if (negotiatedFormat == SampleFormat.None) {
@@ -189,7 +219,7 @@ actual class MediaSink internal constructor(
         }
     }
 
-    actual fun setMetadata(metadata: Map<String, String>) {
+    public actual fun setMetadata(metadata: Map<String, String>) {
         check(!headerWritten) { "Metadata must be set before the muxer writes its header." }
         check(!closed) { "MediaSink is closed" }
         metadata.forEach { (k, v) ->
@@ -197,48 +227,73 @@ actual class MediaSink internal constructor(
         }
     }
 
-    internal fun ensureHeaderWritten() {
-        if (headerWritten) return
-        headerWritten = true
+    internal fun ensureHeaderWritten(): Unit = synchronized(muxLock) {
+        when (headerState) {
+            HeaderState.Written -> return
+            HeaderState.Failed -> throw FFmpegException(
+                FFmpegError.Internal("The muxer header failed to write earlier — this sink is unusable")
+            )
+            HeaderState.NotWritten -> {}
+        }
+        // Flip to Failed BEFORE attempting: if avio_open/write_header throws, close() must
+        // NOT call av_write_trailer on a context whose header never landed (undefined
+        // behavior in FFmpeg). Only a successful write_header reaches Written.
+        headerState = HeaderState.Failed
         check0(ffkmp_fmt_io_open(ctx, outputPath), "avio_open")
         check0(ffkmp_fmt_write_header(ctx), "avformat_write_header")
+        headerState = HeaderState.Written
     }
 
-    internal fun writePacket(packet: CPointer<AVPacket>) {
+    internal fun writePacket(packet: CPointer<AVPacket>): Unit = synchronized(muxLock) {
         ensureHeaderWritten()
         val rc = ffkmp_fmt_write_frame(ctx, packet)
         if (rc < 0) throw FFmpegException(avError(rc))
     }
 
     actual override fun close() {
-        if (closed) return
-        closed = true
-        var trailerRc = 0
-        try {
-            encoderCores.forEach { runCatching { it.close() } }
-            encoderCores.clear()
-            if (headerWritten) {
-                trailerRc = ffkmp_fmt_write_trailer(ctx)
+        val trailerRc = synchronized(muxLock) {
+            if (closed) return
+            closed = true
+            var rc = 0
+            try {
+                encoderCores.forEach { runCatching { it.close() } }
+                encoderCores.clear()
+                if (headerState == HeaderState.Written) {
+                    rc = ffkmp_fmt_write_trailer(ctx)
+                }
+            } finally {
+                memScoped {
+                    val pp = alloc<CPointerVar<AVFormatContext>>().also { it.value = ctx }
+                    ffkmp_fmt_free_output(pp.ptr)
+                }
             }
-        } finally {
-            memScoped {
-                val pp = alloc<CPointerVar<AVFormatContext>>().also { it.value = ctx }
-                ffkmp_fmt_free_output(pp.ptr)
-            }
+            rc
         }
         // A failed trailer means the file on disk is broken (e.g. mp4 moov never written) —
         // surfacing that beats handing the caller a corrupt output with a green checkmark.
         if (trailerRc < 0) throw FFmpegException(avError(trailerRc))
     }
 
-    actual companion object {
-        actual fun open(path: String): MediaSink {
+    public actual companion object {
+        public actual fun open(path: String, format: String?, options: Map<String, String>): MediaSink {
             val arena = kotlinx.cinterop.Arena()
             val ctxVar = arena.allocPointerTo<AVFormatContext>()
-            val rc = ffkmp_fmt_alloc_output(ctxVar.ptr, path)
+            val rc = ffkmp_fmt_alloc_output2(ctxVar.ptr, path, format)
             if (rc < 0) { arena.clear(); throw FFmpegException(avError(rc)) }
-            val ctx = ctxVar.value!!
+            val ctx = ctxVar.value
             arena.clear()
+            if (ctx == null) throw FFmpegException(FFmpegError.Internal("alloc_output returned NULL"))
+            try {
+                options.forEach { (k, v) ->
+                    check0(ffkmp_fmt_set_opt(ctx, k, v), "av_opt_set (muxer option '$k')")
+                }
+            } catch (t: Throwable) {
+                memScoped {
+                    val pp = alloc<CPointerVar<AVFormatContext>>().also { it.value = ctx }
+                    ffkmp_fmt_free_output(pp.ptr)
+                }
+                throw t
+            }
             return MediaSink(ctx, path)
         }
     }
@@ -287,9 +342,11 @@ internal class EncoderCore(
     /**
      * Rescale the frame's pts from its own time-base onto the encoder's and rebase the
      * timeline to start at zero (trimmed inputs would otherwise produce a file whose first
-     * frame sits at the trim offset). Frames with no pts fall back to a synthetic timeline
-     * (frame count for video, accumulated samples for audio). Output is forced strictly
-     * monotonic — both libx264 and muxers reject non-increasing pts.
+     * frame sits at the trim offset). The base offset is SHARED across the sink's streams
+     * ([MediaSink.claimBaseMicros]) so the relative A/V offset survives the rebase. Frames
+     * with no pts fall back to a synthetic timeline (frame count for video, accumulated
+     * samples for audio). Output is forced strictly monotonic — both libx264 and muxers
+     * reject non-increasing pts.
      */
     private fun restampPts(frame: Frame) {
         val raw = ffkmp_frame_pts(frame.nativeFrame)
@@ -299,7 +356,11 @@ internal class EncoderCore(
             else lastPts + if (isAudio) ffkmp_frame_nb_samples(frame.nativeFrame).toLong().coerceAtLeast(1) else 1
         } else {
             val rescaled = ffkmp_rescale_q(raw, sourceTb.num, sourceTb.den, codecTimeBase.num, codecTimeBase.den)
-            if (basePts == Long.MIN_VALUE) basePts = rescaled
+            if (basePts == Long.MIN_VALUE) {
+                val rawMicros = ffkmp_rescale_q(raw, sourceTb.num, sourceTb.den, 1, 1_000_000)
+                val baseMicros = sink.claimBaseMicros(rawMicros)
+                basePts = ffkmp_rescale_q(baseMicros, 1, 1_000_000, codecTimeBase.num, codecTimeBase.den)
+            }
             rescaled - basePts
         }
         if (lastPts != Long.MIN_VALUE && pts <= lastPts) pts = lastPts + 1
@@ -375,7 +436,7 @@ internal inline fun <T> withPacket(block: (CPointer<AVPacket>) -> T): T {
     }
 }
 
-actual class CopyStream internal constructor(
+public actual class CopyStream internal constructor(
     private val sink: MediaSink,
     private val stream: CPointer<AVStream>,
     private val sourceTimeBase: Rational,
@@ -395,15 +456,20 @@ actual class CopyStream internal constructor(
         sink.ensureHeaderWritten()
         ffkmp_packet_set_stream_index(packet, streamIndex)
 
-        // Rebase on the first packet's dts (it's ≤ pts, keeping both non-negative after shift).
+        // Rebase on the sink's SHARED origin (first timestamp any stream produced) so the
+        // relative offset between copied and encoded streams survives. Claim with dts when
+        // available (it's ≤ pts, keeping both non-negative after shift for the first stream).
         val pts = ffkmp_packet_pts(packet)
         val dts = ffkmp_packet_dts(packet)
         if (baseTs == FrameInfo.NOPTS) {
-            baseTs = when {
+            val ref = when {
                 dts != FrameInfo.NOPTS -> dts
                 pts != FrameInfo.NOPTS -> pts
                 else -> 0
             }
+            val refMicros = ffkmp_rescale_q(ref, sourceTimeBase.num, sourceTimeBase.den, 1, 1_000_000)
+            val baseMicros = sink.claimBaseMicros(refMicros)
+            baseTs = ffkmp_rescale_q(baseMicros, 1, 1_000_000, sourceTimeBase.num, sourceTimeBase.den)
         }
         if (pts != FrameInfo.NOPTS) ffkmp_packet_set_pts(packet, pts - baseTs)
         if (dts != FrameInfo.NOPTS) ffkmp_packet_set_dts(packet, dts - baseTs)
@@ -421,11 +487,11 @@ actual class CopyStream internal constructor(
     }
 }
 
-actual class VideoEncoder internal constructor(
+public actual class VideoEncoder internal constructor(
     internal val core: EncoderCore,
 ) : AutoCloseable {
 
-    actual suspend fun drive(input: Flow<Frame>, onProgress: ((framesEncoded: Long) -> Unit)?, progressEveryNFrames: Int) {
+    public actual suspend fun drive(input: Flow<Frame>, onProgress: ((framesEncoded: Long) -> Unit)?, progressEveryNFrames: Int) {
         core.ensureHeaderWritten()
         withPacket { packet ->
             input.collect { frame ->
@@ -439,18 +505,18 @@ actual class VideoEncoder internal constructor(
         }
     }
 
-    actual override fun close() = core.close()
+    actual override fun close(): Unit = core.close()
 }
 
-actual class AudioEncoder internal constructor(
+public actual class AudioEncoder internal constructor(
     internal val core: EncoderCore,
-    actual val frameSize: Int,
-    actual val sampleFormat: SampleFormat,
-    actual val sampleRate: Int,
-    actual val channels: Int,
+    public actual val frameSize: Int,
+    public actual val sampleFormat: SampleFormat,
+    public actual val sampleRate: Int,
+    public actual val channels: Int,
 ) : AutoCloseable {
 
-    actual suspend fun drive(input: Flow<Frame>) {
+    public actual suspend fun drive(input: Flow<Frame>) {
         core.ensureHeaderWritten()
         withPacket { packet ->
             input.collect { frame -> core.encode(packet, frame) }
@@ -458,5 +524,5 @@ actual class AudioEncoder internal constructor(
         }
     }
 
-    actual override fun close() = core.close()
+    actual override fun close(): Unit = core.close()
 }

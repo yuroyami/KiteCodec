@@ -25,9 +25,10 @@ import kotlinx.cinterop.ptr
 import kotlinx.cinterop.set
 import kotlinx.cinterop.value
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
 
-actual class FilterGraph internal constructor(
+public actual class FilterGraph internal constructor(
     private val graph: CPointer<AVFilterGraph>,
     private val srcs: List<CPointer<AVFilterContext>>,
     private val sink: CPointer<AVFilterContext>,
@@ -36,9 +37,9 @@ actual class FilterGraph internal constructor(
 
     private val closed = atomic(false)
 
-    actual val inputCount: Int get() = srcs.size
+    public actual val inputCount: Int get() = srcs.size
 
-    actual val outputTimeBase: Rational = memScoped {
+    public actual val outputTimeBase: Rational = memScoped {
         val n = alloc<IntVar>(); val d = alloc<IntVar>()
         ffkmp_buffersink_time_base(sink, n.ptr, d.ptr)
         Rational(n.value, d.value.takeIf { it != 0 } ?: 1)
@@ -53,26 +54,41 @@ actual class FilterGraph internal constructor(
                 .also { outFrameHolder = it }
     }
 
-    actual fun setOutputFrameSize(samples: Int) {
+    public actual fun setOutputFrameSize(samples: Int) {
         check(!closed.value) { "FilterGraph is closed" }
         require(samples > 0) { "frame size must be positive" }
         ffkmp_buffersink_set_frame_size(sink, samples.toUInt())
     }
 
-    actual fun feedInput(index: Int, frame: Frame, onOutput: (Frame) -> Unit) {
+    public actual fun feedInput(index: Int, frame: Frame, onOutput: (Frame) -> Unit) {
+        check(!closed.value) { "FilterGraph is closed" }
         val src = srcs.getOrNull(index)
             ?: throw IllegalArgumentException("Input $index out of range (graph has ${srcs.size} inputs)")
-        val sendRc = ffkmp_graph_send(src, frame.nativeFrame)
-        frame.close()
-        if (sendRc < 0 && sendRc != FFErrors.EAGAIN) throw FFmpegException(avError(sendRc))
+        try {
+            // EAGAIN from buffersrc means the frame was NOT consumed — drain the sink to
+            // make room and retry the SAME frame (dropping it would silently lose frames).
+            while (true) {
+                val sendRc = ffkmp_graph_send(src, frame.nativeFrame)
+                if (sendRc >= 0) break
+                if (sendRc == FFErrors.EAGAIN) { drainTo(onOutput); continue }
+                throw FFmpegException(avError(sendRc))
+            }
+        } finally {
+            frame.close()
+        }
         drainTo(onOutput)
     }
 
-    actual fun flushInput(index: Int, onOutput: (Frame) -> Unit) {
+    public actual fun flushInput(index: Int, onOutput: (Frame) -> Unit) {
+        check(!closed.value) { "FilterGraph is closed" }
         val src = srcs.getOrNull(index)
             ?: throw IllegalArgumentException("Input $index out of range (graph has ${srcs.size} inputs)")
-        val rc = ffkmp_graph_send(src, null)
-        if (rc < 0 && rc != FFErrors.EOF) throw FFmpegException(avError(rc))
+        while (true) {
+            val rc = ffkmp_graph_send(src, null)
+            if (rc >= 0 || rc == FFErrors.EOF) break
+            if (rc == FFErrors.EAGAIN) { drainTo(onOutput); continue }
+            throw FFmpegException(avError(rc))
+        }
         drainTo(onOutput)
     }
 
@@ -94,7 +110,7 @@ actual class FilterGraph internal constructor(
         }
     }
 
-    actual fun process(input: Flow<Frame>): Flow<Frame> = flow {
+    public actual fun process(input: Flow<Frame>): Flow<Frame> = flow {
         check(!closed.value) { "FilterGraph is closed" }
         check(srcs.size == 1) { "process() drives single-input graphs; use feedInput for multi-input" }
         val eagain = FFErrors.EAGAIN
@@ -102,27 +118,42 @@ actual class FilterGraph internal constructor(
         val src = srcs[0]
         try {
             val landing = outFrame()
-            input.collect { srcFrame ->
-                val sendRc = ffkmp_graph_send(src, srcFrame.nativeFrame)
-                srcFrame.close()  // buffersrc copied / reffed the buffer; we can release our hold.
-                if (sendRc < 0 && sendRc != eagain) throw FFmpegException(avError(sendRc))
-
+            // Emissions are OWNED clones (O(1) refcount bumps) — collectors may buffer/hold
+            // frames and must close each one; the reusable landing frame never escapes.
+            suspend fun FlowCollector<Frame>.drainEmit() {
                 while (true) {
                     val recRc = ffkmp_graph_receive(sink, landing.nativeFrame)
                     if (recRc == eagain || recRc == eof) break
                     if (recRc < 0) throw FFmpegException(avError(recRc))
-                    emit(FrameOps.wrap(landing.nativeFrame, -1, inputType, outputTimeBase))
+                    val out = FrameOps.wrap(landing.nativeFrame, -1, inputType, outputTimeBase)
+                    try {
+                        emit(out.copy())
+                    } finally {
+                        out.close()
+                    }
                 }
             }
-            // Flush.
-            val flushRc = ffkmp_graph_send(src, null)
-            if (flushRc < 0 && flushRc != eof) throw FFmpegException(avError(flushRc))
-            while (true) {
-                val rc = ffkmp_graph_receive(sink, landing.nativeFrame)
-                if (rc == eagain || rc == eof) break
-                if (rc < 0) throw FFmpegException(avError(rc))
-                emit(FrameOps.wrap(landing.nativeFrame, -1, inputType, outputTimeBase))
+            input.collect { srcFrame ->
+                try {
+                    while (true) {
+                        val sendRc = ffkmp_graph_send(src, srcFrame.nativeFrame)
+                        if (sendRc >= 0) break
+                        if (sendRc == eagain) { drainEmit(); continue }  // not consumed — retry
+                        throw FFmpegException(avError(sendRc))
+                    }
+                } finally {
+                    srcFrame.close()  // buffersrc copied / reffed the buffer; release our hold.
+                }
+                drainEmit()
             }
+            // Flush.
+            while (true) {
+                val flushRc = ffkmp_graph_send(src, null)
+                if (flushRc >= 0 || flushRc == eof) break
+                if (flushRc == eagain) { drainEmit(); continue }
+                throw FFmpegException(avError(flushRc))
+            }
+            drainEmit()
         } finally {
             close()  // The graph is spent after EOF — release it with the flow.
         }
@@ -139,8 +170,8 @@ actual class FilterGraph internal constructor(
         } finally { a.clear() }
     }
 
-    actual companion object {
-        actual fun buildVideo(
+    public actual companion object {
+        public actual fun buildVideo(
             description: String,
             width: Int,
             height: Int,
@@ -171,7 +202,7 @@ actual class FilterGraph internal constructor(
             return FilterGraph(graph, listOf(src), sink, MediaType.Video)
         }
 
-        actual fun buildAudio(
+        public actual fun buildAudio(
             description: String,
             sampleRate: Int,
             sampleFormat: SampleFormat,
@@ -203,7 +234,7 @@ actual class FilterGraph internal constructor(
             return FilterGraph(graph, listOf(src), sink, MediaType.Audio)
         }
 
-        actual fun buildVideoMulti(description: String, inputs: List<VideoInput>): FilterGraph {
+        public actual fun buildVideoMulti(description: String, inputs: List<VideoInput>): FilterGraph {
             require(inputs.isNotEmpty()) { "Need at least one input" }
             memScoped {
                 val n = inputs.size
@@ -235,7 +266,7 @@ actual class FilterGraph internal constructor(
             }
         }
 
-        actual fun buildAudioMulti(
+        public actual fun buildAudioMulti(
             description: String,
             inputs: List<AudioInput>,
             outputSampleRate: Int,
