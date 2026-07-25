@@ -10,7 +10,7 @@ import io.github.yuroyami.kitecodec.PixelFormat
 import io.github.yuroyami.kitecodec.Rational
 
 val graph = FilterGraph.buildVideo(
-    description = "scale=1280:720,eq=brightness=0.1,vignette,format=yuv420p",
+    description = "scale=1280:720,hue=b=0.1,vignette,format=yuv420p",
     width = 1920,
     height = 1080,
     pixelFormat = PixelFormat.Yuv420p,
@@ -37,7 +37,7 @@ val graph = FilterGraph.buildVideo(
 
 | Parameter | Meaning |
 |---|---|
-| `description` | The filter chain, e.g. `scale=1280:720,eq=brightness=0.1,format=yuv420p`. |
+| `description` | The filter chain, e.g. `scale=1280:720,hue=b=0.1,format=yuv420p`. Filters must exist in the FFmpeg you linked — `eq` and `boxblur` are GPL-only in FFmpeg itself, so they are absent from KiteCodec's default LGPL profile; `hue` (which has a brightness parameter `b`), `colorlevels` and `curves` are the LGPL equivalents. `FFmpeg.hasFilter("eq")` tells you before you build a graph. |
 | `width`, `height` | Dimensions of the frames you feed in. |
 | `pixelFormat` | Input pixel format, typically the decoder's output (see [`PixelFormat`](https://yuroyami.github.io/KiteCodec/api/)). |
 | `timeBase` | The pts time-base of input frames. |

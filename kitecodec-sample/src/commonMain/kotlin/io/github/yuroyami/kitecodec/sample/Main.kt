@@ -106,10 +106,47 @@ private fun printInfo() {
     println("  libavutil ${v.avutil}  libavcodec ${v.avcodec}  libavformat ${v.avformat}")
     println("  libavfilter ${v.avfilter}  libswscale ${v.swscale}  libswresample ${v.swresample}")
     println()
-    val encoders = listOf("libx264", "libx265", "aac", "libopus", "h264_videotoolbox")
+    val encoders = listOf("libx264", "libx265", "libsvtav1", "mpeg4", "mjpeg", "aac", "libopus", "flac", "h264_videotoolbox")
     val filters  = listOf("scale", "eq", "overlay", "amix", "drawtext", "vignette", "atempo")
     println("encoders: " + encoders.joinToString { "$it=${if (FFmpeg.hasEncoder(it)) "✓" else "✗"}" })
     println("filters:  " + filters.joinToString  { "$it=${if (FFmpeg.hasFilter(it))  "✓" else "✗"}" })
+    println()
+    // Machine-readable, for scripts/e2e.sh: which encoder `transcode` will actually pick against
+    // THIS FFmpeg, and the codec_name ffprobe will then report for the output stream. The e2e
+    // suite must assert against the linked build, not against whatever CI happened to install.
+    val chosen = pickVideoEncoder(preferHardware = false)
+    println("KITECODEC_VIDEO_ENCODER=${chosen.name}")
+    println("KITECODEC_VIDEO_CODEC=${outputCodecNameFor(chosen)}")
+}
+
+/**
+ * The video encoder to use, chosen by PROBING the linked FFmpeg instead of assuming one.
+ *
+ * `libx264` exists only in a GPL build. KiteCodec's default vendored profile is LGPL, where the
+ * dependency-free baseline is `mpeg4`. Hard-coding libx264 made this sample — and the e2e suite
+ * that drives it — silently require a GPL FFmpeg, which is exactly the flavour the project does
+ * NOT ship by default.
+ */
+internal fun pickVideoEncoder(preferHardware: Boolean): CodecId {
+    if (preferHardware) {
+        val hw = listOf(CodecId.H264VideoToolbox, CodecId.H264MediaCodec)
+            .firstOrNull { FFmpeg.hasEncoder(it.name) }
+        return hw ?: error(
+            "Hardware encode requested (-vt) but the linked FFmpeg has neither " +
+                "h264_videotoolbox nor h264_mediacodec. Drop -vt for a software encoder.",
+        )
+    }
+    val candidates = listOf(CodecId.Libx264, CodecId("mpeg4"), CodecId("libsvtav1"), CodecId.Mjpeg)
+    return candidates.firstOrNull { FFmpeg.hasEncoder(it.name) }
+        ?: error("The linked FFmpeg has no usable video encoder (tried ${candidates.joinToString { it.name }}).")
+}
+
+/** The `codec_name` ffprobe reports for a stream written by [encoder]. */
+internal fun outputCodecNameFor(encoder: CodecId): String = when (encoder.name) {
+    "libx264", "h264_videotoolbox", "h264_mediacodec" -> "h264"
+    "libx265", "hevc_videotoolbox", "hevc_mediacodec" -> "hevc"
+    "libsvtav1" -> "av1"
+    else -> encoder.name
 }
 
 private fun probe(path: String) {
@@ -117,6 +154,7 @@ private fun probe(path: String) {
         println("File:        $path")
         println("Format:      ${src.formatName}")
         println("Duration:    ${src.durationMicros?.let { formatSeconds(it / 1_000_000.0) } ?: "?"}")
+        println("Start time:  ${formatSeconds(src.startTimeMicros / 1_000_000.0)} (raw stream pts include this offset)")
         println("Streams:")
         src.streams.forEach { s ->
             val tag = when (s.type) {
@@ -154,15 +192,16 @@ private fun transcode(
         val spec = if (videoInfo != null) {
             // If the filter contains `scale=W:H`, the encoder must match the filter's output size.
             val scaleMatch = Regex("""scale=(\d+):(\d+)""").find(filter)
+            val codec = pickVideoEncoder(preferHardware = useVideoToolbox)
             VideoEncoderSpec(
-                codec = if (useVideoToolbox) CodecId.H264VideoToolbox else CodecId.Libx264,
+                codec = codec,
                 width = scaleMatch?.groupValues?.get(1)?.toIntOrNull() ?: videoInfo.width,
                 height = scaleMatch?.groupValues?.get(2)?.toIntOrNull() ?: videoInfo.height,
                 frameRate = frameRate ?: io.github.yuroyami.kitecodec.Rational(30, 1),
                 bitrateBps = 1_500_000,
                 // allow_sw lets videotoolbox fall back to its software path on machines/VMs
                 // without hardware encode sessions (CI runners).
-                options = if (useVideoToolbox) mapOf("allow_sw" to "1") else emptyMap(),
+                options = if (codec.name.endsWith("_videotoolbox")) mapOf("allow_sw" to "1") else emptyMap(),
             )
         } else {
             println("  (input has no video — audio-only transcode, filter ignored)")
@@ -179,7 +218,9 @@ private fun transcode(
             input = input,
             output = output,
             spec = spec,
-            videoFilter = if (spec != null) filter else null,
+            // An empty filter argument means "no graph at all" — decoder frames go straight to the
+            // encoder. Passing "" through would hand libavfilter an unparseable description.
+            videoFilter = if (spec != null) filter.takeIf { it.isNotBlank() } else null,
             audioSpec = if (audio == AudioChoice.Encode) AudioEncoderSpec(codec = CodecId.Aac) else null,
             audioCopy = audio == AudioChoice.Copy,
             subtitleCopy = subtitles,

@@ -127,6 +127,9 @@ case "${triple}" in
       libSvtAv1Enc.a libvpx.a libaom.a libopus.a libmp3lame.a
       libwebpmux.a libwebp.a libsharpyuv.a
       libass.a libharfbuzz.a libfreetype.a libfribidi.a
+      # Transitive deps of the text stack, and they must come after it: freetype's
+      # embedded-PNG bitmaps call into libpng, harfbuzz's shaping backend into graphite2.
+      libpng16.a libgraphite2.a
     )
     if [ "${license}" = "gpl" ]; then
       static_libs+=(libx264.a libx265.a)
@@ -182,17 +185,21 @@ case "${triple}" in
     {
       printf '%s\n' -lSvtAv1Enc -lvpx -laom -lopus -lmp3lame \
         -lwebpmux -lwebp -lsharpyuv \
-        -lass -lharfbuzz -lfreetype -lfribidi
+        -lass -lharfbuzz -lfreetype -lfribidi \
+        -lpng16 -lgraphite2
       if [ "${license}" = "gpl" ]; then
         printf '%s\n' -lx264 -lx265
       fi
       printf '%s\n' -lz -lbz2
       case "${triple}" in
         macos-*)
-          printf '%s\n' -liconv
-          if [ "${license}" = "gpl" ]; then
-            printf '%s\n' -lc++
-          fi
+          # harfbuzz's CoreText backend and libass' CoreGraphics rasterisation are compiled into
+          # the static archives, and the videotoolbox encoders need the media frameworks. A shared
+          # build resolved these through its own dylib dependencies; a static one must name them.
+          printf '%s\n' -liconv -lc++ \
+            -framework CoreGraphics -framework CoreText -framework CoreFoundation \
+            -framework CoreMedia -framework CoreVideo -framework VideoToolbox \
+            -framework AudioToolbox
           ;;
         linux-*)
           if [ "${license}" = "gpl" ]; then

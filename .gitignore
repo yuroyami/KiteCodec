@@ -10,6 +10,8 @@ captures/
 *.hprof
 **/.kotlin-build-tools/
 
-# Source tarballs / submodule build artefacts
-vendor/ffmpeg/build/
+# Source tarballs / submodule build artefacts.
+# The whole vendor/ tree: the docs tell you to `git clone ... vendor/ffmpeg`, which is ~10k
+# files of someone else's source — it must never show up in `git status` as untracked noise.
+vendor/
 native-libs/

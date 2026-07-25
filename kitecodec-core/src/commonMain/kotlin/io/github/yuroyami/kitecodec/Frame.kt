@@ -3,14 +3,14 @@ package io.github.yuroyami.kitecodec
 /**
  * One decoded frame (video or audio). Wraps an `AVFrame*` — close to release the buffers.
  *
- * **Ownership rule:** frames emitted by the public `Flow` APIs ([MediaSource.decodedFrames],
- * [MediaSource.decodeStreams], [FilterGraph.process]) are OWNED by the collector — each one
- * stays valid until you [close] it, so buffering operators (`buffer()`, `toList()`) are safe.
- * Close every collected frame or its native buffers leak. Frames handed to callback-style
- * APIs ([FilterGraph.feedInput]'s `onOutput`) are valid only for the duration of the callback;
- * [copy] to keep one.
+ * **Ownership rule.** Frames emitted by the public `Flow` APIs ([MediaSource.decodedFrames],
+ * [MediaSource.decodeStreams], [FilterGraph.process]) are owned by the collector. Each stays
+ * valid until you [close] it, so buffering operators such as `buffer()` and `toList()` are
+ * safe, and every collected frame must be closed or its native buffers leak. Frames handed to
+ * a callback ([FilterGraph.feedInput]'s `onOutput`) are valid only for that call; [copy] takes
+ * an owned snapshot of one.
  *
- * The native pointer is intentionally not exposed in commonMain; pipeline operators
+ * The native pointer is intentionally not exposed in commonMain. Pipeline operators
  * ([FilterGraph], encoders) accept Frames directly and pull the pointer through `internal`
  * accessors on the native side.
  */
@@ -25,16 +25,20 @@ public expect class Frame : AutoCloseable {
      * (Y plane, then U, then V); for fltp stereo it returns the left plane followed by
      * the right. [Frame.ofVideo] / [Frame.ofAudio] accept exactly this layout back.
      *
-     * @throws FFmpegException if the copy fails; returns an empty array only for frames
-     *         that genuinely carry no data (e.g. an unreferenced frame).
+     * @return the frame's bytes, or an empty array for a frame that genuinely carries no
+     *         data (an unreferenced frame, for example)
+     * @throws FFmpegException if the copy fails
      */
     @Throws(FFmpegException::class)
     public fun copyPlanesToByteArray(): ByteArray
 
     /**
-     * An owned snapshot of this frame: escape hatch from the callback-scope validity rule.
-     * O(1) — takes new references to the same refcounted buffers, no pixel copy. The returned
-     * frame survives the source being recycled; close it yourself.
+     * An owned snapshot of this frame — the escape hatch from the callback-scope validity
+     * rule. O(1): it takes new references to the same refcounted buffers, with no pixel copy.
+     * The returned frame survives the source being recycled; close it yourself.
+     *
+     * @return a new owned frame sharing this one's buffers
+     * @throws FFmpegException if the frame cannot be referenced
      */
     @Throws(FFmpegException::class)
     public fun copy(): Frame
@@ -42,7 +46,8 @@ public expect class Frame : AutoCloseable {
     /**
      * Encode this (video) frame as a standalone compressed image — default MJPEG (`.jpg`),
      * or [CodecId.Png]. Converts pixel format automatically when the image codec doesn't
-     * accept the frame's own (e.g. yuv420p → rgb24 for PNG).
+     * accept the frame's own (e.g. yuv420p → rgb24 for PNG). Leaves this frame untouched,
+     * timestamp included, so a frame can be thumbnailed and still encoded into a video.
      *
      * @throws FFmpegException on audio frames, frames without image data, or encode failure
      */

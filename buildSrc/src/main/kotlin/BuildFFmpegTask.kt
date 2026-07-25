@@ -1,10 +1,12 @@
 package io.github.yuroyami.kitecodec.buildtools
 
 import org.gradle.api.DefaultTask
+import org.gradle.api.GradleException
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.Internal
+import org.gradle.api.tasks.Optional
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.TaskAction
 import java.io.File
@@ -60,6 +62,29 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
     @get:Internal
     abstract val sourceDir: DirectoryProperty
 
+    /**
+     * Where the host package manager installed the third-party encoder/text libraries the desktop
+     * macOS profile links (Homebrew's prefix — `/opt/homebrew` on Apple silicon, `/usr/local` on
+     * Intel). Override with the `kitecodec.macos.homebrew.prefix` Gradle property. Unused on Linux
+     * (system paths are already searched) and on the cross targets, which need their own
+     * cross-built dependency stack rather than the host's.
+     */
+    @get:Input
+    @get:Optional
+    abstract val hostPrefix: Property<String>
+
+    /**
+     * Whether the produced tree must be fully self-contained — every third-party archive FFmpeg
+     * links present as a `.a` inside it. False (the default) for local development, where linking
+     * a dependency from the host is fine. True for anything that becomes a Release asset, where a
+     * missing archive means the zip cannot link on a consumer's machine.
+     *
+     * Set with `-Pkitecodec.ffmpeg.selfContained=true`.
+     */
+    @get:Input
+    @get:Optional
+    abstract val requireSelfContained: Property<Boolean>
+
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
 
@@ -85,6 +110,18 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
                 "  git clone --depth 1 --branch ${sourceRef.get()} https://github.com/FFmpeg/FFmpeg vendor/ffmpeg\n" +
                 "(or add it as a git submodule for reproducible builds)"
         }
+        // FFmpeg builds with GNU make, and make starts a COMMENT at an unescaped '#'. A checkout
+        // under a path containing one configures fine and then installs nothing: `prefix` is
+        // silently truncated at the '#', `libdir` comes out empty, and `make install` still exits
+        // 0. Catch it here rather than let the build "succeed" into an empty output directory.
+        listOf(sourceDir.absolutePath, outputDir.absolutePath).forEach { path ->
+            require('#' !in path) {
+                "FFmpeg cannot be built under a path containing '#': $path\n" +
+                    "GNU make treats it as a comment, so the install prefix is truncated and " +
+                    "`make install` writes nothing while still reporting success. Move the " +
+                    "checkout (and vendor/ffmpeg) to a path without '#'."
+            }
+        }
         outputDir.mkdirs()
         val buildDir = sourceDir.resolve("build/${license.dirName}/${target.dirName}").also { it.mkdirs() }
 
@@ -97,9 +134,130 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
         }
         val configureArgs = sharedCoreArgs() + licenseArgs +
             listOf("--prefix=${outputDir.absolutePath}")
-        runIn(buildDir, listOf(sourceDir.resolve("configure").absolutePath) + configureArgs)
-        runIn(buildDir, listOf("make", "-j${Runtime.getRuntime().availableProcessors()}"))
-        runIn(buildDir, listOf("make", "install"))
+        val env = configureEnv(target)
+        runIn(buildDir, listOf(sourceDir.resolve("configure").absolutePath) + configureArgs, env)
+        runIn(buildDir, listOf("make", "-j${Runtime.getRuntime().availableProcessors()}"), env)
+        runIn(buildDir, listOf("make", "install"), env)
+
+        // `make install` exiting 0 is not proof it installed anything — FFmpeg's install rules are
+        // driven by variables from config.mak, and a prefix make cannot parse yields a silent
+        // no-op. An empty output directory here would then fall through to FFmpegPaths' system
+        // lookup, which is exactly the "publication silently drops a target" failure the publish
+        // guard exists to prevent. Verify the artefacts instead of trusting the exit code.
+        val missing = REQUIRED_LIBS.filterNot { outputDir.resolve("lib/$it.a").isFile }
+        check(missing.isEmpty()) {
+            "FFmpeg reported a successful install but $outputDir is missing " +
+                "${missing.joinToString { "lib/$it.a" }}. Check the configure/make output above; " +
+                "the install prefix may not have been honoured."
+        }
+        check(outputDir.resolve("include/libavformat/avformat.h").isFile) {
+            "FFmpeg installed libraries into $outputDir but no headers — cinterop needs both."
+        }
+        bundleThirdPartyArchives(target, license, outputDir)
+        logger.lifecycle("[KiteCodec] FFmpeg ${sourceRef.get()} (${license.dirName}) installed into $outputDir")
+    }
+
+    /**
+     * Copy the third-party static archives FFmpeg was linked against into the vendored tree's
+     * `lib/`, so `native-libs/<license>/<target>` is self-contained and has exactly the layout the
+     * published release zip does.
+     *
+     * `make install` only installs FFmpeg's own libraries. The static `libavcodec.a` it leaves
+     * behind still carries undefined references to svt-av1, vpx, aom, opus, mp3lame, webp and the
+     * text stack, which on the build machine live in the package manager's prefix. Without this the
+     * tree links only on a machine that happens to have all of them installed — the very thing
+     * vendoring exists to avoid.
+     */
+    private fun bundleThirdPartyArchives(target: TargetTriple, license: FFmpegLicense, outputDir: File) {
+        val wanted = StaticLinkFlags.thirdPartyArchives(target, license)
+        if (wanted.isEmpty()) return
+
+        val libDir = outputDir.resolve("lib").also { it.mkdirs() }
+        val searchDirs = thirdPartySearchDirs(target).filter { it.isDirectory }
+        val missing = mutableListOf<String>()
+        wanted.forEach { archive ->
+            if (libDir.resolve(archive).isFile) return@forEach
+            val found = searchDirs.map { it.resolve(archive) }.firstOrNull { it.isFile }
+            if (found == null) missing += archive else found.copyTo(libDir.resolve(archive), overwrite = true)
+        }
+        if (missing.isEmpty()) {
+            logger.lifecycle("[KiteCodec] bundled ${wanted.size} third-party static archives into $libDir")
+            return
+        }
+
+        // Some package managers ship a few of these SHARED only — Homebrew's svt-av1 is the
+        // standing example. A dev build can still link against the host's dylib, so warn rather
+        // than block; a build destined for a Release asset cannot, so make it fatal there.
+        val explanation =
+            "These static third-party archives are not installed on this machine: " +
+                "${missing.joinToString()}.\n" +
+                "They are linked INTO libavcodec.a. Searched: ${searchDirs.joinToString()}.\n" +
+                "Their package likely ships shared libraries only; the fix is to build those " +
+                "dependencies statically from source. Never substitute the shared library into " +
+                "the tree — that silently stops it being self-contained."
+        if (requireSelfContained.getOrElse(false)) {
+            throw GradleException(
+                "$explanation\n" +
+                    "-Pkitecodec.ffmpeg.selfContained=true was set (a distributable build), so " +
+                    "this is fatal: the resulting zip would not link on a consumer's machine.",
+            )
+        }
+        logger.warn(
+            "warning: [KiteCodec] $outputDir is NOT self-contained.\n" +
+                "$explanation\n" +
+                "Local builds link these from the host instead, which is fine for development. " +
+                "Pass -Pkitecodec.ffmpeg.selfContained=true to make this a hard failure.",
+        )
+    }
+
+    /** Where the host package manager keeps the static archives, most specific first. */
+    private fun thirdPartySearchDirs(target: TargetTriple): List<File> = when (target) {
+        TargetTriple.MacosArm64, TargetTriple.MacosX64,
+        TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64, TargetTriple.IosX64,
+        -> {
+            val prefix = File(hostPrefix.getOrElse(DEFAULT_HOMEBREW_PREFIX))
+            // Homebrew symlinks into <prefix>/lib, but keg-only formulas stay under opt/<name>/lib.
+            listOf(prefix.resolve("lib")) +
+                (prefix.resolve("opt").listFiles()?.map { it.resolve("lib") }?.sortedBy { it.path } ?: emptyList())
+        }
+        TargetTriple.LinuxX64 -> listOf(
+            File("/usr/lib/x86_64-linux-gnu"), File("/usr/lib"), File("/usr/local/lib"),
+        )
+        TargetTriple.LinuxArm64 -> listOf(
+            File("/usr/lib/aarch64-linux-gnu"), File("/usr/lib"), File("/usr/local/lib"),
+        )
+        else -> emptyList()
+    }
+
+    /**
+     * Environment for configure/make. Only macOS needs anything: Homebrew installs under a prefix
+     * that is NOT on the compiler's default search path, and while FFmpeg finds most dependencies
+     * through pkg-config, some (libmp3lame above all) are probed with a bare compile-and-link test
+     * that has no way to learn the prefix. Exporting PKG_CONFIG_PATH covers the first group and
+     * [macosPrefixArgs] the second.
+     */
+    private fun configureEnv(target: TargetTriple): Map<String, String> =
+        if (target == TargetTriple.MacosArm64 || target == TargetTriple.MacosX64) {
+            val prefix = hostPrefix.getOrElse(DEFAULT_HOMEBREW_PREFIX)
+            val existing = System.getenv("PKG_CONFIG_PATH").orEmpty()
+            val paths = listOf("$prefix/lib/pkgconfig", "$prefix/share/pkgconfig")
+                .plus(if (existing.isNotEmpty()) listOf(existing) else emptyList())
+            mapOf("PKG_CONFIG_PATH" to paths.joinToString(":"))
+        } else {
+            emptyMap()
+        }
+
+    /**
+     * `--extra-cflags` / `--extra-ldflags` pointing at the Homebrew prefix. Without these the
+     * desktop macOS build cannot configure at all — it dies on `ERROR: libmp3lame >= 3.98.3 not
+     * found` even with `brew install lame` done, because lame ships no pkg-config file.
+     */
+    private fun macosPrefixArgs(): List<String> {
+        val prefix = hostPrefix.getOrElse(DEFAULT_HOMEBREW_PREFIX)
+        return listOf(
+            "--extra-cflags=-I$prefix/include",
+            "--extra-ldflags=-L$prefix/lib",
+        )
     }
 
     /** The codec/filter core both profiles share. */
@@ -111,15 +269,46 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
 
         // Codecs / muxers — opinionated, editor-relevant subset.
         "--disable-everything",
-        "--enable-protocol=file,pipe,data",
-        "--enable-demuxer=mov,mp4,m4v,matroska,webm,mp3,wav,aac,flac,ogg,opus,image2,png_pipe,jpeg_pipe",
-        "--enable-muxer=mp4,mov,webm,matroska,mp3,wav,flac,ogg,opus,image2",
-        "--enable-decoder=h264,hevc,vp8,vp9,av1,aac,mp3,opus,vorbis,flac,pcm_s16le,pcm_s24le,pcm_f32le,png,mjpeg,webp",
-        "--enable-parser=h264,hevc,vp8,vp9,av1,aac,mpegaudio,opus,vorbis,flac,png",
+        // file/pipe/data always; http+tcp so MediaSource.open() can actually take the URLs its
+        // KDoc advertises. https is deliberately absent: it needs a TLS backend (openssl/gnutls/
+        // mbedtls) cross-built for every target, which is a dependency escalation this profile
+        // does not take on — see docs/platforms.md. --enable-network is explicit rather than
+        // inherited so a target whose configure probe defaults it off fails loudly here.
+        "--enable-network",
+        "--enable-protocol=file,pipe,data,http,tcp",
+        // Several everyday extensions map to their OWN muxer rather than to the obvious one, and
+        // `avformat_alloc_output_context2` simply fails to find a format when that muxer is absent:
+        //   .mka → matroska_audio (not matroska)   .m4a → ipod (not mp4)
+        // mpegts is what every "trim a broadcast capture" path needs, and it is the format whose
+        // nonzero container start time the timestamp code is written against.
+        "--enable-demuxer=mov,mp4,m4v,matroska,webm,mp3,wav,aac,flac,ogg,opus,mpegts,image2,png_pipe,jpeg_pipe",
+        "--enable-muxer=mp4,mov,ipod,webm,matroska,matroska_audio,mp3,wav,flac,ogg,opus,mpegts,image2",
+        "--enable-decoder=h264,hevc,vp8,vp9,av1,mpeg4,aac,mp3,opus,vorbis,flac,pcm_s16le,pcm_s24le,pcm_f32le,png,mjpeg,webp",
+        // Encoders that need NO third-party library, so every profile — desktop LGPL, desktop GPL,
+        // Android — has them. mpeg4 is the dependency-free video baseline: without it an LGPL build
+        // can only encode video via libsvtav1 (slow) or mjpeg (intra-only), and the library's own
+        // round-trip tests and sample have nothing portable to write with. flac and the pcm_* set
+        // are what make the already-enabled flac/wav MUXERS able to write anything at all.
+        "--enable-encoder=mpeg4,flac,pcm_s16le,pcm_s24le,pcm_f32le,png,mjpeg",
+        "--enable-parser=h264,hevc,vp8,vp9,av1,mpeg4video,aac,mpegaudio,opus,vorbis,flac,png",
+
+        // Bitstream filters. libavformat inserts these ITSELF during stream copy, so leaving them
+        // out does not produce a clear error — it produces a corrupt output file. Copying h264 out
+        // of MPEG-TS into mp4 needs extract_extradata (TS carries parameter sets in band, mp4 wants
+        // them in the header) and copying AAC out of TS/ADTS needs aac_adtstoasc. Without them the
+        // muxer writes a file that ffprobe rejects with "No start code is found".
+        "--enable-bsf=extract_extradata,h264_mp4toannexb,hevc_mp4toannexb,aac_adtstoasc,vp9_superframe,null",
 
         // buffer/buffersink/abuffer/abuffersink are how KiteCodec feeds and drains every graph —
         // without them ffkmp_graph_build_* returns AVERROR_FILTER_NOT_FOUND.
-        "--enable-filter=buffer,buffersink,abuffer,abuffersink,trim,setpts,scale,pad,overlay,eq,hue,boxblur,unsharp,vignette,drawtext,colorbalance,colorlevels,curves,lut,format,colorchannelmixer,split,null,atrim,asetpts,asetrate,aresample,volume,atempo,adelay,afade,amix,anull,aformat,loop,tpad",
+        // Only filters EVERY profile can actually provide. Two kinds of exception live elsewhere,
+        // because configure silently DROPS a filter whose dependencies are unmet — listing one
+        // here would make this a promise some builds quietly break:
+        //   - drawtext needs libfreetype/libharfbuzz → desktopBaseArgs (Android links neither).
+        //   - eq and boxblur are `deps="gpl"` in FFmpeg's own configure → desktopGplArgs.
+        // `hue` (which has a brightness parameter), `colorlevels` and `curves` cover most of what
+        // `eq` is reached for, and are available everywhere.
+        "--enable-filter=buffer,buffersink,abuffer,abuffersink,trim,setpts,scale,pad,overlay,hue,unsharp,vignette,colorbalance,colorlevels,curves,lut,format,colorchannelmixer,split,null,atrim,asetpts,asetrate,aresample,volume,atempo,adelay,afade,amix,anull,aformat,loop,tpad",
 
         "--enable-pthreads",
         "--enable-pic",
@@ -131,13 +320,16 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
      * `--enable-gpl`, no x264 / x265. The default flavour.
      */
     private fun desktopBaseArgs(): List<String> = listOf(
-        "--enable-encoder=libsvtav1,aac,libmp3lame,libopus,png,mjpeg",
+        // Extends the dependency-free set in sharedCoreArgs — configure accumulates --enable-encoder.
+        "--enable-encoder=libsvtav1,aac,libmp3lame,libopus",
         "--enable-libsvtav1",
         "--enable-libvpx", "--enable-libaom",
         "--enable-libmp3lame", "--enable-libopus",
         "--enable-libwebp",
         "--enable-libfreetype", "--enable-libharfbuzz", "--enable-libfribidi",
         "--enable-libass",
+        // Needs the text stack above, so it is desktop-only (see the note in sharedCoreArgs).
+        "--enable-filter=drawtext",
         "--enable-zlib", "--enable-bzlib",
     )
 
@@ -150,6 +342,26 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
         "--enable-gpl", "--enable-version3",
         "--enable-encoder=libx264,libx265",
         "--enable-libx264", "--enable-libx265",
+        // FFmpeg marks these `deps="gpl"`, so they exist ONLY in this flavour. They were listed in
+        // the shared set for a long time, where configure silently dropped them — which is how
+        // `eq=brightness=…`, the filter every example reaches for, ended up unavailable in the
+        // LGPL build the project actually ships.
+        "--enable-filter=eq,boxblur",
+    )
+
+    /**
+     * VideoToolbox hardware encode on Apple targets.
+     *
+     * `--enable-videotoolbox` alone only turns on the framework dependency. Under
+     * `--disable-everything` every encoder must additionally be named in `--enable-encoder=`, or
+     * the resulting build advertises VideoToolbox support and then has no `h264_videotoolbox`
+     * encoder to find at runtime — exactly the mistake the Android profile avoids by listing
+     * `h264_mediacodec` explicitly. Simulator targets are excluded: VideoToolbox encode is not
+     * available there.
+     */
+    private fun appleHardwareArgs(): List<String> = listOf(
+        "--enable-videotoolbox",
+        "--enable-encoder=h264_videotoolbox,hevc_videotoolbox",
     )
 
     private fun desktopTargetArgs(target: TargetTriple): List<String> = when (target) {
@@ -157,23 +369,20 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
             "--arch=arm64", "--target-os=darwin",
             "--cc=clang -arch arm64",
             "--enable-cross-compile",
-            "--enable-videotoolbox",
-        )
+        ) + appleHardwareArgs() + macosPrefixArgs()
         TargetTriple.MacosX64 -> listOf(
             "--arch=x86_64", "--target-os=darwin",
             "--cc=clang -arch x86_64",
             "--enable-cross-compile",
-            "--enable-videotoolbox",
-        )
+        ) + appleHardwareArgs() + macosPrefixArgs()
         TargetTriple.IosArm64 -> {
             val sdk = xcrunSdkPath("iphoneos")
             listOf(
                 "--arch=arm64", "--target-os=darwin",
                 "--cc=clang -arch arm64 -isysroot $sdk -mios-version-min=14.0",
                 "--enable-cross-compile",
-                "--enable-videotoolbox",
                 "--disable-asm",
-            )
+            ) + appleHardwareArgs()
         }
         TargetTriple.IosSimulatorArm64 -> {
             val sdk = xcrunSdkPath("iphonesimulator")
@@ -246,7 +455,8 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
             "--nm=${toolchainBin.resolve("llvm-nm").absolutePath}",
             "--strip=${toolchainBin.resolve("llvm-strip").absolutePath}",
             "--enable-mediacodec", "--enable-jni",
-            "--enable-encoder=aac,png,mjpeg,h264_mediacodec,hevc_mediacodec",
+            // Adds to the dependency-free encoder set in sharedCoreArgs.
+            "--enable-encoder=aac,h264_mediacodec,hevc_mediacodec",
             "--enable-decoder=h264_mediacodec,hevc_mediacodec",  // adds to the shared sw set
             "--enable-zlib",
         ) +
@@ -276,9 +486,11 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
         return hostDir.resolve("bin")
     }
 
-    private fun runIn(workDir: File, command: List<String>) {
+    private fun runIn(workDir: File, command: List<String>, env: Map<String, String> = emptyMap()) {
         logger.lifecycle("[KiteCodec build] " + command.joinToString(" "))
-        val proc = ProcessBuilder(command).directory(workDir).redirectErrorStream(true).start()
+        val builder = ProcessBuilder(command).directory(workDir).redirectErrorStream(true)
+        builder.environment().putAll(env)
+        val proc = builder.start()
         proc.inputStream.bufferedReader().useLines { lines ->
             lines.forEach { logger.lifecycle("  $it") }
         }
@@ -292,5 +504,14 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
 
         /** The FFmpeg tag `vendor/ffmpeg` is expected to be checked out at. */
         const val DEFAULT_SOURCE_REF = "n8.0"
+
+        /** Homebrew's prefix on Apple silicon; Intel Macs use /usr/local (override via the property). */
+        const val DEFAULT_HOMEBREW_PREFIX = "/opt/homebrew"
+
+        /** The six libav* archives every profile must produce; a partial install must never ship. */
+        val REQUIRED_LIBS = listOf(
+            "libavcodec", "libavformat", "libavutil",
+            "libavfilter", "libswscale", "libswresample",
+        )
     }
 }

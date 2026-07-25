@@ -312,6 +312,7 @@ static inline int ffkmp_codec_supports_pix_fmt(const AVCodec *codec, int fmt) {
 static inline int   ffkmp_codecctx_frame_size(AVCodecContext *c)  { return c ? c->frame_size : 0; }
 static inline int   ffkmp_codecctx_sample_rate(AVCodecContext *c) { return c ? c->sample_rate : 0; }
 static inline int   ffkmp_codecctx_sample_fmt(AVCodecContext *c)  { return c ? (int)c->sample_fmt : -1; }
+static inline int   ffkmp_codecctx_channels(AVCodecContext *c)    { return c ? c->ch_layout.nb_channels : 0; }
 static inline void  ffkmp_codecctx_time_base(AVCodecContext *c, int *n, int *d) {
     if (!c || !n || !d) return;
     *n = c->time_base.num; *d = c->time_base.den ? c->time_base.den : 1;
@@ -332,6 +333,14 @@ static inline void  ffkmp_codecctx_set_full_range(AVCodecContext *c) {
 }
 static inline const char* ffkmp_codec_name(const AVCodec *c) { return c ? c->name : NULL; }
 static inline const AVCodec* ffkmp_find_decoder_by_id(int id) { return avcodec_find_decoder((enum AVCodecID)id); }
+/* The CODEC's canonical name ("av1", "opus", "mov_text"), independent of which decoder
+   implementation this build happens to register for it — avcodec_find_decoder would answer
+   "libdav1d"/"libopus" and would answer NOTHING at all for streams with no decoder compiled
+   in (subtitles, attachments, data). Never returns NULL; unknown ids yield "none". */
+static inline const char* ffkmp_codec_id_name(int id) { return avcodec_get_name((enum AVCodecID)id); }
+static inline int ffkmp_codecctx_pix_fmt(AVCodecContext *c) { return c ? (int)c->pix_fmt : -1; }
+static inline int ffkmp_codecctx_width(AVCodecContext *c)   { return c ? c->width : 0; }
+static inline int ffkmp_codecctx_height(AVCodecContext *c)  { return c ? c->height : 0; }
 
 /* ════════════ AVFormatContext (input + output) ════════════ */
 
@@ -353,6 +362,15 @@ static inline int  ffkmp_fmt_seek_micros(AVFormatContext *ctx, int stream_index,
 static inline int  ffkmp_fmt_read_frame(AVFormatContext *c, AVPacket *p) { return av_read_frame(c, p); }
 
 static inline int64_t       ffkmp_fmt_duration(AVFormatContext *c)   { return c ? c->duration : 0; }
+/* Where the media's timeline BEGINS, in microseconds (AV_TIME_BASE units), i.e. the earliest
+   start_time across streams. MPEG-TS commonly reports ~1.4s; mp4 usually 0. Every timestamp the
+   demuxer hands out is absolute (includes this), while KiteCodec's public API — seeks, trim
+   bounds, extractFrame — is media-RELATIVE, so this is the offset between the two. Returns 0
+   when the container doesn't declare one. */
+static inline int64_t       ffkmp_fmt_start_time(AVFormatContext *c) {
+    if (!c || c->start_time == AV_NOPTS_VALUE || c->start_time <= 0) return 0;
+    return c->start_time;
+}
 static inline int64_t       ffkmp_fmt_bit_rate(AVFormatContext *c)   { return c ? c->bit_rate : 0; }
 static inline unsigned      ffkmp_fmt_nb_streams(AVFormatContext *c) { return c ? c->nb_streams : 0; }
 static inline AVStream*     ffkmp_fmt_stream(AVFormatContext *c, unsigned i) {
@@ -397,6 +415,14 @@ static inline int ffkmp_fmt_io_open(AVFormatContext *ctx, const char *path) {
     if (!ctx) return AVERROR(EINVAL);
     if (ctx->oformat && (ctx->oformat->flags & AVFMT_NOFILE)) return 0;
     return avio_open(&ctx->pb, path, AVIO_FLAG_WRITE);
+}
+/* Timestamps handed to the muxer are rebased against a base SHARED by every stream of the sink
+   (MediaSink.claimBaseMicros), which keeps the relative A/V offset intact but lets a stream that
+   starts earlier than the claiming one go negative (AAC priming samples are the common case).
+   Pin the policy instead of inheriting each muxer's default: MAKE_ZERO shifts the whole output
+   up so nothing is negative, applying the SAME shift to every stream — so the offset survives. */
+static inline void ffkmp_fmt_avoid_negative_ts(AVFormatContext *ctx) {
+    if (ctx) ctx->avoid_negative_ts = AVFMT_AVOID_NEG_TS_MAKE_ZERO;
 }
 static inline int ffkmp_fmt_write_header(AVFormatContext *ctx)         { return ctx ? avformat_write_header(ctx, NULL) : AVERROR(EINVAL); }
 static inline int ffkmp_fmt_write_frame(AVFormatContext *ctx, AVPacket *p) { return av_interleaved_write_frame(ctx, p); }
@@ -489,10 +515,10 @@ static inline int ffkmp_graph_build_video(
     rc = avfilter_graph_create_filter(&sink_ctx, sink, "out", NULL, NULL, graph);
     if (rc < 0) { avfilter_graph_free(&graph); return rc; }
 
-    /* Don't constrain the buffersink output format — let the graph auto-negotiate. The encoder
-       downstream is responsible for converting if needed (it pulls whatever the graph emits).
-       Real apps that need a hard pin can use `format=yuv420p` as the last filter in their
-       description; ffmpeg's CLI does exactly that. */
+    /* Don't constrain the buffersink output format — let the graph auto-negotiate. Converting
+       whatever it emits into the encoder's pixel format is EncoderCore's job (see conversionFor
+       in MediaSink.native.kt), which is what makes an unpinned graph safe here. Pinning is still
+       cheaper: put `format=yuv420p` last in the description and the conversion becomes a no-op. */
 
     rc = ffkmp_graph_finish_(graph, src_ctx, sink_ctx, description);
     if (rc < 0) { avfilter_graph_free(&graph); return rc; }

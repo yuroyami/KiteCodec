@@ -1,6 +1,7 @@
 package io.github.yuroyami.kitecodec
 
 import kotlinx.coroutines.flow.asFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
@@ -272,6 +273,190 @@ class PipelineRoundTripTest {
             assertEquals("kitecodec test", s.metadata["title"] ?: s.metadata["TITLE"])
             // Per-stream metadata map exists (may be empty for synthetic streams, must not throw).
             s.streams.forEach { it.metadata }
+        }
+    }
+
+    /**
+     * encodeImage() must leave its input alone. When no pixel-format conversion is required it
+     * encodes the caller's own AVFrame, and stamping pts 0 on it for the single-image encode used
+     * to destroy the timestamp of a frame the caller might still want to put into a video.
+     */
+    @Test
+    fun encodeImageLeavesTheSourceFrameUntouched() {
+        Frame.ofVideo(yuvFrame(64, 64, 3), 64, 64, PixelFormat.Yuv420p, ptsMicros = 1_234_567L).use { frame ->
+            assertEquals(1_234_567L, frame.info.pts)
+            val jpg = frame.encodeImage(CodecId.Mjpeg)
+            assertTrue(jpg.size > 100, "suspiciously small jpeg: ${jpg.size} bytes")
+            // info is cached, so read the live value back off the native frame.
+            assertEquals(1_234_567L, frame.copy().use { it.info.pts }, "encodeImage clobbered the source pts")
+        }
+    }
+
+    /**
+     * A frame need not arrive in the encoder's pixel format: an unfiltered transcode hands over
+     * whatever the decoder produced, and a filter graph's buffersink is deliberately unconstrained.
+     * The pipeline converts instead of failing with a bare EINVAL from avcodec_send_frame.
+     */
+    @Test
+    fun encoderConvertsFramesItWasNotGivenInItsOwnPixelFormat() {
+        val path = tmp("pixfmt.mp4")
+        val w = 64
+        val h = 64
+        MediaSink.open(path).use { sink ->
+            val enc = sink.addVideoEncoder(
+                VideoEncoderSpec(
+                    codec = CodecId("mpeg4"),
+                    width = w, height = h,
+                    pixelFormat = PixelFormat.Yuv420p,   // encoder wants planar YUV …
+                    frameRate = Rational(30, 1),
+                    bitrateBps = 500_000,
+                )
+            )
+            runBlocking {
+                enc.drive(
+                    (0 until 10).asFlow().map { i ->
+                        // … but every frame arrives as packed RGB.
+                        val rgb = ByteArray(w * h * 3) { b -> ((b + i * 11) % 255).toByte() }
+                        Frame.ofVideo(rgb, w, h, PixelFormat.Rgb24, i * 1_000_000L / 30)
+                    }
+                )
+            }
+        }
+        MediaSource.open(path).use { src ->
+            val video = src.primaryVideo ?: error("no video stream written")
+            assertEquals(w, video.video!!.width)
+            val decoded = runBlocking { src.decodedFrames(video).toList() }
+            try {
+                assertTrue(decoded.size >= 8, "expected ~10 frames, got ${decoded.size}")
+            } finally {
+                decoded.forEach { it.close() }
+            }
+        }
+    }
+
+    /** Pixel formats are reconciled; GEOMETRY is not — that is a config error worth surfacing. */
+    @Test
+    fun encoderRejectsAFrameOfTheWrongSize() {
+        MediaSink.open(tmp("wrongsize.mp4")).use { sink ->
+            val enc = sink.addVideoEncoder(
+                VideoEncoderSpec(
+                    codec = CodecId("mpeg4"),
+                    width = 64, height = 64,
+                    frameRate = Rational(30, 1),
+                    bitrateBps = 500_000,
+                )
+            )
+            assertFailsWith<FFmpegException> {
+                runBlocking {
+                    enc.drive(flowOf(Frame.ofVideo(yuvFrame(32, 32, 0), 32, 32, PixelFormat.Yuv420p, 0L)))
+                }
+            }
+        }
+    }
+
+    /**
+     * close() must drain the encoders, not just free them. Encoders with reordering enabled hold
+     * frames back, so a sink closed without an explicit finish() used to drop the tail silently.
+     */
+    @Test
+    fun closeFlushesBufferedEncoderFramesWithoutAnExplicitFinish() {
+        val path = tmp("flush.mp4")
+        val frames = 20
+        MediaSink.open(path).use { sink ->
+            val enc = sink.addVideoEncoder(
+                VideoEncoderSpec(
+                    codec = CodecId("mpeg4"),
+                    width = 64, height = 64,
+                    frameRate = Rational(30, 1),
+                    bitrateBps = 500_000,
+                    // Force the encoder to buffer: with B-frames it cannot emit a packet until it
+                    // has seen the following frames, so a missing EOF drain loses the tail.
+                    options = mapOf("bf" to "2"),
+                )
+            )
+            withPacket { packet ->
+                repeat(frames) { i ->
+                    enc.core.encode(packet, Frame.ofVideo(yuvFrame(64, 64, i), 64, 64, PixelFormat.Yuv420p, i * 1_000_000L / 30))
+                }
+            }
+            // Deliberately NO finish() — close() is responsible from here.
+        }
+        MediaSource.open(path).use { src ->
+            val video = src.primaryVideo ?: error("no video stream written")
+            val decoded = runBlocking { src.decodedFrames(video).toList() }
+            try {
+                assertEquals(frames, decoded.size, "close() did not flush every buffered frame")
+            } finally {
+                decoded.forEach { it.close() }
+            }
+        }
+    }
+
+    /**
+     * A trim window that selects nothing must still leave a valid container behind. The header is
+     * only written lazily on the first packet, so without an eager write the call used to return
+     * cleanly having created no file at all.
+     */
+    @Test
+    fun transcodeWithAnEmptyTrimWindowStillWritesAValidFile() {
+        val src = tmp("empty-src.mp4")
+        val dst = tmp("empty-dst.mp4")
+        writeTestVideo(src, frames = 30)   // 1 second of content
+        runBlocking {
+            Transcoder.transcode(
+                input = src,
+                output = dst,
+                spec = VideoEncoderSpec(
+                    codec = CodecId("mpeg4"),
+                    width = 64, height = 64,
+                    frameRate = Rational(30, 1),
+                    bitrateBps = 500_000,
+                ),
+                // Entirely past the end of the media.
+                startMicros = 10_000_000L,
+                endMicros = 11_000_000L,
+            )
+        }
+        // The file must exist and be a readable container. Whether a track with zero samples
+        // survives is the muxer's call — mp4 drops empty tracks in av_write_trailer — so asserting
+        // on the stream list would be asserting on libavformat's policy, not on this fix. The
+        // regression being guarded is "no file at all, and no error".
+        MediaSource.open(dst).use { out ->
+            assertTrue(out.formatName.isNotEmpty(), "empty-window output is not a readable container")
+        }
+    }
+
+    /**
+     * StreamInfo.codec names the CODEC, not whichever decoder implementation this FFmpeg happens
+     * to register for it. Guarded, because it needs a build where the two names differ.
+     */
+    @Test
+    fun streamCodecReportsTheCanonicalNameNotADecoderAlias() {
+        if (!FFmpeg.hasEncoder("libopus")) return  // nothing to prove on this build
+        val path = tmp("codecname.ogg")
+        MediaSink.open(path).use { sink ->
+            val enc = sink.addAudioEncoder(
+                AudioEncoderSpec(codec = CodecId("libopus"), sampleRate = 48_000, channels = 1)
+            )
+            val samples = enc.frameSize.takeIf { it > 0 } ?: 960
+            runBlocking {
+                enc.drive(
+                    (0 until 10).asFlow().map { i ->
+                        Frame.ofAudio(
+                            bytes = ByteArray(samples * 4),          // silence, fltp mono
+                            sampleCount = samples,
+                            sampleRate = 48_000,
+                            channels = 1,
+                            sampleFormat = enc.sampleFormat,
+                            ptsMicros = i * samples * 1_000_000L / 48_000,
+                        )
+                    }
+                )
+            }
+        }
+        MediaSource.open(path).use { src ->
+            val audio = src.primaryAudio ?: error("no audio stream written")
+            assertEquals("opus", audio.codec.name, "expected the codec name, not the decoder's")
         }
     }
 }

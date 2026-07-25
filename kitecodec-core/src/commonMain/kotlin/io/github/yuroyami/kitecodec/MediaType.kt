@@ -10,8 +10,8 @@ public enum class MediaType {
 }
 
 /**
- * The pixel format of a video frame. We use the FFmpeg name (`yuv420p`, `nv12`, …) directly —
- * the actual impl translates to `AV_PIX_FMT_*` integer values.
+ * The pixel format of a video frame, named exactly as FFmpeg names it (`yuv420p`, `nv12`, …).
+ * The native implementation translates the name to an `AV_PIX_FMT_*` value.
  */
 @JvmInline
 public value class PixelFormat(public val name: String) {

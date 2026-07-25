@@ -3,6 +3,7 @@ import com.vanniktech.maven.publish.KotlinMultiplatform
 import io.github.yuroyami.kitecodec.buildtools.BuildFFmpegTask
 import io.github.yuroyami.kitecodec.buildtools.FFmpegLicense
 import io.github.yuroyami.kitecodec.buildtools.FFmpegPaths
+import io.github.yuroyami.kitecodec.buildtools.StaticLinkFlags
 import io.github.yuroyami.kitecodec.buildtools.TargetTriple
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 
@@ -132,6 +133,9 @@ kotlin {
         }
     }
 
+    val homebrewPrefix = providers.gradleProperty("kitecodec.macos.homebrew.prefix")
+        .getOrElse(BuildFFmpegTask.DEFAULT_HOMEBREW_PREFIX)
+
     // Which FFmpeg flavour to link against locally: -Pkitecodec.ffmpeg.license=gpl for the GPL
     // build, else the LGPL default. Android always links its LGPL MediaCodec profile.
     val selectedLicense =
@@ -174,6 +178,14 @@ kotlin {
         }
         target.binaries.all {
             linkerOpts("-L${paths.libDir}")
+            // ffmpeg.def names only the six libav* archives. That is enough for a shared/system
+            // FFmpeg, whose dylibs resolve their own dependencies — but a STATIC libavcodec.a
+            // resolves nothing, so every third-party archive it draws symbols from must be named
+            // here too or the final link fails on svt_av1_*, vpx_*, ass_* and friends.
+            linkerOpts(StaticLinkFlags.forTarget(triple, license, paths.isStaticVendored))
+            // Searched AFTER the vendored lib/, so a bundled archive always wins; this only
+            // catches dependencies the host package manager ships shared-only (see StaticLinkFlags).
+            linkerOpts(StaticLinkFlags.hostFallbackSearchFlags(triple, homebrewPrefix, paths.isStaticVendored))
             if (!paths.isStaticVendored && triple in setOf(TargetTriple.MacosArm64, TargetTriple.MacosX64)) {
                 // Embed Homebrew rpath for dev convenience — release builds use static vendored libs.
                 linkerOpts("-rpath", paths.libDir)
@@ -211,6 +223,16 @@ fun registerBuildFFmpeg(triple: TargetTriple, flavour: FFmpegLicense) =
         target = triple
         license = flavour
         sourceRef = BuildFFmpegTask.DEFAULT_SOURCE_REF
+        // Where the desktop macOS profile's third-party libs live. Several of them (lame above all)
+        // ship no pkg-config file, so configure cannot find them without an explicit -I/-L.
+        hostPrefix.set(
+            providers.gradleProperty("kitecodec.macos.homebrew.prefix")
+                .orElse(BuildFFmpegTask.DEFAULT_HOMEBREW_PREFIX),
+        )
+        // Release builds must produce a tree that links on a machine with none of these installed.
+        requireSelfContained.set(
+            providers.gradleProperty("kitecodec.ffmpeg.selfContained").map { it.toBoolean() }.orElse(false),
+        )
         sourceDir.set(rootDir.resolve("vendor/ffmpeg"))
         outputDir.set(rootDir.resolve("native-libs/${flavour.dirName}/${triple.dirName}"))
     }

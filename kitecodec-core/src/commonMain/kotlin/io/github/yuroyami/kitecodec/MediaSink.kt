@@ -9,7 +9,14 @@ import kotlinx.coroutines.flow.Flow
  */
 public expect class MediaSink : AutoCloseable {
 
-    /** Add a video encoder. Must be called before any frame is written. */
+    /**
+     * Add a video encoder. Must be called before any frame is written.
+     *
+     * Frames whose pixel format differs from [VideoEncoderSpec.pixelFormat] are converted on the
+     * way in — a decoder handing over 10-bit frames, or a filter chain that does not end in
+     * `format=`, is handled rather than rejected. Frame DIMENSIONS are not touched: a size
+     * mismatch is a configuration error and throws, since silently rescaling would hide it.
+     */
     @Throws(FFmpegException::class)
     public fun addVideoEncoder(spec: VideoEncoderSpec): VideoEncoder
 
@@ -37,10 +44,15 @@ public expect class MediaSink : AutoCloseable {
     public fun setMetadata(metadata: Map<String, String>)
 
     /**
-     * Writes the trailer and frees the muxer.
+     * Flushes every encoder, writes the trailer, and frees the muxer.
      *
-     * @throws FFmpegException when the trailer fails — the file on disk is broken then
-     *         (e.g. an mp4 whose moov atom never landed); surfacing that beats silence.
+     * The flush matters: encoders buffer (x264's lookahead holds tens of frames), so closing
+     * without draining them would silently truncate the tail of the output. It is best-effort —
+     * a trailer is still written for whatever did land if an encoder fails here — and it is a
+     * no-op for encoders already drained by [VideoEncoder.drive] / [AudioEncoder.drive].
+     *
+     * @throws FFmpegException when the trailer fails, which means the file on disk is broken —
+     *         an mp4 whose moov atom never landed, for example
      */
     override fun close()
 

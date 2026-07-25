@@ -2,17 +2,27 @@
 
 `kitecodec-gradle-plugin` provisions the FFmpeg binaries KiteCodec links against, so consumer projects do not build FFmpeg from source. KiteCodec's published klib contains **no FFmpeg bytes**: this plugin supplies them at your build time, which also keeps the FFmpeg licence (LGPL / GPL) cleanly separate from KiteCodec's own Apache-2.0 artifact.
 
-!!! note "Status"
-    The plugin lives in the KiteCodec repository (`kitecodec-gradle-plugin/`) and, like the library, is not on a public plugin repository yet. The DSL below is the supported surface.
+!!! warning "Not published, and `Prebuilt` has nothing to fetch"
+    The plugin lives in the KiteCodec repository (`kitecodec-gradle-plugin/`) and is not on the Gradle Plugin Portal yet. Neither are the FFmpeg Release assets that `FFmpegSource.Prebuilt` downloads. The [README's release status](https://github.com/yuroyami/KiteCodec#release-status) is the single place that tracks what exists; use `FFmpegSource.System` until it says otherwise. The DSL below is the supported surface.
 
 ## Apply and configure
 
-Apply it alongside the Kotlin Multiplatform plugin, then configure the `kitecodec { }` extension:
+Apply it alongside the Kotlin Multiplatform plugin, then configure the `kitecodec { }` extension. The library dependency and the plugin are both required — see below.
 
 ```kotlin
+import io.github.yuroyami.kitecodec.gradle.FFmpegLicense
+import io.github.yuroyami.kitecodec.gradle.FFmpegSource
+
 plugins {
     kotlin("multiplatform")
     id("io.github.yuroyami.kitecodec") version "<version>"
+}
+
+kotlin {
+    macosArm64()
+    sourceSets.commonMain.dependencies {
+        implementation("io.github.yuroyami:kitecodec-core:<version>")
+    }
 }
 
 kitecodec {
@@ -25,6 +35,9 @@ kitecodec {
 ```
 
 For every Kotlin/Native target you enable, the plugin maps it to the matching FFmpeg build, makes sure the binaries are present before the native link runs, and adds the `-L<libdir>` linker flag so the link resolves.
+
+!!! warning "The plugin is not optional"
+    The Maven coordinate alone does not produce a working build. `kitecodec-core`'s klib contains no FFmpeg bytes, and its `ffmpeg.def` declares `linkerOpts` as bare `-lavformat -lavcodec …` with no `-L`, so without the plugin the final native link fails on unresolved libav\* symbols.
 
 !!! warning "The `license` choice is mandatory"
     The FFmpeg flavour decides your app's legal obligations, so the plugin does not default it. If any non-Android Kotlin/Native target is wired and `license` is unset, configuration fails with the DSL snippet to add. Purely-Android projects are exempt — Android always uses the LGPL MediaCodec build. Selecting `GPL` logs a warning describing the GPL-3.0 obligations it places on your whole app.
@@ -39,10 +52,11 @@ Everything lives under `kitecodec { ffmpeg { ... } }`:
 | `source` | `FFmpegSource` | `Prebuilt` | Where FFmpeg comes from (below). |
 | `license` | `FFmpegLicense` | **none — required** | Licence flavour for desktop targets. Must be set explicitly (build fails otherwise). Android targets always use the LGPL MediaCodec build, regardless. |
 | `repo` | `String` | `"yuroyami/KiteCodec"` | GitHub `owner/repo` whose Releases host the prebuilt archives. Override to self-host. |
+| `pinnedSha256` | `MapProperty<String, String>` | empty | SHA-256 per Release asset name, e.g. `pinnedSha256.put("ffmpeg-n8.0-lgpl-macos-arm64.zip", "<sha256>")`. A pinned value is authoritative: the published `.sha256` is not fetched, and a download that does not match fails the build. |
 
 ### `FFmpegSource`
 
-- **`Prebuilt`** (default) — downloads a pinned static build from the configured repo's GitHub Releases and caches it under the Gradle user home. This is the zero-setup path for consumers.
+- **`Prebuilt`** (default) — downloads a pinned static build from the configured repo's GitHub Releases and caches it under the Gradle user home. It needs no FFmpeg on the machine, but KiteCodec has published no assets yet, so against the default `repo` it currently fails: at configuration time for a target outside the intended five, and with an HTTP 404 for the rest. Point `repo` at your own Releases to use it today.
 - **`System`** — links a system FFmpeg that is already installed (Homebrew on macOS — override the prefix with the `kitecodec.macos.homebrew.prefix` Gradle property — or the apt-installed libraries on Linux). Dynamic linking; a dev convenience. Fails with a clear error when no system install is found, and is not available for targets that have no system-install story (iOS, Windows, Android).
 - **`BuildFromSource`** — only meaningful inside the KiteCodec checkout itself, which ships the `:buildFFmpegFor<Target>` tasks. In a consumer project this errors with instructions to use `Prebuilt` or `System`.
 
@@ -55,10 +69,10 @@ No default — you must choose (see the warning above):
 
 ## What `FetchFFmpegTask` does
 
-With `source = Prebuilt`, the plugin registers one `fetchFFmpeg<Target><License>` task per Kotlin/Native target and wires every binary's link task to depend on it. The task:
+With `source = Prebuilt`, the plugin registers one `fetchFFmpeg<Triple>` task per Kotlin/Native target — `fetchFFmpegMacosArm64`, `fetchFFmpegLinuxX64`, `fetchFFmpegAndroidArm64`, and so on. There is no licence segment in the name; the flavour is read from the DSL. Every binary's link task is wired to depend on the matching fetch. The task:
 
-1. **Downloads** `ffmpeg-<version>-<license>-<triple>.zip` from `https://github.com/<repo>/releases/download/ffmpeg-<version>/`, following redirects to GitHub's object store.
-2. **Verifies the SHA-256**: it fetches the matching `.zip.sha256` asset and checks the archive against it. A mismatch fails the build with both digests printed. If no `.sha256` asset exists alongside the zip, the task warns and skips the check rather than failing.
+1. **Downloads** `ffmpeg-<version>-<license>-<triple>.zip` from `https://github.com/<repo>/releases/download/ffmpeg-<version>/`, following redirects to GitHub's object store. HTTPS only, and a non-HTTPS redirect is refused.
+2. **Verifies the SHA-256.** A value from `pinnedSha256` wins outright. Otherwise the task fetches the `.sha256` published next to the asset. A mismatch fails the build with both digests printed, and so does a checksum that cannot be obtained at all — an unverified native binary is never linked into a consumer app silently. The error names both remedies: pin the checksum, or set the Gradle property `kitecodec.ffmpeg.allowUnverified=true` to downgrade the failure to a prominent warning.
 3. **Unpacks** the archive (expecting `include/` and `lib/` at the archive root, plus the licence texts — see [Licensing](licensing.md#what-the-kitecodec-release-zips-include)) into the Gradle user-home cache: `~/.gradle/caches/kitecodec/ffmpeg/<version>/<license>/<triple>/`. Zip entries that would escape the target directory are rejected (zip-slip guard).
 4. **Is idempotent**: when `lib/libavformat.a` is already present in the cache, the task does nothing, so it costs nothing on subsequent builds.
 

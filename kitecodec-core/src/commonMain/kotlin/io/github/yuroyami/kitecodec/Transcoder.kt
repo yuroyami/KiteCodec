@@ -43,10 +43,12 @@ public expect object Transcoder {
      * @param subtitleCopy stream-copy every subtitle stream into the output. Works for
      *                     subtitle codecs the output container accepts (mkv: almost all;
      *                     mp4: mov_text) — otherwise the muxer raises a typed error.
-     * @param startMicros trim start — output begins at the first frame whose pts ≥ this
-     *                    (frame-exact for re-encoded streams; copied streams start at the
-     *                    preceding keyframe). Output timestamps are rebased to zero.
-     * @param endMicros trim end — demuxing stops once the lead stream passes this.
+     * @param startMicros trim start, relative to the start of the content (see
+     *                    [MediaSource.startTimeMicros]). Output begins at the first frame at or
+     *                    after this point: frame-exact for re-encoded streams, at the preceding
+     *                    keyframe for copied ones. Output timestamps are rebased to zero.
+     * @param endMicros trim end, on the same content-relative scale — demuxing stops once the
+     *                  lead stream passes this.
      * @param metadata container tags written into the output header (`title`, `artist`, …)
      * @param onProgress invoked every ~30 encoded video frames (or ~100 audio frames when
      *                   audio-only) with a [TranscodeProgress]

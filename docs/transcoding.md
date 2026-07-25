@@ -15,19 +15,21 @@ Transcoder.transcode(
     input  = "input.mp4",
     output = "output.mp4",
     spec = VideoEncoderSpec(
-        codec = CodecId.Libx264,
+        // mpeg4 is the dependency-free baseline present in every FFmpeg profile.
+        // See "Choosing a codec" below before hard-coding anything else.
+        codec = CodecId("mpeg4"),
         width = 320, height = 180,
         frameRate = Rational(30, 1),
         bitrateBps = 1_500_000,
     ),
-    videoFilter = "scale=320:180,eq=brightness=0.1,vignette,format=yuv420p",
+    videoFilter = "scale=320:180,hue=b=0.1,vignette,format=yuv420p",
     audioSpec   = AudioEncoderSpec(codec = CodecId.Aac),
     audioFilter = "volume=0.8",
     onProgress  = { progress -> println("encoded ${progress.framesEncoded} frames") },
 )
 ```
 
-That is a real native Kotlin call. It opens the file through libavformat, demuxes it **once**, routes packets to per-stream libavcodec decoders, pushes video frames through a libavfilter graph, resamples and chunks audio through a second graph, encodes with the codecs you named, and interleaves both streams into the output as they are produced. There is no `ffmpeg` subprocess, no JVM, and no JNI hop. Memory stays constant regardless of how long the input is.
+The call opens the file through libavformat, demuxes it **once**, routes packets to per-stream libavcodec decoders, pushes video frames through a libavfilter graph, resamples and chunks audio through a second graph, encodes with the codecs you named, and interleaves both streams into the output as they are produced. There is no `ffmpeg` subprocess, no JVM, and no JNI hop. Memory stays constant regardless of how long the input is.
 
 `transcode` is a `suspend fun`, so call it from a coroutine. It suspends until the whole file is written, and it honours cancellation at the demux loop.
 
@@ -109,22 +111,26 @@ The `options` map passes codec-specific knobs straight through (`preset`, `crf`,
 
 `CodecId` is a thin value class wrapping the FFmpeg codec name. Pick whichever the linked FFmpeg build provides:
 
-- Software video encoders: `CodecId.Libx264`, `CodecId.Libx265`
+- Always present, every profile: `CodecId("mpeg4")`, `CodecId.Mjpeg`, `CodecId.Png`
+- Software video encoders: `CodecId.Libx264`, `CodecId.Libx265` (GPL builds only), `libsvtav1` (LGPL, royalty-free AV1)
 - Generic codec ids: `CodecId.H264`, `CodecId.Hevc`, `CodecId.Av1`, `CodecId.Vp9`
 - Hardware video encoders: `CodecId.H264VideoToolbox`, `CodecId.HevcVideoToolbox`, `CodecId.H264MediaCodec`, `CodecId.HevcMediaCodec`
 
 !!! tip "Probe before you encode"
-    Whether a given encoder is present depends on how FFmpeg was built. Check at runtime before relying on it:
+    Whether a given encoder is present depends on how FFmpeg was built. Check at runtime rather than hard-coding a name:
 
     ```kotlin
     import io.github.yuroyami.kitecodec.FFmpeg
 
-    if (FFmpeg.hasEncoder("h264_videotoolbox")) {
-        // hardware path available
-    }
+    val codec = listOf(
+        CodecId.H264VideoToolbox,
+        CodecId.H264MediaCodec,
+        CodecId.Libx264,
+        CodecId("mpeg4"),
+    ).first { FFmpeg.hasEncoder(it.name) }
     ```
 
-    `libx264` and `libx265` live in the `kitecodec-gpl` add-on, not the default `kitecodec-core` LGPL build.
+    `libx264` and `libx265` exist only in a GPL-flavour FFmpeg. The vendored default is LGPL and excludes them, so asking for one there throws `FFmpegException` from `addVideoEncoder` before a frame is read. Reach them with the `buildFFmpegFor<Target>Gpl` tasks plus `-Pkitecodec.ffmpeg.license=gpl`, or the Gradle plugin's `license = FFmpegLicense.GPL` — and read [Licensing](licensing.md) first, because it makes your whole application GPL-3.0.
 
 ## Audio encoding, copy, or drop
 
@@ -218,7 +224,7 @@ Transcoder.transcode(
     input  = "input.mp4",
     output = "output.mp4",
     spec   = videoSpec,
-    videoFilter = "scale=1280:720,eq=brightness=0.1,format=yuv420p",
+    videoFilter = "scale=1280:720,hue=b=0.1,format=yuv420p",
     audioSpec   = AudioEncoderSpec(codec = CodecId.Aac),
     audioFilter = "volume=0.5,atempo=1.25",
 )

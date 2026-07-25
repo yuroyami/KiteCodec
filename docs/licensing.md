@@ -102,7 +102,7 @@ Before you ship an app embedding KiteCodec:
 - [ ] State in your app's about/licences screen that it uses FFmpeg and the listed components.
 - [ ] Provide the source offer: link (or host) the exact FFmpeg source your build used — `BUILD-INFO.txt` in the release zips records tag, commit, and configure line.
 - [ ] Decide your §6 story: dynamic linking (easiest), or static linking plus an offer of relinkable object files. On Apple platforms, weigh the App Store tension above.
-- [ ] Shipping software H.264/HEVC decode in a large commercial app? Check the [patent question](#patents--a-separate-question) — or stick to hardware decode and AV1/Opus.
+- [ ] Shipping software H.264/HEVC decode in a large commercial app? Check the [patent question](#patents-a-separate-question) — or stick to hardware decode and AV1/Opus.
 - [ ] Keep KiteCodec's own Apache-2.0 `LICENSE` and `NOTICE` in your attribution set.
 
 ## Related

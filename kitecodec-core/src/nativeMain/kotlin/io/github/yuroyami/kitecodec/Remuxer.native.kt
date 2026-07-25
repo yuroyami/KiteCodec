@@ -2,7 +2,6 @@ package io.github.yuroyami.kitecodec
 
 import ffmpeg.ffkmp_packet_dts
 import ffmpeg.ffkmp_packet_pts
-import ffmpeg.ffkmp_rescale_q
 
 public actual object Remuxer {
 
@@ -51,8 +50,11 @@ public actual object Remuxer {
                         // around B-frames and would stop the demux a GOP early.
                         val dts = ffkmp_packet_dts(packet)
                         val ts = if (dts != FrameInfo.NOPTS) dts else ffkmp_packet_pts(packet)
+                        // Media-relative: [endMicros] means "n microseconds into the content", but
+                        // packet timestamps include the container's start offset (~1.4s on MPEG-TS),
+                        // so comparing the raw value would cut the clip in the wrong place.
                         val micros = if (ts != FrameInfo.NOPTS) {
-                            ffkmp_rescale_q(ts, info.timeBase.num, info.timeBase.den, 1, 1_000_000)
+                            source.toRelativeMicros(ts, info.timeBase)
                         } else Long.MIN_VALUE
                         if (micros != Long.MIN_VALUE && micros > endMicros) {
                             if (info.index == leadIndex) throw StopDemux()

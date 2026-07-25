@@ -14,43 +14,67 @@ public expect class MediaSource : AutoCloseable {
     public val formatName: String
     public val metadata: Map<String, String>
 
+    /**
+     * Where this container's timeline begins, in microseconds — 0 for most mp4, commonly around
+     * 1.4s for MPEG-TS.
+     *
+     * This is the offset between the two timelines KiteCodec deals in. Timestamps it reports
+     * ([StreamInfo], [FrameInfo.pts]) are absolute and include this value. Timestamps it accepts
+     * ([seekMicros], [extractFrame]'s `atMicros`, [Transcoder.transcode] and [Remuxer.remux] trim
+     * bounds) are relative to the start of the content, so `10_000_000` always means ten seconds
+     * in. Subtract this from a frame's own pts to move it onto the timeline those parameters use.
+     */
+    public val startTimeMicros: Long
+
     public val primaryVideo: StreamInfo?
     public val primaryAudio: StreamInfo?
 
     /**
-     * Decode this stream and emit each decoded frame as an OWNED [Frame]: every emitted frame
-     * stays valid until you close it, so buffering operators (`buffer()`, `toList()`) are safe.
-     * Close each collected frame — unclosed frames leak native buffers.
+     * Decode this stream and emit each decoded frame, owned by the collector.
      *
-     * Only one decode flow may collect at a time (the demuxer is a single cursor); starting a
-     * second concurrent collection throws [IllegalStateException] — use [decodeStreams] to read
-     * several streams together. The decoder is freed when collection completes or is cancelled.
+     * Only one decode flow may collect at a time, because the demuxer is a single cursor.
+     * Starting a second concurrent collection throws [IllegalStateException]; use
+     * [decodeStreams] to read several streams together. The decoder is freed when collection
+     * completes or is cancelled.
+     *
+     * @see Frame for the ownership rule every collected frame is subject to
      */
     public fun decodedFrames(stream: StreamInfo): Flow<Frame>
 
     /**
-     * Decode several streams in ONE demuxer pass, emitting frames interleaved in container
-     * order (tag: [FrameInfo.streamIndex]). This is the only correct way to transcode
-     * video + audio together — two concurrent [decodedFrames] flows would race on the
-     * underlying demuxer, so that is rejected with [IllegalStateException].
+     * Decode several streams in one demuxer pass, emitting frames interleaved in container order
+     * and tagged by [FrameInfo.streamIndex]. This is the only correct way to transcode video and
+     * audio together: two concurrent [decodedFrames] flows would race the underlying demuxer, so
+     * that is rejected with [IllegalStateException].
+     *
+     * @see Frame for the ownership rule every collected frame is subject to
      */
     public fun decodeStreams(streams: List<StreamInfo>): Flow<Frame>
 
     /**
-     * Seek the demuxer to [micros] (microseconds). The next decode flow resumes from there.
-     * Not allowed while a decode flow is collecting (the demuxer cursor is shared).
+     * Seek the demuxer to [micros], measured from the start of the content. Lands on the keyframe
+     * at or before that point, so the next decode flow resumes from there. Not allowed while a
+     * decode flow is collecting, since the demuxer cursor is shared.
      *
+     * Precision is the container's, not this library's. Indexless formats such as MPEG-TS resolve
+     * a seek by searching byte positions and can land slightly off. Decode a little and check
+     * [FrameInfo.pts] if you need to know exactly where you ended up; [extractFrame] and
+     * [Transcoder.transcode]'s trim already do this for you.
+     *
+     * @param micros where to seek to, relative to the start of the content — see [startTimeMicros]
      * @throws FFmpegException when the seek fails
      */
     public suspend fun seekMicros(micros: Long)
 
     /**
-     * Decode and return the frame at (or first after) [atMicros] — thumbnail extraction.
-     * Seeks to the preceding keyframe, decodes forward to the exact target, and returns an
-     * OWNED copy: hold it as long as you like, close it when done. Pair with
+     * Decode and return the frame at (or first after) [atMicros] — thumbnail extraction. Seeks to
+     * the preceding keyframe and decodes forward to the exact target. Pair with
      * [Frame.encodeImage] for jpg/png bytes.
      *
+     * @param atMicros where to read, relative to the start of the content — see [startTimeMicros]
      * @param stream which stream to read; default = primary video
+     * @return an owned frame — hold it as long as you like, close it when done
+     * @throws FFmpegException when the seek or decode fails
      */
     public suspend fun extractFrame(atMicros: Long, stream: StreamInfo? = null): Frame
 

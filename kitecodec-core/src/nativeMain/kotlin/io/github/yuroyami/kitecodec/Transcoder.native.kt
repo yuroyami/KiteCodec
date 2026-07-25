@@ -2,7 +2,6 @@ package io.github.yuroyami.kitecodec
 
 import ffmpeg.ffkmp_packet_dts
 import ffmpeg.ffkmp_packet_pts
-import ffmpeg.ffkmp_rescale_q
 
 public actual object Transcoder {
 
@@ -52,7 +51,21 @@ public actual object Transcoder {
                 end?.let { (it - startMicros).coerceAtLeast(1) }
             }
 
-            if (startMicros > 0) source.seekMicros(startMicros)
+            if (startMicros > 0) {
+                if (videoCopy) {
+                    // A copied video stream deliberately keeps EVERY packet from the landing
+                    // keyframe onwards, so seeking extra-early would put that pre-roll in the
+                    // output as real content. Take the exact keyframe seek and its documented
+                    // keyframe snap.
+                    source.seekMicros(startMicros)
+                } else {
+                    // Decoding paths discard forward to the exact start, so landing early is free
+                    // — while landing late (which indexless containers do) would silently cut
+                    // content the caller asked for. Copied audio/subtitles alongside a decoded
+                    // video stream are unaffected: the beforeStart gate drops their pre-roll.
+                    source.seekForDecode(startMicros)
+                }
+            }
 
             MediaSink.open(output).use { sink ->
                 // All encoders + copy mappings + metadata must exist before the header.
@@ -96,6 +109,12 @@ public actual object Transcoder {
                         }
                     } else null
 
+                    // Write the header eagerly, like Remuxer does. Without this a source that
+                    // yields no frames at all never reaches the drain loop that would trigger it,
+                    // so avio_open never runs and the call returns "successfully" having created
+                    // no file whatsoever. An empty but valid container is the honest result.
+                    sink.ensureHeaderWritten()
+
                     withPacket { videoPacket ->
                         withPacket { audioPacket ->
                             val progressEvery = if (venc != null) 30L else 100L
@@ -118,12 +137,17 @@ public actual object Transcoder {
                                 )
                             }
 
-                            /** Frame pts → micros in the frame's OWN time-base (graph output frames
-                             *  carry the graph's time-base, decoder frames the stream's). */
+                            /**
+                             * Frame pts → MEDIA-RELATIVE micros, read in the frame's own time-base
+                             * (graph output frames carry the graph's, decoder frames the stream's).
+                             * Relative, not absolute: startMicros/endMicros are "n microseconds
+                             * into the content", while every timestamp libavformat produces
+                             * includes the container's start offset — nonzero on MPEG-TS, which
+                             * would shift the whole trim window by ~1.4s.
+                             */
                             fun ptsMicros(frame: Frame): Long =
                                 if (frame.info.hasPts) {
-                                    val tb = frame.streamTimeBase
-                                    ffkmp_rescale_q(frame.info.pts, tb.num, tb.den, 1, 1_000_000)
+                                    source.toRelativeMicros(frame.info.pts, frame.streamTimeBase)
                                 } else Long.MIN_VALUE  // treat as "always inside the window"
 
                             // End-bound is re-checked at the encoder door: filter graphs buffer
@@ -188,11 +212,12 @@ public actual object Transcoder {
                                     val pktDts = ffkmp_packet_dts(packet)
                                     val pktPts = ffkmp_packet_pts(packet)
                                     val gateTs = if (pktDts != FrameInfo.NOPTS) pktDts else pktPts
+                                    // Media-relative, same reason as ptsMicros above.
                                     val gateMicros = if (gateTs != FrameInfo.NOPTS) {
-                                        ffkmp_rescale_q(gateTs, info.timeBase.num, info.timeBase.den, 1, 1_000_000)
+                                        source.toRelativeMicros(gateTs, info.timeBase)
                                     } else Long.MIN_VALUE
                                     val ptsMs = if (pktPts != FrameInfo.NOPTS) {
-                                        ffkmp_rescale_q(pktPts, info.timeBase.num, info.timeBase.den, 1, 1_000_000)
+                                        source.toRelativeMicros(pktPts, info.timeBase)
                                     } else Long.MIN_VALUE
                                     val pastEnd = gateMicros != Long.MIN_VALUE && gateMicros > endMicros
                                     val isVideoCopy = info.index == vcopy?.sourceIndex

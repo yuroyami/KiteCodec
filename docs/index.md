@@ -8,42 +8,41 @@ Transcoder.transcode(
     input  = "input.mp4",
     output = "output.mp4",
     spec = VideoEncoderSpec(
-        codec = CodecId.Libx264,
+        // mpeg4 is the dependency-free baseline present in every FFmpeg profile.
+        codec = CodecId("mpeg4"),
         width = 320, height = 180,
         frameRate = Rational(30, 1),
         bitrateBps = 1_500_000,
     ),
-    videoFilter = "scale=320:180,eq=brightness=0.1,vignette,format=yuv420p",
+    videoFilter = "scale=320:180,hue=b=0.1,vignette,format=yuv420p",
     audioSpec   = AudioEncoderSpec(codec = CodecId.Aac),   // null drops audio
     audioFilter = "volume=0.8",                            // optional
     onProgress  = { p -> println("encoded ${p.framesEncoded} frames") },
 )
 ```
 
-!!! note
-    `CodecId.Libx264` above is software x264, which only exists in a GPL-flavour FFmpeg (system installs usually have it; KiteCodec's vendored builds add it via an explicit GPL opt-in). The default LGPL flavour ships hardware H.264 / H.265 and royalty-free software AV1 instead, which is the App-Store-safe path. See [Platform support](platforms.md) and [Licensing](licensing.md).
+For H.264 or H.265, probe first and pick what the linked build has:
+`FFmpeg.hasEncoder("h264_videotoolbox")` on Apple platforms,
+`"h264_mediacodec"` on Android, `"libx264"` only in a GPL FFmpeg. See
+[Platform support](platforms.md) and [Licensing](licensing.md).
 
-<div class="grid cards" markdown>
-
-- :material-rocket-launch: **New here?** [Get started in a few minutes](getting-started.md)
-- :material-book-open-variant: **Browse the guides** below, or jump to the [API reference](https://yuroyami.github.io/KiteCodec/api/)
-
-</div>
+- [Getting started](getting-started.md): install FFmpeg, wire the build, run your first transcode.
+- [API reference](https://yuroyami.github.io/KiteCodec/api/): every public type and signature.
 
 ## Why KiteCodec
 
-The usual way to do media work from Kotlin is to shell out to the `ffmpeg` CLI and parse its stderr, or to wrap a binary like FFmpegKit. You marshal arguments into a string, launch a process, and read progress back out of log lines. The codec engine lives outside your program.
+Media work from Kotlin normally means launching the `ffmpeg` CLI and parsing its stderr, or wrapping a prebuilt binary like FFmpegKit. You marshal arguments into a string, launch a process, and read progress back out of log lines. The codec engine lives outside your program.
 
-KiteCodec is a **single Kotlin API over libav\* directly**. You call `Transcoder.transcode(...)` and it opens the file via libavformat, demuxes **once**, routes packets to per-stream libavcodec decoders, pumps frames through libavfilter graphs, encodes, and interleaves the streams into a valid container. There is no process to spawn and no log to scrape. Progress arrives as a typed callback, errors arrive as typed exceptions, and frames flow as a coroutine `Flow`.
+KiteCodec is a **single Kotlin API over libav\* directly**. You call `Transcoder.transcode(...)` and it opens the file via libavformat, demuxes **once**, routes packets to per-stream libavcodec decoders, pushes frames through libavfilter graphs, encodes, and interleaves the streams into a valid container. There is no process to spawn and no log to scrape. Progress arrives as a typed callback, errors arrive as typed exceptions, and frames flow as a coroutine `Flow`.
 
 Everything routes through one demux pass. When you decode several streams, or composite two inputs, the demuxer reads the file a single time and fans packets out to the decoders that need them.
 
 ## Install
 
-KiteCodec is **not on Maven Central yet**. Today you consume it by building from source against an FFmpeg you provide. The Gradle build discovers a system FFmpeg or cross-compiles a vendored static one through its own build tasks.
+!!! warning "Not consumable from Maven Central today"
+    Neither `kitecodec-core` nor the Gradle plugin has been published, and the FFmpeg Release assets the plugin's default `FFmpegSource.Prebuilt` downloads do not exist. The [README](https://github.com/yuroyami/KiteCodec#install) carries the complete consumer build script and the [release status](https://github.com/yuroyami/KiteCodec#release-status), and is the single place either is tracked. Until that changes, you work inside the KiteCodec checkout.
 
-!!! warning "FFmpeg is a prerequisite"
-    The bindings link against libav\*. You need FFmpeg present at build and run time, either installed through your package manager or produced by the bundled FFmpeg build tasks.
+The bindings link against libav\*, so FFmpeg has to be present at build time and — for a dynamically linked build — at run time.
 
 === "macOS"
 
@@ -60,10 +59,7 @@ KiteCodec is **not on Maven Central yet**. Today you consume it by building from
     ./gradlew :kitecodec-core:linuxX64Test
     ```
 
-The published coordinate is `io.github.yuroyami:kitecodec-core:0.0.1`, built locally for now. The default `kitecodec-core` profile is LGPL and commercial-safe; a `kitecodec-gpl` module that adds libx264 / libx265 for GPL projects is planned. See [Platform support](platforms.md) for what is verified where.
-
-!!! note "Kotlin/Native only, today"
-    KiteCodec is a Kotlin/Native library. macOS arm64 is verified end to end. Linux and Windows build and test in CI. Android compiles as a native klib. iOS code is written but not yet CI-verified. There is no JVM or Android-app AAR yet.
+KiteCodec is Kotlin/Native only. There is no JVM target, no Android AAR, and no web target. See [Platform support](platforms.md) for how FFmpeg is sourced per target, and the [README's target table](https://github.com/yuroyami/KiteCodec#targets) for what CI verifies.
 
 ## What you can do
 
@@ -77,9 +73,13 @@ MediaSource.open("input.mp4").use { src ->
 
     val video = src.primaryVideo ?: error("no video stream")
     src.decodedFrames(video).collect { frame ->
-        val info = frame.info               // width, height, pts, pixelFormat...
-        val pixels = frame.copyPlanesToByteArray()
-        // ...
+        try {
+            val info = frame.info           // width, height, pts, pixelFormat...
+            val pixels = frame.copyPlanesToByteArray()
+            // ...
+        } finally {
+            frame.close()                   // emitted frames are OWNED; close or they leak
+        }
     }
 }
 ```
@@ -106,7 +106,7 @@ Transcoder.transcode(
     input = "input.mp4",
     output = "clip.mp4",
     spec = VideoEncoderSpec(
-        codec = CodecId.Libx264,
+        codec = CodecId("mpeg4"),
         width = 1280, height = 720,
         frameRate = Rational.Fps30,
     ),
@@ -159,6 +159,6 @@ See **[Filtering](filtering.md)**.
 
 ## Status
 
-KiteCodec is pre-1.0 and actively developed. The full demux -> decode -> filter -> encode -> mux pipeline is live for video and audio, including frame-exact trim, audio and subtitle stream copy, multi-input filter graphs, lossless remux, thumbnails, and hardware H.264 encode via VideoToolbox on macOS. Hardware decode and full zero-copy hwframes pipelines, Maven Central publishing, and an Android AAR are on the way.
+KiteCodec is pre-1.0 and actively developed. The Kotlin library is complete: the full demux -> decode -> filter -> encode -> mux pipeline is live for video and audio, including frame-exact trim, video, audio and subtitle stream copy, multi-input filter graphs, lossless remux, thumbnails, and hardware H.264 encode via VideoToolbox on macOS. The binary distribution is not: nothing is published, and the FFmpeg release the Gradle plugin fetches from does not exist yet.
 
-For the project's design, FFmpeg sourcing modes, and what is next, see **[About KiteCodec](about.md)**.
+One target table covers the whole project and lives in the [README](https://github.com/yuroyami/KiteCodec#targets). For the design, the FFmpeg sourcing modes, and what is next, see **[About KiteCodec](about.md)**.

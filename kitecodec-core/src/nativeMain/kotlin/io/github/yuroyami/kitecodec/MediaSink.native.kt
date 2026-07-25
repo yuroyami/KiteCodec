@@ -8,18 +8,29 @@ import ffmpeg.avcodec_receive_packet
 import ffmpeg.avcodec_send_frame
 import ffmpeg.ffkmp_codec_first_sample_fmt
 import ffmpeg.ffkmp_codecctx_alloc
+import ffmpeg.ffkmp_codecctx_channels
 import ffmpeg.ffkmp_codecctx_frame_size
 import ffmpeg.ffkmp_codecctx_free
+import ffmpeg.ffkmp_codecctx_height
 import ffmpeg.ffkmp_codecctx_open
+import ffmpeg.ffkmp_codecctx_pix_fmt
+import ffmpeg.ffkmp_codecctx_sample_rate
 import ffmpeg.ffkmp_codecctx_set_audio
 import ffmpeg.ffkmp_codecctx_set_global_header
 import ffmpeg.ffkmp_codecctx_set_opt
 import ffmpeg.ffkmp_codecctx_set_video
+import ffmpeg.ffkmp_codecctx_time_base
+import ffmpeg.ffkmp_codecctx_width
 import ffmpeg.ffkmp_codecpar_copy_for_mux
 import ffmpeg.ffkmp_codecpar_from_context
+import ffmpeg.ffkmp_frame_convert_pixfmt
+import ffmpeg.ffkmp_frame_format
+import ffmpeg.ffkmp_frame_free
+import ffmpeg.ffkmp_frame_height
 import ffmpeg.ffkmp_frame_nb_samples
 import ffmpeg.ffkmp_frame_pts
 import ffmpeg.ffkmp_frame_set_pts
+import ffmpeg.ffkmp_frame_width
 import ffmpeg.ffkmp_packet_alloc
 import ffmpeg.ffkmp_packet_dts
 import ffmpeg.ffkmp_packet_free
@@ -32,6 +43,7 @@ import ffmpeg.ffkmp_packet_unref
 import ffmpeg.AVFormatContext
 import ffmpeg.AVStream
 import ffmpeg.ffkmp_fmt_alloc_output2
+import ffmpeg.ffkmp_fmt_avoid_negative_ts
 import ffmpeg.ffkmp_fmt_free_output
 import ffmpeg.ffkmp_fmt_set_opt
 import ffmpeg.ffkmp_fmt_io_open
@@ -112,7 +124,11 @@ public actual class MediaSink internal constructor(
             sink = this,
             codecCtx = codecCtx,
             stream = stream,
-            codecTimeBase = Rational(spec.frameRate.den, spec.frameRate.num),
+            // Read back from the OPENED context, never assumed from the spec: avcodec_open2 is
+            // free to adjust time_base, and a stale value here would rescale every packet
+            // against the wrong base (wrong playback speed) while newStreamFor — which reads it
+            // properly — told the muxer the real one.
+            codecTimeBase = codecCtxTimeBase(codecCtx),
             isAudio = false,
         )
         encoderCores += core
@@ -161,7 +177,7 @@ public actual class MediaSink internal constructor(
             sink = this,
             codecCtx = codecCtx,
             stream = stream,
-            codecTimeBase = Rational(1, spec.sampleRate),
+            codecTimeBase = codecCtxTimeBase(codecCtx),
             isAudio = true,
         )
         encoderCores += core
@@ -169,9 +185,18 @@ public actual class MediaSink internal constructor(
             core = core,
             frameSize = ffkmp_codecctx_frame_size(codecCtx),
             sampleFormat = negotiatedFormat,
-            sampleRate = spec.sampleRate,
-            channels = spec.channels,
+            // Report what the encoder actually opened with, not what was asked for — callers
+            // (Transcoder builds its aformat pin from these) must resample to the real values.
+            sampleRate = ffkmp_codecctx_sample_rate(codecCtx).takeIf { it > 0 } ?: spec.sampleRate,
+            channels = ffkmp_codecctx_channels(codecCtx).takeIf { it > 0 } ?: spec.channels,
         )
+    }
+
+    /** The time-base the OPENED context settled on — authoritative for all pts math. */
+    private fun codecCtxTimeBase(codecCtx: CPointer<AVCodecContext>): Rational = memScoped {
+        val n = alloc<IntVar>(); val d = alloc<IntVar>()
+        ffkmp_codecctx_time_base(codecCtx, n.ptr, d.ptr)
+        Rational(n.value.takeIf { it != 0 } ?: 1, d.value.takeIf { it != 0 } ?: 1)
     }
 
     /** Find + configure + open one encoder context; [configure] sets type-specific fields. */
@@ -207,11 +232,8 @@ public actual class MediaSink internal constructor(
             val par = ffkmp_stream_codecpar(stream)
                 ?: throw FFmpegException(FFmpegError.Internal("New stream missing codecpar"))
             check0(ffkmp_codecpar_from_context(par, codecCtx), "avcodec_parameters_from_context")
-            memScoped {
-                val n = alloc<IntVar>(); val d = alloc<IntVar>()
-                ffmpeg.ffkmp_codecctx_time_base(codecCtx, n.ptr, d.ptr)
-                ffkmp_stream_set_time_base(stream, n.value, d.value)
-            }
+            val tb = codecCtxTimeBase(codecCtx)
+            ffkmp_stream_set_time_base(stream, tb.num, tb.den)
             return stream
         } catch (t: Throwable) {
             ffkmp_codecctx_free(codecCtx)
@@ -256,6 +278,16 @@ public actual class MediaSink internal constructor(
             closed = true
             var rc = 0
             try {
+                // Flush BEFORE freeing the contexts. Encoders buffer (libx264's lookahead holds
+                // tens of frames); freeing without an EOF drain silently truncates the tail. The
+                // drain is best-effort — close() must still write a trailer for whatever did land
+                // if an encoder errors out here, and drive()/Transcoder have usually finished
+                // already, in which case finish() is a no-op on a spent encoder.
+                if (encoderCores.isNotEmpty()) {
+                    withPacket { packet ->
+                        encoderCores.forEach { core -> runCatching { core.finish(packet) } }
+                    }
+                }
                 encoderCores.forEach { runCatching { it.close() } }
                 encoderCores.clear()
                 if (headerState == HeaderState.Written) {
@@ -283,6 +315,12 @@ public actual class MediaSink internal constructor(
             val ctx = ctxVar.value
             arena.clear()
             if (ctx == null) throw FFmpegException(FFmpegError.Internal("alloc_output returned NULL"))
+            // Streams are rebased against ONE shared origin (claimBaseMicros), which preserves the
+            // relative A/V offset but lets a stream that begins before the claiming one land at a
+            // negative timestamp (AAC priming samples are the usual source). Pin the muxer policy
+            // rather than inherit each format's default: MAKE_ZERO shifts the whole output by one
+            // common amount, so nothing is negative and the offset survives.
+            ffkmp_fmt_avoid_negative_ts(ctx)
             try {
                 options.forEach { (k, v) ->
                     check0(ffkmp_fmt_set_opt(ctx, k, v), "av_opt_set (muxer option '$k')")
@@ -321,16 +359,69 @@ internal class EncoderCore(
         get() = if (lastPts == Long.MIN_VALUE) 0
         else ffkmp_rescale_q(lastPts, codecTimeBase.num, codecTimeBase.den, 1, 1_000_000)
 
-    /** Encode one frame (already in the encoder's expected format). Closes [frame]. */
+    /** Encode one frame, converting its pixel format to the encoder's if needed. Closes [frame]. */
     fun encode(packet: CPointer<AVPacket>, frame: Frame) {
         check(!closed) { "Encoder is closed" }
         restampPts(frame)
         try {
-            sendAndDrain(packet, frame.nativeFrame)
+            val native = frame.nativeFrame
+            val converted = if (isAudio) null else conversionFor(native)
+            if (converted != null) {
+                try {
+                    sendAndDrain(packet, converted)
+                } finally {
+                    ffkmp_frame_free(converted)
+                }
+            } else {
+                sendAndDrain(packet, native)
+            }
         } finally {
             frame.close()
         }
         framesEncoded += 1
+    }
+
+    /**
+     * Video frames do NOT necessarily arrive in the encoder's pixel format: a filter graph's
+     * buffersink is left unconstrained on purpose (so `scale`/`overlay` can negotiate freely), and
+     * an unfiltered passthrough hands over whatever the decoder produced — 10-bit sources are the
+     * common case. Converting here is what makes "no videoFilter" and "filter chain without a
+     * trailing `format=`" work instead of failing with a bare EINVAL from avcodec_send_frame.
+     *
+     * Returns a freshly allocated frame the caller must free, or null when no conversion is needed.
+     * Geometry mismatches are NOT silently rescaled — that is a caller error worth a clear message.
+     */
+    private fun conversionFor(native: CPointer<AVFrame>): CPointer<AVFrame>? {
+        // Geometry is checked FIRST and unconditionally. Folding it into the pixel-format branch
+        // would skip it whenever the formats already agree — and several encoders (mpeg4 among
+        // them) happily accept a wrong-sized frame and produce a corrupt stream rather than
+        // failing, so there is no backstop behind this check.
+        val frameW = ffkmp_frame_width(native)
+        val frameH = ffkmp_frame_height(native)
+        val encW = ffkmp_codecctx_width(codecCtx)
+        val encH = ffkmp_codecctx_height(codecCtx)
+        if (frameW > 0 && frameH > 0 && (frameW != encW || frameH != encH)) {
+            throw FFmpegException(
+                FFmpegError.InvalidArgument(
+                    0,
+                    "Frame is ${frameW}x$frameH but the encoder was opened for ${encW}x$encH. " +
+                        "KiteCodec converts pixel formats for you but never silently rescales — " +
+                        "match VideoEncoderSpec.width/height to the filter graph's output, or add " +
+                        "a scale= stage to the filter chain.",
+                ),
+            )
+        }
+
+        val want = ffkmp_codecctx_pix_fmt(codecCtx)
+        val have = ffkmp_frame_format(native)
+        if (want < 0 || have < 0 || want == have) return null
+        return ffkmp_frame_convert_pixfmt(native, want)
+            ?: throw FFmpegException(
+                FFmpegError.Internal(
+                    "Could not convert frame from ${pixelFormatFromAv(have).name} to " +
+                        "${pixelFormatFromAv(want).name} for the encoder",
+                ),
+            )
     }
 
     /** Signal EOF to the encoder and write out everything it still buffers. */
@@ -363,7 +454,17 @@ internal class EncoderCore(
             }
             rescaled - basePts
         }
-        if (lastPts != Long.MIN_VALUE && pts <= lastPts) pts = lastPts + 1
+        // Force strictly increasing output. The step matters: the codec time-base is 1/sample_rate
+        // for audio, so a one-TICK bump would collapse a whole 1024-sample AAC frame into a single
+        // sample and desync everything after it. Advance by the frame's own duration instead.
+        if (lastPts != Long.MIN_VALUE && pts <= lastPts) {
+            val step = if (isAudio) {
+                ffkmp_frame_nb_samples(frame.nativeFrame).toLong().coerceAtLeast(1)
+            } else {
+                1L
+            }
+            pts = lastPts + step
+        }
         lastPts = pts
         ffkmp_frame_set_pts(frame.nativeFrame, pts)
     }

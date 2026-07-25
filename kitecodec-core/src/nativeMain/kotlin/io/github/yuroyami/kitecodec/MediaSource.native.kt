@@ -9,7 +9,7 @@ import ffmpeg.AVMEDIA_TYPE_VIDEO
 import ffmpeg.AVPacket
 import ffmpeg.avcodec_receive_frame
 import ffmpeg.avcodec_send_packet
-import ffmpeg.ffkmp_codec_name
+import ffmpeg.ffkmp_codec_id_name
 import ffmpeg.ffkmp_codecctx_alloc
 import ffmpeg.ffkmp_codecctx_free
 import ffmpeg.ffkmp_codecctx_from_par
@@ -40,13 +40,13 @@ import ffmpeg.ffkmp_fmt_nb_streams
 import ffmpeg.ffkmp_fmt_open_input
 import ffmpeg.ffkmp_fmt_read_frame
 import ffmpeg.ffkmp_fmt_seek_micros
+import ffmpeg.ffkmp_fmt_start_time
 import ffmpeg.ffkmp_fmt_stream
 import ffmpeg.ffkmp_stream_avg_frame_rate
 import ffmpeg.ffkmp_stream_codecpar
 import ffmpeg.ffkmp_stream_duration_micros
 import ffmpeg.ffkmp_stream_index
 import ffmpeg.ffkmp_stream_metadata
-import ffmpeg.ffkmp_stream_start_time
 import ffmpeg.ffkmp_stream_time_base
 import ffmpeg.ffkmp_dict_entry_key
 import ffmpeg.ffkmp_dict_entry_value
@@ -74,7 +74,24 @@ public actual class MediaSource internal constructor(
     public actual val durationMicros: Long?,
     public actual val formatName: String,
     public actual val metadata: Map<String, String>,
+    /**
+     * Where the container's timeline begins, in microseconds (0 for most mp4, ~1.4s for MPEG-TS).
+     *
+     * Everything libavformat hands out — packet dts/pts, decoded frame pts, seek targets with
+     * `stream_index = -1` — is ABSOLUTE and includes this offset. Everything KiteCodec's public
+     * API takes or reports — [seekMicros], [extractFrame]'s `atMicros`, `Transcoder`/`Remuxer`
+     * trim bounds — is media-RELATIVE, i.e. "n microseconds into the content". This is the single
+     * conversion between the two; [toRelativeMicros] and [toAbsoluteMicros] apply it.
+     */
+    public actual val startTimeMicros: Long,
 ) : AutoCloseable {
+
+    /** Absolute timestamp [ts] (in [timeBase]) → media-relative microseconds. */
+    internal fun toRelativeMicros(ts: Long, timeBase: Rational): Long =
+        ffkmp_rescale_q(ts, timeBase.num, timeBase.den, 1, 1_000_000) - startTimeMicros
+
+    /** Media-relative microseconds → the absolute microsecond timestamp the demuxer speaks. */
+    internal fun toAbsoluteMicros(relativeMicros: Long): Long = relativeMicros + startTimeMicros
 
     /**
      * Guards the {closed, demuxing} state machine. The demuxer is ONE cursor: exactly one
@@ -209,6 +226,14 @@ public actual class MediaSource internal constructor(
             when {
                 sendRc == 0 || sendRc == eof -> { drain(decoder, frame, onFrame); return }
                 sendRc == eagain -> drain(decoder, frame, onFrame)  // output full → drain, then resend
+                // A packet the decoder cannot use is not a reason to abandon the file. Every seek
+                // into a stream that carries its parameter sets in band (MPEG-TS above all) lands
+                // before the next SPS/PPS, so the first packets after it decode to nothing —
+                // "non-existing PPS 0 referenced". Aborting there would make trimming a broadcast
+                // capture impossible. Skip the packet and keep going, which is what ffmpeg's own
+                // CLI does; if the stream is genuinely broken, no frames arrive and the callers
+                // that need output say so.
+                sendRc == FFmpegError.AVERROR_INVALIDDATA -> { drain(decoder, frame, onFrame); return }
                 else -> throw FFmpegException(avError(sendRc))
             }
         }
@@ -220,6 +245,9 @@ public actual class MediaSource internal constructor(
         while (true) {
             val rc = avcodec_receive_frame(decoder.codecCtx, frame.nativeFrame)
             if (rc == eagain || rc == eof) return
+            // Same tolerance as the send side: a frame that could not be reconstructed from the
+            // packets seen so far is skipped, not fatal.
+            if (rc == FFmpegError.AVERROR_INVALIDDATA) return
             if (rc < 0) throw FFmpegException(avError(rc))
             // Decoders fill best_effort_timestamp even for files with missing pts — promote it
             // so everything downstream (filters, encoders) sees a usable timestamp.
@@ -236,8 +264,30 @@ public actual class MediaSource internal constructor(
             check(!closed) { "MediaSource is closed" }
             check(!demuxing) { "Cannot seek while a decode flow is collecting — the demuxer cursor is shared" }
         }
-        val rc = ffkmp_fmt_seek_micros(ctx, -1, micros)
+        // [micros] is media-relative; av_seek_frame with stream_index = -1 wants an absolute
+        // AV_TIME_BASE timestamp. On a container that starts at a nonzero time (MPEG-TS) the
+        // two differ by exactly startTimeMicros.
+        val rc = ffkmp_fmt_seek_micros(ctx, -1, toAbsoluteMicros(micros))
         if (rc < 0) throw FFmpegException(avError(rc))
+    }
+
+    /**
+     * Seek for a pipeline that will DECODE forward to the exact target.
+     *
+     * [seekMicros] asks libavformat for the keyframe at or before the target, but that is a
+     * preference, not a guarantee. Indexless containers (MPEG-TS above all) resolve a seek by
+     * binary-searching byte positions, so the demuxer can hand back a position slightly PAST the
+     * keyframe it aimed at — and then the video decoder, which cannot output anything until it
+     * sees the next IDR, silently starts a whole GOP late. Landing early costs a few discarded
+     * frames; landing late is unrecoverable, because nothing downstream can rewind.
+     *
+     * So aim deliberately early by [DECODE_SEEK_BACKOFF_MICROS] and let the caller's existing
+     * decode-and-discard loop walk forward to the frame it actually wants. Callers that stream-copy
+     * instead of decoding ([Remuxer]) must NOT use this — for them the extra pre-roll would land in
+     * the output as real content.
+     */
+    internal suspend fun seekForDecode(micros: Long) {
+        seekMicros((micros - DECODE_SEEK_BACKOFF_MICROS).coerceAtLeast(0L))
     }
 
     /** Native codec parameters of a stream — for stream-copy setups ([MediaSink.addCopyStream]). */
@@ -249,24 +299,20 @@ public actual class MediaSource internal constructor(
     public actual suspend fun extractFrame(atMicros: Long, stream: StreamInfo?): Frame {
         val target = stream ?: primaryVideo
             ?: throw FFmpegException(FFmpegError.Internal("No video stream to extract a frame from"))
-        // Containers may start at a nonzero timestamp (MPEG-TS commonly ~1.4s): [atMicros] is
-        // relative to the media start, frame pts are absolute — shift by the stream's start.
-        val startOffsetMicros = run {
-            val st = ffkmp_fmt_stream(ctx, target.index.toUInt())?.let { ffkmp_stream_start_time(it) } ?: 0L
-            if (st == FrameInfo.NOPTS || st <= 0L) 0L
-            else ffkmp_rescale_q(st, target.timeBase.num, target.timeBase.den, 1, 1_000_000)
-        }
-        val absoluteTarget = atMicros + startOffsetMicros
-        seekMicros(absoluteTarget)
+        // [atMicros] is media-relative; seekForDecode and toRelativeMicros both apply the
+        // container's start offset, so the comparison below stays in one consistent timeline.
+        // seekForDecode (not seekMicros) because the loop below decodes forward to the target and
+        // a seek that overshoots would silently return a much later frame.
+        seekForDecode(atMicros)
         var result: Frame? = null
         demuxRouted(
             decode = listOf(target),
             copy = emptyList(),
             onFrame = { frame ->
                 val ptsMicros = if (frame.info.hasPts) {
-                    ffkmp_rescale_q(frame.info.pts, target.timeBase.num, target.timeBase.den, 1, 1_000_000)
+                    toRelativeMicros(frame.info.pts, target.timeBase)
                 } else Long.MAX_VALUE  // no pts → accept the first frame we see
-                if (ptsMicros >= absoluteTarget) {
+                if (ptsMicros >= atMicros) {
                     result = frame.copy()
                     frame.close()
                     throw StopDemux()
@@ -297,6 +343,13 @@ public actual class MediaSource internal constructor(
 
     public actual companion object {
         public actual fun open(path: String): MediaSource = openMediaSource(path)
+
+        /**
+         * How far before the requested time [seekForDecode] aims. Must comfortably exceed one GOP:
+         * broadcast MPEG-TS typically uses 0.5–2s, and file-based content rarely exceeds 10s. The
+         * only cost of overshooting backwards is decoding frames that are then discarded.
+         */
+        private const val DECODE_SEEK_BACKOFF_MICROS = 5_000_000L
     }
 }
 
@@ -360,7 +413,7 @@ internal fun openMediaSource(path: String): MediaSource {
     val formatName = ffkmp_fmt_iformat_name(ctx)?.toKString() ?: "unknown"
     val metadata = readMetadata(ffkmp_fmt_metadata(ctx))
 
-    return MediaSource(ctx, streams, durationFromHeader, formatName, metadata)
+    return MediaSource(ctx, streams, durationFromHeader, formatName, metadata, ffkmp_fmt_start_time(ctx))
 }
 
 private fun buildStreams(ctx: CPointer<AVFormatContext>): List<StreamInfo> {
@@ -381,7 +434,10 @@ private fun buildStreams(ctx: CPointer<AVFormatContext>): List<StreamInfo> {
         }
 
         val codecId = ffkmp_codecpar_codec_id(par)
-        val codecName = ffkmp_codec_name(ffkmp_find_decoder_by_id(codecId))?.toKString() ?: "codec_$codecId"
+        // The CODEC's canonical name, not whichever decoder this build registers for it: an AV1
+        // stream must read "av1" whether or not libdav1d is compiled in, and a subtitle or
+        // attachment stream with no decoder at all must still name its codec.
+        val codecName = ffkmp_codec_id_name(codecId)?.toKString() ?: "codec_$codecId"
 
         val timeBase = readRational { num, den -> ffkmp_stream_time_base(s, num, den) }
         val avgFr    = readRational { num, den -> ffkmp_stream_avg_frame_rate(s, num, den) }

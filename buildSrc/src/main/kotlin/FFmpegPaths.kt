@@ -39,33 +39,77 @@ data class FFmpegPaths(
                     isStaticVendored = true,
                 )
             }
+            val host = hostTriple()
             return resolveSystem(project, target)
                 ?: throw GradleException(
-                    "No FFmpeg install found for $target (${license.dirName}). Either install FFmpeg " +
-                        "system-wide (brew/apt/pkg-config) or run " +
-                        ":buildFFmpegFor${target.gradleSuffix}${license.taskSuffix} to vendor a static " +
-                        "build into native-libs/${license.dirName}/${target.dirName}/.",
+                    buildString {
+                        append("No FFmpeg install found for $target (${license.dirName}). ")
+                        append("Run :buildFFmpegFor${target.gradleSuffix}${license.taskSuffix} to vendor a ")
+                        append("static build into native-libs/${license.dirName}/${target.dirName}/")
+                        if (target == host) {
+                            append(", or install FFmpeg system-wide (brew install ffmpeg / apt install the ")
+                            append("libav*-dev packages).")
+                        } else {
+                            append(". A system FFmpeg cannot be used here: this host is ")
+                            append("${host ?: "an unrecognised platform"}, so its libraries are built for ")
+                            append("the wrong architecture — only a vendored cross-build is valid for $target.")
+                        }
+                    },
                 )
         }
 
-        private fun resolveSystem(project: Project, target: TargetTriple): FFmpegPaths? = when (target) {
-            TargetTriple.MacosArm64, TargetTriple.MacosX64 -> {
-                val configured = project.providers.gradleProperty("kitecodec.macos.homebrew.prefix").orNull
-                val prefixCandidates = listOfNotNull(configured, "/opt/homebrew", "/usr/local")
-                val prefix = prefixCandidates.firstOrNull { File("$it/include/libavformat/avformat.h").exists() }
-                    ?: return null
-                FFmpegPaths("$prefix/include", "$prefix/lib", isStaticVendored = false)
+        /**
+         * A system FFmpeg is only ever valid for the HOST's own target.
+         *
+         * The paths below (`/opt/homebrew`, `/usr/lib/x86_64-linux-gnu`, …) are matched by
+         * existence, not by architecture, so without this gate `resolve(project, MacosX64)` on an
+         * Apple-silicon Mac happily returns the arm64 Homebrew prefix and `resolve(project,
+         * LinuxArm64)` on an x64 box returns the x86_64 libraries — cinterop then parses headers
+         * for one architecture and the linker is handed archives for another. Cross targets have
+         * exactly one correct answer: a vendored build under `native-libs/`.
+         */
+        private fun hostTriple(): TargetTriple? {
+            val os = System.getProperty("os.name").orEmpty().lowercase()
+            val arch = System.getProperty("os.arch").orEmpty().lowercase()
+            val isArm64 = arch in setOf("aarch64", "arm64")
+            val isX64 = arch in setOf("amd64", "x86_64")
+            return when {
+                "mac" in os && isArm64 -> TargetTriple.MacosArm64
+                "mac" in os && isX64 -> TargetTriple.MacosX64
+                "linux" in os && isX64 -> TargetTriple.LinuxX64
+                "linux" in os && isArm64 -> TargetTriple.LinuxArm64
+                else -> null
             }
-            TargetTriple.LinuxX64, TargetTriple.LinuxArm64 -> {
-                val candidates = listOf("/usr/include", "/usr/local/include")
-                val include = candidates.firstOrNull { File("$it/libavformat/avformat.h").exists() }
-                    ?: return null
-                val libCandidates = listOf("/usr/lib", "/usr/local/lib", "/usr/lib/x86_64-linux-gnu", "/usr/lib/aarch64-linux-gnu")
-                val lib = libCandidates.firstOrNull { File("$it/libavformat.so").exists() } ?: "/usr/lib"
-                FFmpegPaths(include, lib, isStaticVendored = false)
+        }
+
+        private fun resolveSystem(project: Project, target: TargetTriple): FFmpegPaths? {
+            // iOS / mingw / Android never have a system install; every other target only counts
+            // when it IS this host (see hostTriple).
+            if (target != hostTriple()) return null
+            return when (target) {
+                TargetTriple.MacosArm64, TargetTriple.MacosX64 -> {
+                    val configured = project.providers.gradleProperty("kitecodec.macos.homebrew.prefix").orNull
+                    val prefixCandidates = listOfNotNull(configured, "/opt/homebrew", "/usr/local")
+                    val prefix = prefixCandidates.firstOrNull { File("$it/include/libavformat/avformat.h").exists() }
+                        ?: return null
+                    FFmpegPaths("$prefix/include", "$prefix/lib", isStaticVendored = false)
+                }
+                TargetTriple.LinuxX64, TargetTriple.LinuxArm64 -> {
+                    val candidates = listOf("/usr/include", "/usr/local/include")
+                    val include = candidates.firstOrNull { File("$it/libavformat/avformat.h").exists() }
+                        ?: return null
+                    // Multiarch dir for THIS host first — /usr/lib may hold a foreign-arch copy.
+                    val multiarch = if (target == TargetTriple.LinuxArm64) {
+                        "/usr/lib/aarch64-linux-gnu"
+                    } else {
+                        "/usr/lib/x86_64-linux-gnu"
+                    }
+                    val libCandidates = listOf(multiarch, "/usr/lib", "/usr/local/lib")
+                    val lib = libCandidates.firstOrNull { File("$it/libavformat.so").exists() } ?: return null
+                    FFmpegPaths(include, lib, isStaticVendored = false)
+                }
+                else -> null
             }
-            // iOS / mingw / Android all *require* a vendored build — there's no system install path.
-            else -> null
         }
     }
 }

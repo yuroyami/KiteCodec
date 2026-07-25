@@ -171,6 +171,10 @@ public actual class Frame internal constructor(
                 check0(ffkmp_codecctx_open(ctx, encoder), "avcodec_open2 (image encoder)")
                 val packet = ffkmp_packet_alloc()
                     ?: throw FFmpegException(FFmpegError.Internal("av_packet_alloc returned NULL"))
+                // A single image needs pts 0, but when no conversion happened sendFrame IS the
+                // caller's frame — stamping it would silently destroy the timestamp of a frame
+                // the caller may still want to encode into a video. Restore it below.
+                val originalPts = ffkmp_frame_pts(sendFrame)
                 try {
                     ffkmp_frame_set_pts(sendFrame, 0)
                     val eagain = FFErrors.EAGAIN
@@ -206,6 +210,7 @@ public actual class Frame internal constructor(
                     return bytes
                         ?: throw FFmpegException(FFmpegError.Internal("Image encoder produced no packet"))
                 } finally {
+                    ffkmp_frame_set_pts(sendFrame, originalPts)
                     ffkmp_packet_free(packet)
                 }
             } finally {

@@ -4,63 +4,35 @@
 
 This page covers the project's current status, its roadmap, the binding architecture, and the licence. For the API itself, start with [Getting started](getting-started.md) or the [API reference](https://yuroyami.github.io/KiteCodec/api/).
 
-## Philosophy
+## Approach
 
-The usual way to do media work from Kotlin is to shell out to the `ffmpeg` CLI and scrape its stderr, or to wrap a binary like FFmpegKit. You marshal arguments into a string, launch a process, and read progress back out of log lines. The codec engine lives outside your program.
+Media work from Kotlin normally means launching the `ffmpeg` CLI and scraping its stderr, or wrapping a prebuilt binary like FFmpegKit. You marshal arguments into a string, launch a process, and read progress back out of log lines.
 
-KiteCodec is the opposite. You call `Transcoder.transcode(...)` and it opens the file via libavformat, demuxes once, routes packets to per-stream libavcodec decoders, pumps frames through libavfilter graphs, encodes, and interleaves the streams into a valid container. There is no process to spawn and no log to scrape. Progress arrives as a typed callback, errors arrive as typed exceptions, and frames flow as a coroutine `Flow`.
+KiteCodec calls the libraries directly. `Transcoder.transcode(...)` opens the file via libavformat, demuxes once, routes packets to per-stream libavcodec decoders, pushes frames through libavfilter graphs, encodes, and interleaves the streams into a valid container. Progress arrives as a typed callback, errors arrive as typed exceptions, and frames flow as a coroutine `Flow`.
 
 Everything routes through a single demux pass. When you decode several streams, or composite two inputs, the demuxer reads the file once and fans packets out to the decoders that need them.
 
 ## Current Status
 
-KiteCodec is pre-1.0 and actively developed. The full **demux -> decode -> filter -> encode -> mux** pipeline is live for both video and audio, in a single pass. The table below is the honest summary of what works today.
+KiteCodec is pre-1.0 and actively developed. The full **demux -> decode -> filter -> encode -> mux** pipeline is live for both video and audio, in a single pass, for every published target. The Kotlin library is complete; the binary distribution it needs is not.
 
-| Surface | Status | Notes |
-|---|:---:|---|
-| Capability probing: `FFmpeg.versions`, `hasEncoder/Decoder/Filter` | Yes | |
-| `MediaSource.open(path)` + `streams` + `metadata` + `seekMicros` | Yes | demuxer wraps `AVFormatContext` |
-| `MediaSource.decodedFrames(stream): Flow<Frame>` | Yes | EAGAIN-correct decode loop, best-effort pts |
-| `MediaSource.decodeStreams(streams): Flow<Frame>` | Yes | several streams, one demux pass |
-| `Frame.copyPlanesToByteArray()` | Yes | video planes and audio samples |
-| `FilterGraph.buildVideo(...)` / `buildAudio(...)` | Yes | any FFmpeg filter chain; audio output pinned encoder-ready |
-| `MediaSink.addVideoEncoder(spec)` / `addAudioEncoder(spec)` | Yes | shared EAGAIN-correct encode core, monotonic zero-based pts, per-encoder `options` (`crf`, `preset`, ...) |
-| `MediaSink.addCopyStream(...)`: stream copy | Yes | no decode/encode, timestamp rescale only |
-| `Remuxer.remux(...)`: lossless container rewrite | Yes | mp4 / mkv / mov in seconds, bit-exact, keyframe-snapped trim |
-| `Transcoder.transcode(...)` | Yes | one-call A/V pipeline: frame-exact trim, `audioCopy`, `subtitleCopy`, metadata, progress |
-| Audio-only transcode (mp3 to aac etc.) | Yes | `spec = null` |
-| Trim / clip extraction (`startMicros` / `endMicros`) | Yes | frame-exact re-encode; keyframe-snapped copy |
-| `MediaSource.extractFrame` + `Frame.encodeImage` | Yes | thumbnails: seek -> decode -> jpg/png bytes |
-| `Frame.copy()` | Yes | O(1) owned snapshot, escapes the reuse rule |
-| Multi-input filter graphs (overlay, amix) | Yes | `buildVideoMulti` / `buildAudioMulti`, `[in0]...[inN-1]` -> `[out]` |
-| Hardware encode: `h264_videotoolbox` | Yes | verified on macOS arm64; `allow_sw` option for VMs |
-| Hardware decode / full hwframes pipeline | Planned | on the way |
+There is one status table for the whole project, and it lives in the [README](https://github.com/yuroyami/KiteCodec#targets). It records, per target, whether the target is in the published set, what CI actually builds and tests, and where FFmpeg comes from. Keeping a second copy here is how the two drifted apart before.
+
+The two things a reader most often needs from it:
+
+- **KiteCodec cannot be consumed from Maven Central today.** Neither `kitecodec-core` nor the Gradle plugin has been published, and the FFmpeg Release assets the plugin's default `FFmpegSource.Prebuilt` downloads do not exist. See [Release status](https://github.com/yuroyami/KiteCodec#release-status) for the blocker.
+- **There is no JVM target**, and no web target of any kind. `nativeMain` is the only implementation source set, and every published artifact is a Kotlin/Native klib.
 
 !!! note "Frame ownership"
-    A `Frame` is valid only until the next emission or until the flow closes. The native `AVFrame*` is deliberately not exposed in `commonMain`. When you need to hold a frame past that window, call `Frame.copy()` for an O(1) owned snapshot.
-
-### Platform support
-
-KiteCodec is a Kotlin/Native library today. The matrix below records what is verified versus written-but-not-yet-confirmed. See [Platform support](platforms.md) for the full picture and how FFmpeg is sourced per target.
-
-| Target | Status | Notes |
-|---|:---:|---|
-| macOS arm64 | Yes | verified end-to-end (video+audio, ffprobe-validated) |
-| Linux x64, Windows (mingw x64) | CI | builds, tests, and e2e transcodes on every push |
-| Android arm64/arm32/x64 (Kotlin/Native klib) | CI | FFmpeg cross-compiled with the NDK (LGPL profile + MediaCodec), klib built |
-| Android AAR for JVM apps | Planned | next milestone: JNI substrate over the same `ffkmp_*` C layer |
-| macOS x64, iOS arm64, iOS sim, Linux arm64 | Planned | code written; iOS needs vendored FFmpeg in CI |
-
-!!! warning "FFmpeg is a prerequisite"
-    KiteCodec is **not on Maven Central yet**. Today you build from source against an FFmpeg you provide, either installed through your package manager or produced by the bundled FFmpeg build tasks. The published coordinate is `io.github.yuroyami:kitecodec-core:0.0.1`, built locally for now.
+    Frames emitted by the public `Flow` APIs (`MediaSource.decodedFrames`, `MediaSource.decodeStreams`, `FilterGraph.process`) are **owned by the collector**. Each stays valid until you close it, so buffering operators such as `buffer()` and `toList()` are safe — and every collected frame must be closed or its native buffers leak. Frames handed to a callback (`FilterGraph.feedInput`'s `onOutput`) are valid only for the duration of that call; `Frame.copy()` takes an O(1) owned snapshot. The native `AVFrame*` is deliberately not exposed in `commonMain`.
 
 ## What's next
 
+- **The FFmpeg binary release**: unblocking `release-binaries.yml` is what turns `FFmpegSource.Prebuilt` from a 404 into the default path, and is the prerequisite for publishing `kitecodec-core` at all.
 - **Android AAR**: a JNI substrate so `androidTarget` (regular Android apps on Kotlin/JVM) gets the same API, over the same `ffkmp_*` C helpers. FFmpegKit's retirement left that niche empty.
-- **Maven Central publishing**: so consumers can `implementation(...)` instead of building from source.
 - **Bitstream filters** (h264 to/from Annex B) so stream copy reaches MPEG-TS.
 - **Hardware decode and full hwframes pipelines**: zero-copy VideoToolbox / CUDA.
-- **iOS CI verification**: vendored FFmpeg cross-compile, so the written-but-unverified iOS path becomes a checked target.
+- **iOS**: nothing in this repository can cross-build an FFmpeg for iOS today, so the iOS targets compile only against a tree you produce yourself. That build chain comes first, CI verification after.
 
 ## Architecture
 
@@ -72,9 +44,9 @@ The binding is **one** cinterop module (`kitecodec-core/src/nativeInterop/cinter
 
 The pragmatic alternative, six separate cinterops (one per library), does not work. It produces six duplicate `AVCodec` / `AVFrame` / `AVPacket` types that will not pass across module boundaries. A frame decoded through one cinterop's `AVFrame` cannot be handed to a filter graph built against another cinterop's `AVFrame`. Consolidating into a single module is the only way to keep the types unified across decode -> filter -> encode.
 
-### The ~100 `ffkmp_*` C helpers
+### The `ffkmp_*` C helpers
 
-The `.def` file also exports around 100 small `static inline` C helpers, all prefixed `ffkmp_*`. They exist because some of FFmpeg's surface does not survive cinterop cleanly:
+The `.def` file also exports 141 small `static inline` C helpers, all prefixed `ffkmp_*`. They exist because some of FFmpeg's surface does not survive cinterop cleanly:
 
 - **Macros that don't survive cinterop.** `av_err2str` is a compound-statement macro; `AVERROR(EAGAIN)` and `AVERROR_EOF` are function-style macros. Each gets a real C function the indexer can actually read.
 - **Struct field accessors.** `ffkmp_stream_codecpar(AVStream*)`, `ffkmp_frame_pts(AVFrame*)`, and friends. Modern FFmpeg marks many fields "do not access directly," and several vary across libav versions; a thin C accessor pins one stable read path per field.
@@ -109,9 +81,9 @@ kitecodec-core/src/
 
 Every `expect` class in `commonMain` has its `actual` in `nativeMain`. All public types live flat under `io.github.yuroyami.kitecodec`, with no internal subpackages.
 
-### Timestamps, the part everyone gets wrong
+### Timestamp handling
 
-Timestamps are where most homegrown FFmpeg wrappers quietly corrupt their output. KiteCodec follows `ffmpeg.c`'s own discipline at every hop:
+KiteCodec follows `ffmpeg.c`'s own discipline at every hop:
 
 - **Decode.** Decoders promote `best_effort_timestamp` to `pts`, so files with missing or broken pts still cut correctly.
 - **Filter.** Filter graphs report their **output** time-base, which is not always the input's: `fps` and `atempo` change it. Frames leaving a graph are stamped with the output time-base. The `FilterGraph.outputTimeBase` property exposes it.
@@ -123,7 +95,7 @@ Timestamps are where most homegrown FFmpeg wrappers quietly corrupt their output
 
 ## FFmpeg sourcing
 
-KiteCodec links against an FFmpeg you provide. There are two modes:
+KiteCodec links against an FFmpeg you provide. In a consumer project the [Gradle plugin](gradle-plugin.md) does the providing; inside this repository there are two modes:
 
 === "Dynamic (default)"
 
@@ -150,7 +122,7 @@ See [Platform support](platforms.md) for the per-target detail.
 
 KiteCodec's own code is licensed under the **Apache License 2.0**. You can freely use, modify, and distribute it in commercial and open-source projects.
 
-The FFmpeg you link against carries its own licence, separate from KiteCodec's. It is **LGPL-2.1+** when FFmpeg is built without `--enable-gpl`, and **GPL** with it — KiteCodec's GPL build flavour also sets `--enable-version3`, so its effective licence is **GPL-3.0**. The default flavour is LGPL and is commercial- and App-Store-safe (with the usual [LGPL distribution obligations](licensing.md)). A `kitecodec-gpl` module that packages the GPL flavour (libx264 / libx265) as a drop-in artifact is planned, for GPL-compatible projects only.
+The FFmpeg you link against carries its own licence, separate from KiteCodec's. It is **LGPL-2.1+** when FFmpeg is built without `--enable-gpl`, and **GPL** with it — KiteCodec's GPL build flavour also sets `--enable-version3`, so its effective licence is **GPL-3.0**. The default flavour is LGPL and is commercial- and App-Store-safe (with the usual [LGPL distribution obligations](licensing.md)). A `kitecodec-gpl` module that would package the GPL flavour (libx264 / libx265) as a drop-in artifact does not exist: it is a README and nothing else, with no `build.gradle.kts`, commented out of `settings.gradle.kts`.
 
 When you build a vendored static FFmpeg, the licence flavour is a build-time choice: `buildFFmpegFor<Target>` produces the LGPL default, `buildFFmpegFor<Target>Gpl` the GPL opt-in (selected with `-Pkitecodec.ffmpeg.license=gpl`). Stay on the LGPL default if you ship through a GPL-hostile distribution channel such as the iOS App Store. Full compliance guidance lives in the [Licensing guide](licensing.md).
 

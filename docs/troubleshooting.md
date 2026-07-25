@@ -1,6 +1,6 @@
 # Troubleshooting
 
-The failures people actually hit, and how to get past them. Most build-time problems come down to one thing: KiteCodec links against an FFmpeg **you** provide, and the build could not find or produce it.
+Most build-time problems come down to one thing: KiteCodec links against an FFmpeg **you** provide, and the build could not find or produce it.
 
 ## "No FFmpeg install found for \<target\>"
 

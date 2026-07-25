@@ -226,21 +226,51 @@ class KiteCodecPlugin : Plugin<Project> {
         }
     }
 
-    /** Minimal system-FFmpeg resolution for dev convenience (macOS Homebrew / Linux). */
-    private fun systemLibDir(homebrewPrefix: String?, triple: KiteCodecTarget): File? = when (triple) {
-        KiteCodecTarget.MacosArm64, KiteCodecTarget.MacosX64 -> {
-            sequenceOf(homebrewPrefix, "/opt/homebrew", "/usr/local")
-                .filterNotNull()
-                .map(::File)
-                .firstOrNull { it.resolve("include/libavformat/avformat.h").exists() }
-                ?.resolve("lib")
+    /**
+     * Minimal system-FFmpeg resolution for dev convenience (macOS Homebrew / Linux).
+     *
+     * Only ever answers for the HOST's own target. These paths are matched by existence, not by
+     * architecture: without the [hostTriple] gate, a consumer building `macosX64` on an Apple
+     * silicon Mac would be handed the arm64 Homebrew libraries, and `linuxArm64` on an x64 box the
+     * x86_64 ones. Cross targets must use [FFmpegSource.Prebuilt].
+     */
+    private fun systemLibDir(homebrewPrefix: String?, triple: KiteCodecTarget): File? {
+        if (triple != hostTriple()) return null
+        return when (triple) {
+            KiteCodecTarget.MacosArm64, KiteCodecTarget.MacosX64 -> {
+                sequenceOf(homebrewPrefix, "/opt/homebrew", "/usr/local")
+                    .filterNotNull()
+                    .map(::File)
+                    .firstOrNull { it.resolve("include/libavformat/avformat.h").exists() }
+                    ?.resolve("lib")
+            }
+            KiteCodecTarget.LinuxX64, KiteCodecTarget.LinuxArm64 -> {
+                // Multiarch dir for THIS host first — /usr/lib may hold a foreign-arch copy.
+                val multiarch = if (triple == KiteCodecTarget.LinuxArm64) {
+                    "/usr/lib/aarch64-linux-gnu"
+                } else {
+                    "/usr/lib/x86_64-linux-gnu"
+                }
+                sequenceOf(multiarch, "/usr/lib", "/usr/local/lib")
+                    .map(::File)
+                    .firstOrNull { it.resolve("libavformat.so").exists() }
+            }
+            else -> null
         }
-        KiteCodecTarget.LinuxX64, KiteCodecTarget.LinuxArm64 -> {
-            sequenceOf(
-                "/usr/lib", "/usr/local/lib",
-                "/usr/lib/x86_64-linux-gnu", "/usr/lib/aarch64-linux-gnu",
-            ).map(::File).firstOrNull { it.resolve("libavformat.so").exists() }
+    }
+
+    /** The [KiteCodecTarget] this build is running on, or null on a platform with no mapping. */
+    private fun hostTriple(): KiteCodecTarget? {
+        val os = System.getProperty("os.name").orEmpty().lowercase()
+        val arch = System.getProperty("os.arch").orEmpty().lowercase()
+        val isArm64 = arch in setOf("aarch64", "arm64")
+        val isX64 = arch in setOf("amd64", "x86_64")
+        return when {
+            "mac" in os && isArm64 -> KiteCodecTarget.MacosArm64
+            "mac" in os && isX64 -> KiteCodecTarget.MacosX64
+            "linux" in os && isX64 -> KiteCodecTarget.LinuxX64
+            "linux" in os && isArm64 -> KiteCodecTarget.LinuxArm64
+            else -> null
         }
-        else -> null
     }
 }

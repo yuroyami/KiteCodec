@@ -2,8 +2,11 @@ package io.github.yuroyami.kitecodec
 
 /**
  * Static facade for global FFmpeg state — version info, build flags, capability probing.
- * Use it to feature-detect the bound FFmpeg before opening codecs or filters (builds differ:
- * a system FFmpeg may lack `libx264`, a vendored LGPL build definitely does).
+ *
+ * Use it to feature-detect the bound FFmpeg before opening a codec or a filter, because builds
+ * differ in what they contain. A system FFmpeg may or may not have `libx264`; KiteCodec's
+ * vendored LGPL profile never does, and asking for it there throws [FFmpegException] from
+ * [MediaSink.addVideoEncoder].
  */
 public expect object FFmpeg {
 

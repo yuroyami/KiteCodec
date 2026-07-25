@@ -11,6 +11,7 @@ import org.gradle.api.tasks.TaskAction
 import org.gradle.work.DisableCachingByDefault
 import java.io.File
 import java.io.IOException
+import java.io.RandomAccessFile
 import java.net.HttpURLConnection
 import java.net.URI
 import java.nio.file.AtomicMoveNotSupportedException
@@ -69,37 +70,75 @@ abstract class FetchFFmpegTask : DefaultTask() {
     @TaskAction
     fun run() {
         val dest = destDir.get().asFile
-        if (dest.resolve("lib/libavformat.a").exists()) {
+        if (isComplete(dest)) {
             logger.info("FFmpeg already present at $dest, skipping download.")
             return
         }
-        if (offline.get()) {
-            throw GradleException(
-                "kitecodec: Gradle is running in offline mode and the FFmpeg build for this target " +
-                    "is not in the cache ($dest). Re-run without --offline to download " +
-                    "${downloadUrl.get()}.",
-            )
-        }
         dest.parentFile.mkdirs()
-        // Siblings of dest so the final rename stays on one filesystem (atomic where supported).
-        val archive = File(dest.parentFile, "${dest.name}.zip.part")
-        val staging = File(dest.parentFile, "${dest.name}.staging")
-        try {
-            logger.lifecycle("[KiteCodec] downloading FFmpeg: ${downloadUrl.get()}")
-            withRetry("download ${downloadUrl.get()}") { download(downloadUrl.get(), archive) }
-            verifyChecksum(archive)
-            staging.deleteRecursively()
-            staging.mkdirs()
-            unzip(archive, staging)
-            check(staging.resolve("lib/libavformat.a").exists()) {
-                "The FFmpeg archive did not contain lib/libavformat.a (unpacked to $staging). " +
-                    "The Release asset layout may be wrong; expected {include,lib} at the archive root."
+        // [destDir] lives in the shared Gradle user home, so it is NOT owned by this build: several
+        // subprojects wire a task each for the same target, and a second Gradle invocation in
+        // another terminal writes the very same directory. Without a cross-process lock the
+        // deleteRecursively()/move() below can pull the tree out from under a link task that is
+        // reading it. Hold an exclusive lock on a sibling file for the whole fetch, and re-check
+        // completeness once inside — the process we waited on has very likely just done the work.
+        withDirectoryLock(dest) {
+            if (isComplete(dest)) {
+                logger.info("FFmpeg was populated at $dest while waiting for the cache lock.")
+                return@withDirectoryLock
             }
-            dest.deleteRecursively()
-            moveIntoPlace(staging, dest)
-        } finally {
-            archive.delete()
-            staging.deleteRecursively()
+            if (offline.get()) {
+                throw GradleException(
+                    "kitecodec: Gradle is running in offline mode and the FFmpeg build for this target " +
+                        "is not in the cache ($dest). Re-run without --offline to download " +
+                        "${downloadUrl.get()}.",
+                )
+            }
+            // Siblings of dest so the final rename stays on one filesystem (atomic where supported).
+            val archive = File(dest.parentFile, "${dest.name}.zip.part")
+            val staging = File(dest.parentFile, "${dest.name}.staging")
+            try {
+                logger.lifecycle("[KiteCodec] downloading FFmpeg: ${downloadUrl.get()}")
+                withRetry("download ${downloadUrl.get()}") { download(downloadUrl.get(), archive) }
+                verifyChecksum(archive)
+                staging.deleteRecursively()
+                staging.mkdirs()
+                unzip(archive, staging)
+                check(staging.resolve("lib/libavformat.a").exists()) {
+                    "The FFmpeg archive did not contain lib/libavformat.a (unpacked to $staging). " +
+                        "The Release asset layout may be wrong; expected {include,lib} at the archive root."
+                }
+                // Written last, inside staging, so it only ever becomes visible together with a
+                // fully unpacked tree: the marker is what makes "already present" mean "complete"
+                // rather than "some files happen to be there".
+                staging.resolve(MARKER).writeText(downloadUrl.get())
+                dest.deleteRecursively()
+                moveIntoPlace(staging, dest)
+            } finally {
+                archive.delete()
+                staging.deleteRecursively()
+            }
+        }
+    }
+
+    /** A cache entry counts as usable only when the marker AND the libs it vouches for are there. */
+    private fun isComplete(dest: File): Boolean =
+        dest.resolve(MARKER).isFile && dest.resolve("lib/libavformat.a").exists()
+
+    /**
+     * Runs [block] holding an exclusive OS-level lock on `<dest>.lock`, so concurrent Gradle
+     * processes (and tasks from sibling subprojects) serialise on this one cache directory.
+     */
+    private fun <T> withDirectoryLock(dest: File, block: () -> T): T {
+        val lockFile = File(dest.parentFile, "${dest.name}.lock")
+        RandomAccessFile(lockFile, "rw").use { raf ->
+            raf.channel.use { channel ->
+                val lock = channel.lock()
+                try {
+                    return block()
+                } finally {
+                    lock.release()
+                }
+            }
         }
     }
 
@@ -177,10 +216,12 @@ abstract class FetchFFmpegTask : DefaultTask() {
 
     /** Opens an HTTPS connection, following redirects (GitHub -> object store). HTTPS only. */
     private fun open(url: String): HttpURLConnection {
-        var current = url
+        var current = URI(url)
         repeat(MAX_REDIRECTS) {
-            val uri = URI(current)
-            check(uri.scheme.equals("https", ignoreCase = true)) {
+            val uri = current
+            // Scheme is null for a relative URI; `equals` on a platform type would NPE, and the
+            // point of the check is to refuse anything that is not plainly https anyway.
+            check("https".equals(uri.scheme, ignoreCase = true)) {
                 "Refusing non-HTTPS URL while fetching $url: $current"
             }
             val conn = (uri.toURL().openConnection() as HttpURLConnection).apply {
@@ -195,7 +236,10 @@ abstract class FetchFFmpegTask : DefaultTask() {
                     val location = conn.getHeaderField("Location")
                     conn.disconnect()
                     requireNotNull(location) { "Redirect with no Location header fetching $current" }
-                    current = location
+                    // Location may legitimately be relative (RFC 7231 §7.1.2) — resolve it against
+                    // the URL we just requested instead of parsing it as an absolute URI and
+                    // blowing up on a null scheme. The https check above still gates the result.
+                    current = uri.resolve(location)
                 }
                 else -> {
                     conn.disconnect()
@@ -253,5 +297,8 @@ abstract class FetchFFmpegTask : DefaultTask() {
         const val MAX_REDIRECTS = 5
         const val MAX_ATTEMPTS = 3
         const val RETRY_BACKOFF_MS = 1_000L
+
+        /** Written last into the staged tree; its presence is what marks a cache entry complete. */
+        const val MARKER = ".kitecodec-complete"
     }
 }

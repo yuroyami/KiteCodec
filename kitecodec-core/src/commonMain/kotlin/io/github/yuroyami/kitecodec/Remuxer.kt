@@ -12,13 +12,16 @@ public expect object Remuxer {
      * Copy [streamIndices] (default: every stream the demuxer understands) from [input] into a
      * fresh container at [output]. Format inferred from the output extension.
      *
-     * Trimming ([startMicros] / [endMicros]) is keyframe-snapped: the cut starts at the last
-     * keyframe at or before [startMicros] (the price of not re-encoding) and stops once the
-     * first selected stream passes [endMicros]. Output timestamps are rebased to start at zero.
+     * The cut is keyframe-snapped, which is the price of not re-encoding: it starts at the last
+     * keyframe at or before [startMicros] and stops once the first selected stream passes
+     * [endMicros]. Output timestamps are rebased to start at zero.
      *
-     * Limitations: bitstream filters are not applied yet, so pairs that need one (h264-in-mp4 →
+     * Bitstream filters are not applied yet, so container pairs that need one (h264-in-mp4 to
      * MPEG-TS Annex B) fail with a muxer error rather than producing a broken file.
      *
+     * @param startMicros trim start, relative to the start of the content — see
+     *                    [MediaSource.startTimeMicros]
+     * @param endMicros trim end, on the same content-relative scale
      * @param metadata container tags written into the output header (`title`, `artist`, …)
      * @param onProgress invoked every ~100 packets with the running packet count
      */

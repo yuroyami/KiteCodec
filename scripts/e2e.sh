@@ -31,11 +31,30 @@ has_stream_type() { # <file> <codec_type>
   fi
 }
 
-echo "== generate 3s A/V test clip (keyframe every second)"
+# Which video encoder the SAMPLE will pick against the FFmpeg it was linked with, and the
+# codec_name ffprobe will then report. Never assume h264: libx264 is GPL-only, and KiteCodec's
+# default vendored profile is LGPL, where the dependency-free baseline is mpeg4. Asserting a
+# hard-coded h264 here is what made this suite silently require a GPL FFmpeg.
+KC_INFO=$("$KEXE" info)
+printf '%s\n' "$KC_INFO"
+KC_VCODEC=$(printf '%s\n' "$KC_INFO" | sed -n 's/^KITECODEC_VIDEO_CODEC=//p' | head -1)
+KC_VENCODER=$(printf '%s\n' "$KC_INFO" | sed -n 's/^KITECODEC_VIDEO_ENCODER=//p' | head -1)
+[ -n "$KC_VCODEC" ] || { echo "FAIL: '$KEXE info' did not report KITECODEC_VIDEO_CODEC"; exit 1; }
+echo "== kitecodec will encode video with $KC_VENCODER (ffprobe reports '$KC_VCODEC')"
+
+# The generator uses the system ffmpeg CLI, which is a separate install from the FFmpeg KiteCodec
+# links — pick a codec it actually has rather than assuming libx264 there either.
+if "$FFMPEG" -hide_banner -loglevel error -encoders 2>/dev/null | grep -qE '^ V[.A-Z]* +libx264 '; then
+  GEN_VENC=libx264; GEN_VCODEC=h264
+else
+  GEN_VENC=mpeg4;   GEN_VCODEC=mpeg4
+fi
+
+echo "== generate 3s A/V test clip with $GEN_VENC (keyframe every second)"
 "$FFMPEG" -hide_banner -loglevel error -y \
   -f lavfi -i "testsrc=duration=3:size=320x240:rate=30" \
   -f lavfi -i "sine=frequency=440:duration=3" \
-  -c:v libx264 -pix_fmt yuv420p -g 30 -keyint_min 30 -c:a aac -shortest "$WORK/in.mp4"
+  -c:v "$GEN_VENC" -pix_fmt yuv420p -g 30 -keyint_min 30 -c:a aac -shortest "$WORK/in.mp4"
 
 echo "== kitecodec probe"
 "$KEXE" probe "$WORK/in.mp4"
@@ -47,10 +66,12 @@ fi
 [ ! -e "$WORK/should-not-exist.mp4" ] || { echo "FAIL: output file created for nonexistent input"; exit 1; }
 
 echo "== kitecodec transcode A/V with filter chain"
-"$KEXE" transcode "$WORK/in.mp4" "$WORK/out.mp4" "scale=160:120,eq=brightness=0.05,format=yuv420p"
+# `hue` rather than `eq`: eq is deps="gpl" in FFmpeg, so it does not exist in the LGPL profile
+# KiteCodec ships by default. hue carries a brightness parameter and is available everywhere.
+"$KEXE" transcode "$WORK/in.mp4" "$WORK/out.mp4" "scale=160:120,hue=b=0.15,format=yuv420p"
 
 "$FFPROBE" -v error -show_entries stream=codec_name,codec_type -of csv=p=0 "$WORK/out.mp4"
-has_stream "$WORK/out.mp4" h264 video || { echo "FAIL: no h264 video stream in output"; exit 1; }
+has_stream "$WORK/out.mp4" "$KC_VCODEC" video || { echo "FAIL: no $KC_VCODEC video stream in output"; exit 1; }
 has_stream "$WORK/out.mp4" aac audio  || { echo "FAIL: no aac audio stream in output"; exit 1; }
 
 width=$("$FFPROBE" -v error -select_streams v:0 -show_entries stream=width -of csv=p=0 "$WORK/out.mp4")
@@ -88,7 +109,7 @@ cmp -s "$WORK/a_src.aac" "$WORK/a_copy.aac" || { echo "FAIL: -acopy audio differ
 echo "== kitecodec remux mp4 → mkv (full stream copy)"
 "$KEXE" remux "$WORK/in.mp4" "$WORK/remuxed.mkv"
 "$FFPROBE" -v error -show_entries stream=codec_name,codec_type -of csv=p=0 "$WORK/remuxed.mkv"
-has_stream "$WORK/remuxed.mkv" h264 video || { echo "FAIL: remux lost video stream"; exit 1; }
+has_stream "$WORK/remuxed.mkv" "$GEN_VCODEC" video || { echo "FAIL: remux lost video stream"; exit 1; }
 has_stream "$WORK/remuxed.mkv" aac audio  || { echo "FAIL: remux lost audio stream"; exit 1; }
 remux_dur=$("$FFPROBE" -v error -show_entries format=duration -of csv=p=0 "$WORK/remuxed.mkv")
 awk -v d="$remux_dur" 'BEGIN { exit !(d > 2.5 && d < 3.5) }' \
@@ -96,7 +117,7 @@ awk -v d="$remux_dur" 'BEGIN { exit !(d > 2.5 && d < 3.5) }' \
 
 echo "== kitecodec remux mkv → mp4 (round-trip back)"
 "$KEXE" remux "$WORK/remuxed.mkv" "$WORK/remuxed_back.mp4"
-has_stream "$WORK/remuxed_back.mp4" h264 video || { echo "FAIL: mkv→mp4 remux lost video stream"; exit 1; }
+has_stream "$WORK/remuxed_back.mp4" "$GEN_VCODEC" video || { echo "FAIL: mkv→mp4 remux lost video stream"; exit 1; }
 has_stream "$WORK/remuxed_back.mp4" aac audio  || { echo "FAIL: mkv→mp4 remux lost audio stream"; exit 1; }
 back_dur=$("$FFPROBE" -v error -show_entries format=duration -of csv=p=0 "$WORK/remuxed_back.mp4")
 awk -v d="$back_dur" 'BEGIN { exit !(d > 2.5 && d < 3.5) }' \
@@ -147,11 +168,50 @@ printf '1\n00:00:00,500 --> 00:00:02,000\nkitecodec was here\n' > "$WORK/subs.sr
 "$KEXE" transcode "$WORK/in_subs.mkv" "$WORK/out_subs.mkv" "scale=160:120,format=yuv420p" -scopy
 has_stream_type "$WORK/out_subs.mkv" subtitle || { echo "FAIL: subtitle stream lost"; exit 1; }
 
-if [ "$(uname)" = "Darwin" ]; then
+# Regression: a container whose timeline does NOT start at zero. Every timestamp libavformat
+# reports for an MPEG-TS stream is offset by its start_time (~5s here), while --ss/--to mean
+# "n seconds into the content". Getting that conversion wrong silently shifts the whole trim
+# window, and mp4 (start_time 0) can never catch it.
+echo "== kitecodec trim on a nonzero-start container (mpegts, start_time≈5s)"
+"$FFMPEG" -hide_banner -loglevel error -y -i "$WORK/in.mp4" \
+  -c copy -output_ts_offset 5 -f mpegts "$WORK/offset.ts"
+ts_start=$("$FFPROBE" -v error -show_entries format=start_time -of csv=p=0 "$WORK/offset.ts")
+if ! awk -v s="$ts_start" 'BEGIN { exit !(s > 4.0) }'; then
+  echo "SKIP: generated ts start_time '$ts_start' is not offset, cannot exercise the conversion"
+else
+  "$KEXE" transcode "$WORK/offset.ts" "$WORK/offset_trim.mp4" "scale=160:120,format=yuv420p" --ss 1 --to 2 -an
+  off_dur=$("$FFPROBE" -v error -show_entries format=duration -of csv=p=0 "$WORK/offset_trim.mp4")
+  awk -v d="$off_dur" 'BEGIN { exit !(d > 0.8 && d < 1.3) }' \
+    || { echo "FAIL: mpegts trim duration $off_dur not ~1s (container start_time not compensated)"; exit 1; }
+  off_start=$("$FFPROBE" -v error -select_streams v:0 -show_entries stream=start_time -of csv=p=0 "$WORK/offset_trim.mp4")
+  awk -v s="$off_start" 'BEGIN { exit !(s < 0.2 && s > -0.2) }' \
+    || { echo "FAIL: mpegts trim output starts at $off_start, expected ~0"; exit 1; }
+
+  echo "== kitecodec remux trim on the same nonzero-start container"
+  "$KEXE" remux "$WORK/offset.ts" "$WORK/offset_remux.mp4" --ss 1 --to 2
+  offr_dur=$("$FFPROBE" -v error -show_entries format=duration -of csv=p=0 "$WORK/offset_remux.mp4")
+  awk -v d="$offr_dur" 'BEGIN { exit !(d > 0.8 && d < 1.6) }' \
+    || { echo "FAIL: mpegts remux-trim duration $offr_dur outside keyframe-snap range"; exit 1; }
+fi
+
+# Regression: an unfiltered transcode must work. With no filter graph the encoder receives the
+# DECODER's frames, whose pixel format need not match the encoder's — the pipeline is responsible
+# for converting rather than failing with a bare EINVAL.
+echo "== kitecodec transcode with no filter chain (pixel-format reconciliation)"
+"$KEXE" transcode "$WORK/in.mp4" "$WORK/out_nofilter.mp4" "" -an
+has_stream "$WORK/out_nofilter.mp4" "$KC_VCODEC" video \
+  || { echo "FAIL: unfiltered transcode produced no $KC_VCODEC video stream"; exit 1; }
+
+# Hardware encode is a property of the LINKED FFmpeg, not of the host OS: a vendored build without
+# the h264_videotoolbox ENCODER (--enable-videotoolbox alone does not add it) has no VT path even
+# on macOS. Probe rather than assume, and say so when skipping.
+if printf '%s\n' "$KC_INFO" | grep -q 'h264_videotoolbox=✓'; then
   echo "== kitecodec VideoToolbox hardware encode (-vt)"
   "$KEXE" transcode "$WORK/in.mp4" "$WORK/out_vt.mp4" "scale=320:240,format=yuv420p" -vt -an
   vt_codec=$("$FFPROBE" -v error -select_streams v:0 -show_entries stream=codec_name -of csv=p=0 "$WORK/out_vt.mp4")
   [ "$vt_codec" = "h264" ] || { echo "FAIL: VT output codec '$vt_codec'"; exit 1; }
+elif [ "$(uname)" = "Darwin" ]; then
+  echo "== SKIP VideoToolbox encode: linked FFmpeg has no h264_videotoolbox encoder"
 fi
 
 echo "e2e OK (A/V=${dur}s, remux=${remux_dur}s, trim=${trim_dur}s, audio-only=${ao_dur}s)"

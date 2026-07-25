@@ -29,6 +29,11 @@ internal object PrebuiltLinkFlags {
         "-lSvtAv1Enc", "-lvpx", "-laom", "-lopus", "-lmp3lame",
         "-lwebpmux", "-lwebp", "-lsharpyuv",
         "-lass", "-lharfbuzz", "-lfreetype", "-lfribidi",
+        // Transitive dependencies of the text stack, and they must come AFTER it: freetype's
+        // embedded-PNG bitmap support calls into libpng, harfbuzz's shaping backend into
+        // graphite2. A shared FFmpeg hid these; a static one fails on _png_set_tRNS_to_alpha
+        // and _gr_*.
+        "-lpng16", "-lgraphite2",
     )
 
     /** GPL flavour adds the x264/x265 archives (both C++ inside — see the runtime flags below). */
@@ -49,7 +54,21 @@ internal object PrebuiltLinkFlags {
             add("-lbz2")
             if (isMacos) {
                 add("-liconv")
-                if (license == FFmpegLicense.GPL) add("-lc++")
+                // harfbuzz is C++ (as is x265), and harfbuzz's CoreText backend plus FFmpeg's
+                // videotoolbox encoders pull in the Apple frameworks. A shared build resolved
+                // these through its own dylib dependencies; a static one must name them.
+                add("-lc++")
+                addAll(
+                    listOf(
+                        "-framework", "CoreGraphics",
+                        "-framework", "CoreText",
+                        "-framework", "CoreFoundation",
+                        "-framework", "CoreMedia",
+                        "-framework", "CoreVideo",
+                        "-framework", "VideoToolbox",
+                        "-framework", "AudioToolbox",
+                    ),
+                )
             } else if (license == FFmpegLicense.GPL) {
                 add("-lnuma") // x265's Ubuntu build links libnuma (bundled in the zip)
                 add("-lstdc++")

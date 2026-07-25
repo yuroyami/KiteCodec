@@ -110,7 +110,7 @@ source.decodedFrames(video).collect { frame ->
 The flow is cold. Nothing decodes until you collect, and each fresh collection restarts from the demuxer's current position. The loop drains the decoder correctly at end-of-stream, so you receive every buffered frame before the flow completes.
 
 !!! note "Best-effort timestamps"
-    Each frame's `pts` is promoted from FFmpeg's `best_effort_timestamp` (the same rule `ffmpeg.c` uses), so files with missing or irregular pts still decode with usable timestamps. When a frame genuinely has no timestamp, `info.hasPts` is false and `info.pts` equals `FrameInfo.NOPTS`. The full timestamp contract is in [About → Timestamps](about.md#timestamps-the-part-everyone-gets-wrong).
+    Each frame's `pts` is promoted from FFmpeg's `best_effort_timestamp` (the same rule `ffmpeg.c` uses), so files with missing or irregular pts still decode with usable timestamps. When a frame genuinely has no timestamp, `info.hasPts` is false and `info.pts` equals `FrameInfo.NOPTS`. The full timestamp contract is in [About → Timestamp handling](about.md#timestamp-handling).
 
 ## Decoding several streams in one pass
 
@@ -257,7 +257,7 @@ try {
 
 ## Status and platforms
 
-Decoding is verified end-to-end on macOS arm64. Linux x64 and Windows (mingw x64) build and run in CI; Android native targets cross-compile the same actuals; iOS code is written but not yet CI-verified. KiteCodec is Kotlin/Native today and requires FFmpeg to be present (a system install via `brew`/`apt`, or a vendored static build produced by the Gradle build tasks). It is not yet on Maven Central. See [Platform support](platforms.md) and [Getting started](getting-started.md) for the current install path.
+`nativeMain` is the only implementation source set, so decoding is the same code on every target; what differs is which FFmpeg it links. Which targets are published, and what CI actually builds and tests, is in the [README's target table](https://github.com/yuroyami/KiteCodec#targets). KiteCodec is Kotlin/Native only and requires FFmpeg to be present. See [Platform support](platforms.md) for how to source it and [Getting started](getting-started.md) for the current install path.
 
 ## Next
 

@@ -2,9 +2,9 @@
 
 Learn how to install FFmpeg, wire the module, probe what your build can do, inspect a media file, and run your first transcode with KiteCodec: a coroutine-first Kotlin/Native binding to FFmpeg's libav* libraries.
 
-!!! note "Platform reality"
+!!! warning "What you are getting into"
 
-    KiteCodec is **Kotlin/Native only** today, and **not yet on Maven Central**. You consume it by building from source against your own FFmpeg, or against a vendored static build produced by the Gradle tasks. macOS arm64 is verified end to end; Linux x64 and Windows (mingw x64) build and test in CI; Android compiles as a native klib; iOS code is written but not yet CI-verified. See [Platform support](platforms.md) for the full matrix.
+    KiteCodec is **Kotlin/Native only** — no JVM target, no Android AAR, no web target. Nothing is published yet either, so this guide walks the in-repository path: build against an FFmpeg you install, or against a vendored static build the Gradle tasks produce. The consumer-project build script and the [release status](https://github.com/yuroyami/KiteCodec#release-status) live in the README; the [target table](https://github.com/yuroyami/KiteCodec#targets) records what CI actually verifies.
 
 ## Step 1: Get FFmpeg
 
@@ -50,9 +50,11 @@ KiteCodec links against FFmpeg's libav* libraries. You need them present before 
 
 ## Step 2: Wire the module
 
-KiteCodec is not on Maven Central. Add `:kitecodec-core` to your build from source.
+Nothing is published, so there are two routes.
 
-The simplest path is to clone the repository alongside your project and include the build:
+**Inside the KiteCodec repository.** The `:kitecodec-sample` module already depends on `:kitecodec-core` and is the fastest way to run the API against real arguments. Everything below works from a plain clone.
+
+**From your own project.** Clone KiteCodec alongside it and compose the builds:
 
 === "settings.gradle.kts"
 
@@ -64,19 +66,20 @@ The simplest path is to clone the repository alongside your project and include 
 
     ```kotlin
     kotlin {
-        sourceSets {
-            commonMain.dependencies {
-                implementation("io.github.yuroyami:kitecodec-core")
-            }
+        macosArm64()
+        sourceSets.commonMain.dependencies {
+            implementation("io.github.yuroyami:kitecodec-core")
         }
     }
     ```
 
-The published coordinates are `io.github.yuroyami:kitecodec-core:0.0.1`, but no artifact is on a public repository yet. Build from source, or work inside the KiteCodec repo itself (the `:kitecodec-sample` module already depends on `:kitecodec-core`).
+    A composite build substitutes the dependency with the included project, so the version is omitted deliberately. Your FFmpeg comes from KiteCodec's own `FFmpegPaths` resolution — Step 1 — not from the Gradle plugin.
 
-!!! note "GPL add-on"
+Once `kitecodec-core` and the [Gradle plugin](gradle-plugin.md) are published, the consumer build script replaces all of this. It is written out in full in the [README](https://github.com/yuroyami/KiteCodec#install); the short version is that the plugin is mandatory (the klib's `ffmpeg.def` carries no `-L`, so the coordinate alone will not link) and so is the `license` choice.
 
-    `kitecodec-core` is the LGPL default and is safe for commercial distribution. A `kitecodec-gpl` add-on that adds libx264 / libx265 for quality-focused software encode is planned. Use it only in GPL-compatible projects.
+!!! note "`kitecodec-gpl` does not exist"
+
+    `kitecodec-core` is the LGPL default and is safe for commercial distribution. A `kitecodec-gpl` add-on packaging libx264 / libx265 has a README in the repository and nothing else — no build script, commented out of `settings.gradle.kts`. The GPL flavour is reached through the `Gpl` build tasks plus `-Pkitecodec.ffmpeg.license=gpl`.
 
 ## Step 3: Probe what your build can do
 
@@ -143,7 +146,8 @@ fun main() = runBlocking {
         input  = "input.mp4",
         output = "output.mp4",
         spec = VideoEncoderSpec(
-            codec = CodecId.Libx264,
+            // mpeg4 is the dependency-free baseline present in every FFmpeg profile.
+            codec = CodecId("mpeg4"),
             width = 320, height = 180,
             frameRate = Rational(30, 1),
             bitrateBps = 1_500_000,
@@ -155,8 +159,19 @@ fun main() = runBlocking {
 }
 ```
 
-!!! note "Libx264 needs a GPL FFmpeg"
-    `CodecId.Libx264` is software x264, which is only present in a GPL-flavour FFmpeg. A system FFmpeg from Homebrew or apt usually includes it (those are GPL builds), which is why this snippet works on a dev machine. In a **vendored** build, the LGPL default excludes it — the GPL opt-in (`buildFFmpegFor<Target>Gpl` + `-Pkitecodec.ffmpeg.license=gpl`) is currently the only route to libx264. The LGPL flavour gives you hardware H.264 / H.265 (VideoToolbox, MediaCodec) and royalty-free software AV1 (`libsvtav1`) instead — pick one of those for an App-Store-safe build. See [Platform support](platforms.md#licensing) and [Licensing](licensing.md).
+!!! tip "Pick the video encoder by probing"
+    `mpeg4` is used above because it is in every profile. For H.264 or H.265, ask the linked build what it has rather than hard-coding a name — `CodecId.Libx264` only resolves in a GPL FFmpeg, and the vendored default is LGPL, where asking for it throws `FFmpegException` from `addVideoEncoder`.
+
+    ```kotlin
+    val codec = listOf(
+        CodecId.H264VideoToolbox,   // macOS / iOS, LGPL-safe
+        CodecId.H264MediaCodec,     // Android, LGPL-safe
+        CodecId.Libx264,            // GPL builds only
+        CodecId("mpeg4"),           // always present
+    ).first { FFmpeg.hasEncoder(it.name) }
+    ```
+
+    See [Platform support](platforms.md#licensing) and [Licensing](licensing.md).
 
 A few defaults worth knowing:
 
@@ -202,7 +217,8 @@ $KEXE info
 # Inspect any media file (streams, duration, metadata):
 $KEXE probe path/to/clip.mp4
 
-# Full transcode: decode, filter, libx264 + aac encode, interleaved mux:
+# Full transcode: decode, filter, video + aac encode, interleaved mux.
+# The sample probes for its video encoder (libx264, else mpeg4, libsvtav1, mjpeg).
 $KEXE transcode input.mp4 output.mp4 "scale=1280:720,format=yuv420p"
 
 # Video only / audio passthrough / hardware encode:

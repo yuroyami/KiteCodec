@@ -4,27 +4,16 @@ Decode, encode, transcode, remux, and filter video and audio from shared Kotlin 
 
 ## Target matrix
 
-`kitecodec-core` is one consolidated cinterop module over FFmpeg's libav\* libraries. The `commonMain` API (`Transcoder`, `Remuxer`, `MediaSource`, `MediaSink`, `FilterGraph`, `FFmpeg`) is the same everywhere; what varies is how far each target has been carried through CI and end-to-end validation.
+There is one target table for the project and it lives in the [README](https://github.com/yuroyami/KiteCodec#targets). It records, per target, whether the target is in the published set, exactly what CI builds and tests, and where FFmpeg comes from. This page covers the part it does not: how to obtain an FFmpeg for each target, and what is inside the one KiteCodec builds.
 
-| Platform | Status | Notes |
-|---|:-:|---|
-| **macOS arm64** | ✓ verified | End-to-end: video + audio, ffprobe-validated. The reference target. |
-| **Linux x64** | CI | Built, tested, and e2e-transcoded on every push (FFmpeg 6.1). |
-| **Windows** (mingwX64) | CI | Built, tested, and e2e-transcoded on every push (BtbN mingw build). |
-| **Android native** (arm64 / arm32 / x64) | CI klib | CI cross-compiles FFmpeg with the NDK (LGPL + MediaCodec) and builds the `.klib`. |
-| **macOS x64** | code written | `macosX64` is a deprecated Kotlin/Native target (still deprecated in Kotlin 2.4.0); not CI-verified. |
-| **iOS arm64** | code written | Needs vendored FFmpeg in CI; not yet verified. |
-| **iOS Simulator** (arm64) | code written | Not yet CI-verified. |
-| **Linux arm64** | code written | Not yet CI-verified. |
-| **Android AAR** (JVM apps via `androidTarget`) | not yet | Next milestone: a JNI substrate over the same `ffkmp_*` C layer. |
-| **JVM / Desktop** | not yet | No JVM target today; Kotlin/Native only. |
+Two things are worth restating, because they decide whether KiteCodec is usable for you at all:
 
-!!! note "What \"code written\" means"
-    The same `nativeMain` actuals compile for these targets, but they have not been carried through CI or validated end-to-end. Treat them as untested until a release note says otherwise. macOS arm64 is the only target verified end-to-end today.
+- `nativeMain` is the only implementation source set. Every target is the same eight files of Kotlin compiled N ways; what differs is which FFmpeg gets linked. There is **no JVM target**, no Android AAR, and no `js` or `wasmJs` target of any kind.
+- The published set is five triples: `macosArm64`, `linuxX64`, `androidNativeArm64`, `androidNativeArm32`, `androidNativeX64`. `mingwX64` builds and tests in CI but is not published and has no prebuilt asset; `ios*`, `macosX64` and `linuxArm64` are not built anywhere.
 
 ## FFmpeg is a prerequisite
 
-KiteCodec links FFmpeg's libav\* libraries. It does not ship them in the published `0.0.1` artifact, and the library is **not on Maven Central yet**. Today you consume KiteCodec by building from source, which means you must have FFmpeg available in one of two forms.
+KiteCodec links FFmpeg's libav\* libraries and ships none of their bytes. In a consumer project the [Gradle plugin](gradle-plugin.md) provisions them; inside this repository you supply them in one of two forms. Nothing is published yet, so the repository path is the one that works today — see the README's [release status](https://github.com/yuroyami/KiteCodec#release-status).
 
 ### Mode 1: dynamic against system FFmpeg
 
@@ -61,7 +50,25 @@ git clone --depth 1 --branch n8.0 https://github.com/FFmpeg/FFmpeg vendor/ffmpeg
 
 The Gradle task cross-compiles a pinned codec and filter set and drops `.a` libraries under `native-libs/<license>/<target>/` (`lgpl` or `gpl`). `FFmpegPaths` notices and switches cinterop to static linking; the resulting executable carries everything it needs, around 25 MB.
 
-The static profile is **LGPL by default**: no `--enable-gpl`, no libx264 / libx265; instead you get VideoToolbox hardware encode plus a permissive software stack (svtav1, vpx, aom, opus, mp3lame). That is the App-Store- and closed-source-safe flavour.
+The static profile is **LGPL by default**: no `--enable-gpl`, no libx264 / libx265. That is the App-Store- and closed-source-safe flavour.
+
+The set is deliberately small, so it is worth knowing exactly what is in it — a codec that is not listed here is not in the artifact, however common it is elsewhere. The authoritative list is `sharedCoreArgs()` in [`BuildFFmpegTask.kt`](https://github.com/yuroyami/KiteCodec/blob/main/buildSrc/src/main/kotlin/BuildFFmpegTask.kt); as of `n8.0`:
+
+| | LGPL (default) | GPL (opt-in) | Android (always LGPL) |
+|---|---|---|---|
+| **Video encode** | `mpeg4`, `libsvtav1`, `mjpeg`, `png`, `h264_videotoolbox` / `hevc_videotoolbox` (Apple) | + `libx264`, `libx265` | `mpeg4`, `mjpeg`, `png`, `h264_mediacodec`, `hevc_mediacodec` |
+| **Audio encode** | `aac`, `libopus`, `libmp3lame`, `flac`, `pcm_s16le`/`s24le`/`f32le` | same | `aac`, `flac`, `pcm_*` |
+| **Decode** | h264, hevc, vp8, vp9, av1, mpeg4, aac, mp3, opus, vorbis, flac, pcm, png, mjpeg, webp | same | same + MediaCodec h264/hevc |
+| **Containers** | mp4/mov, matroska/webm (incl. `.mka`), mpegts, mp3, wav, flac, ogg/opus, image2 | same | same |
+| **Protocols** | `file`, `pipe`, `data`, `http`, `tcp` | same | same |
+| **Filters** | scale, pad, overlay, hue, unsharp, vignette, colorbalance, colorlevels, curves, lut, colorchannelmixer, split, trim/setpts, drawtext, and the audio set (volume, atempo, aresample, amix, afade, adelay, atrim, aformat) | + `eq`, `boxblur` | same as LGPL, minus `drawtext` (no freetype) |
+| **Bitstream filters** | `extract_extradata`, `aac_adtstoasc`, `h264_mp4toannexb`, `hevc_mp4toannexb`, `vp9_superframe` | same | same |
+
+`eq` and `boxblur` are marked `deps="gpl"` by FFmpeg itself, which is why they appear only in the GPL column — reach for `hue` (it has a brightness parameter `b`), `colorlevels` or `curves` instead. The bitstream filters are never named by KiteCodec: libavformat inserts them during stream copy, and without them a copy between container families produces a *corrupt file* rather than an error.
+
+`mpeg4` is the dependency-free video baseline: it is always present, in every flavour, so code that must encode *something* without pulling in a GPL or hardware encoder has a target. `https` is **not** built — it needs a TLS backend cross-compiled for every target, which this profile does not take on; use `http`, a local file, or link a system FFmpeg that has TLS.
+
+Probe rather than assume — `FFmpeg.hasEncoder("libx264")` costs nothing and is the difference between a clear message and a runtime failure on a user's machine.
 
 Want libx264 / libx265? That is the **GPL flavour, and it is opt-in** — currently the only route to libx264 in a vendored build:
 
@@ -82,7 +89,9 @@ Windows has **no system-FFmpeg discovery**: `FFmpegPaths` resolves macOS (Homebr
 **Option A — drop in a BtbN build (what CI does).** The [BtbN FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds/releases) shared builds carry `include/` and `lib/` (import libraries) in exactly the layout `FFmpegPaths` expects. Download one, unzip, and move it into place:
 
 ```powershell
-# Note: the "gpl" BtbN variant contains libx264 — it lands under the gpl flavour.
+# The "gpl" BtbN variant contains libx264, so it lands under the gpl flavour.
+# CI pins an exact autobuild tag, asset name and SHA-256 rather than using `latest`,
+# which is a moving target — do the same for anything reproducible.
 Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip" -OutFile ffmpeg.zip
 Expand-Archive ffmpeg.zip -DestinationPath ffmpeg-tmp
 Move-Item ffmpeg-tmp\ffmpeg-master-latest-win64-gpl-shared native-libs\gpl\mingw-x64
@@ -92,7 +101,7 @@ Then build with `-Pkitecodec.ffmpeg.license=gpl` (matching the flavour directory
 
 **Option B — vendored static cross-compile.** Run `:kitecodec-core:buildFFmpegForMingwX64` (or the `Gpl` variant) with a mingw-w64 cross toolchain (`x86_64-w64-mingw32-gcc`) available. This is realistic from a Linux host or MSYS2; it needs the `vendor/ffmpeg` clone described above.
 
-Honest status: Windows builds, tests, and e2e-transcodes in CI via Option A. There is no one-command onboarding path on a bare Windows machine yet — you must stage the FFmpeg tree yourself.
+Windows builds, tests, and e2e-transcodes in CI via Option A, against a BtbN tag, asset name and SHA-256 pinned in the workflow. There is no one-command onboarding path on a bare Windows machine, no system-FFmpeg discovery, and no prebuilt KiteCodec asset for `mingw-x64` — you stage the tree yourself.
 
 ## Android NDK build profile
 
@@ -168,11 +177,12 @@ For distribution obligations (shipping licence texts, offering FFmpeg source, th
 Encoder availability is resolved at runtime. Probe before you commit to a codec:
 
 ```kotlin
-val codec = if (FFmpeg.hasEncoder("h264_videotoolbox")) {
-    CodecId.H264VideoToolbox
-} else {
-    CodecId.Libx264
-}
+val codec = listOf(
+    CodecId.H264VideoToolbox,   // macOS / iOS, LGPL-safe
+    CodecId.H264MediaCodec,     // Android, LGPL-safe
+    CodecId.Libx264,            // GPL builds only
+    CodecId("mpeg4"),           // always present, every profile
+).first { FFmpeg.hasEncoder(it.name) }
 ```
 
 ## Related

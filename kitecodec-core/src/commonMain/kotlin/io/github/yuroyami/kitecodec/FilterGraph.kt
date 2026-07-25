@@ -64,9 +64,11 @@ public expect class FilterGraph : AutoCloseable {
     public fun flushInput(index: Int, onOutput: (Frame) -> Unit)
 
     /**
-     * Drive [input] through the graph (single-input graphs); emit each processed frame as an
-     * OWNED [Frame] (valid until you close it — buffering operators are safe; close each one).
-     * Closes every input frame after it is consumed and closes the graph when the flow ends.
+     * Drive [input] through the graph (single-input graphs only), emitting each processed frame
+     * owned by the collector. Closes every input frame once consumed, and closes the graph when
+     * the flow ends.
+     *
+     * @see Frame for the ownership rule every emitted frame is subject to
      */
     public fun process(input: Flow<Frame>): Flow<Frame>
 
@@ -125,8 +127,11 @@ public expect class FilterGraph : AutoCloseable {
 
         /**
          * N-input audio graph — `"[in0][in1]amix=inputs=2:duration=longest[out]"` mixes two
-         * tracks. Output pins behave like [buildAudio]'s (skipped when the description labels
-         * `[out]` explicitly AND pins are zero/None).
+         * tracks.
+         *
+         * The `output*` parameters append an `aformat` stage exactly as [buildAudio] does, but
+         * only when [description] does not carry an explicit `[out]` label. A description that
+         * labels its own output controls its own formats, so nothing is appended.
          */
         @Throws(FFmpegException::class)
         public fun buildAudioMulti(
