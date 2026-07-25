@@ -28,11 +28,11 @@ public value class PixelFormat(public val name: String) {
         public val Bgra    : PixelFormat = PixelFormat("bgra")
         public val Gray8   : PixelFormat = PixelFormat("gray")
 
-        /** 10-bit formats — HDR / high-bit-depth pipelines (HEVC Main10, AV1 10-bit). */
+        /** 10-bit formats for HDR and high-bit-depth pipelines (HEVC Main10, AV1 10-bit). */
         public val Yuv420p10le : PixelFormat = PixelFormat("yuv420p10le")
         public val Yuv422p10le : PixelFormat = PixelFormat("yuv422p10le")
         public val Yuv444p10le : PixelFormat = PixelFormat("yuv444p10le")
-        /** Semi-planar 10-bit — what VideoToolbox / NVENC / MediaCodec hardware paths use. */
+        /** Semi-planar 10-bit, used by the VideoToolbox, NVENC and MediaCodec hardware paths. */
         public val P010le      : PixelFormat = PixelFormat("p010le")
 
         public val None    : PixelFormat = PixelFormat("none")
@@ -45,8 +45,8 @@ public value class PixelFormat(public val name: String) {
  */
 public value class SampleFormat(public val name: String) {
     /**
-     * Name-based heuristic (`…p` suffix) — correct for every FFmpeg sample format name;
-     * only meaningful for names FFmpeg actually knows.
+     * Name-based heuristic (`…p` suffix). It is correct for every FFmpeg sample format name,
+     * and only meaningful for names FFmpeg actually knows.
      */
     public val isPlanar: Boolean get() = name.endsWith("p")
 
@@ -61,7 +61,7 @@ public value class SampleFormat(public val name: String) {
     }
 }
 
-/** Codec identifier — symbolic name (`h264`, `aac`, `libx264`). Matches `avcodec_find_*_by_name`. */
+/** Codec identifier: symbolic name (`h264`, `aac`, `libx264`). Matches `avcodec_find_*_by_name`. */
 public value class CodecId(public val name: String) {
     public companion object {
         public val H264   : CodecId = CodecId("h264");        public val Hevc   : CodecId = CodecId("hevc")
@@ -74,7 +74,7 @@ public value class CodecId(public val name: String) {
         public val LibOpus : CodecId = CodecId("libopus");    public val LibMp3 : CodecId = CodecId("libmp3lame")
         public val Png     : CodecId = CodecId("png")
 
-        /** Hardware encoders — resolve at runtime only on FFmpeg builds with the matching hwaccel. */
+        /** Hardware encoders. They resolve at runtime only on builds with the matching hwaccel. */
         public val H264VideoToolbox : CodecId = CodecId("h264_videotoolbox")
         public val HevcVideoToolbox : CodecId = CodecId("hevc_videotoolbox")
         public val H264MediaCodec   : CodecId = CodecId("h264_mediacodec")

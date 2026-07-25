@@ -6,7 +6,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
-/** Runs against the actually-linked FFmpeg — verifies the cinterop surface end to end. */
+/** Runs against the actually-linked FFmpeg. Verifies the cinterop surface end to end. */
 class FFmpegNativeTest {
 
     @Test

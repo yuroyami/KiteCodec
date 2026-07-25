@@ -5,13 +5,13 @@ package io.github.yuroyami.kitecodec.gradle
  * PREBUILT desktop FFmpeg zips.
  *
  * The desktop zips bundle the static third-party encoder/text libs (svt-av1, vpx, aom, opus,
- * mp3lame, webp, freetype/harfbuzz/fribidi/ass — the set BuildFFmpegTask's desktop profile links)
+ * mp3lame, webp, freetype/harfbuzz/fribidi/ass; the set BuildFFmpegTask's desktop profile links)
  * in their `lib/` dir, but the klib's `ffmpeg.def` only names the six libav* archives, so those
  * third-party archives must be named explicitly at the consumer's link.
  *
  * KEEP IN SYNC with `.github/scripts/package-ffmpeg.sh`, which bundles the matching `.a` files and
- * writes this same list into each zip's `lib/LINK-FLAGS.txt`. The list is hardcoded here — rather
- * than read from LINK-FLAGS.txt — because linkerOpts are fixed at configuration time, before the
+ * writes this same list into each zip's `lib/LINK-FLAGS.txt`. The list is hardcoded here (rather
+ * than read from LINK-FLAGS.txt) because linkerOpts are fixed at configuration time, before the
  * fetch task has downloaded the zip.
  *
  * Only [FFmpegSource.Prebuilt] desktop targets get flags: the Android assets are self-contained
@@ -36,7 +36,7 @@ internal object PrebuiltLinkFlags {
         "-lpng16", "-lgraphite2",
     )
 
-    /** GPL flavour adds the x264/x265 archives (both C++ inside — see the runtime flags below). */
+    /** GPL flavour adds the x264/x265 archives (both C++ inside; see the runtime flags below). */
     private val DESKTOP_GPL_EXTRA = listOf("-lx264", "-lx265")
 
     fun extraLinkerOpts(target: KiteCodecTarget, license: FFmpegLicense): List<String> {

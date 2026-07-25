@@ -9,8 +9,8 @@ enum class FFmpegLicense(val id: String) {
     LGPL("lgpl"),
 
     /**
-     * Adds libx264 / libx265. Makes the linked binary GPL-3.0; open-source or server use only —
-     * distributing a closed-source app with this flavour violates the GPL.
+     * Adds libx264 / libx265. Makes the linked binary GPL-3.0; open-source or server use only.
+     * Distributing a closed-source app with this flavour violates the GPL.
      */
     GPL("gpl"),
 }

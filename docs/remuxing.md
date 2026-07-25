@@ -55,7 +55,7 @@ Remuxing is the right tool when the streams you already have are acceptable and 
 | Resize, change codec, change bitrate, or apply a filter | [`Transcoder.transcode`](transcoding.md) |
 | Cut a frame-exact clip (any start time, not just keyframes) | [`Transcoder.transcode`](transcoding.md) with `startMicros` / `endMicros` |
 
-The dividing line is whether the encoded bitstream has to be rebuilt. Remuxing keeps every packet exactly as it was. Transcoding decodes, processes, and re-encodes, which costs time and CPU and is lossy for lossy codecs. If you do not need to touch the pixels or samples, remux.
+The deciding question is whether the encoded bitstream has to be rebuilt. Remuxing keeps every packet exactly as it was. Transcoding decodes, processes, and re-encodes, which costs time and CPU and is lossy for lossy codecs. If you do not need to touch the pixels or samples, remux.
 
 !!! tip "Need a frame-exact cut?"
     Remux trim snaps the start to the nearest preceding keyframe, because copied packets cannot begin mid-GOP. If you need the clip to start on an exact, arbitrary timestamp, use [`Transcoder.transcode`](transcoding.md) with the same `startMicros` / `endMicros`. It re-encodes from the start point, so the cut is frame-exact, at the cost of decode and encode.
@@ -133,7 +133,7 @@ Remuxer.remux(
 The result keeps the start on a keyframe boundary, so the clip may begin slightly earlier than the exact `startMicros` you asked for. The output timeline is preserved relative to the copied packets. This is the copy-mode equivalent of `ffmpeg -ss ... -to ... -c copy`.
 
 !!! warning "Start lands on a keyframe, not your exact timestamp"
-    With stream copy there is no way to begin in the middle of a GOP, so `startMicros` is snapped to the keyframe at or before it. The first frames of the clip are whatever sat between that keyframe and your requested start. If you need the clip to start on the exact frame, [transcode the range](transcoding.md) instead.
+    With stream copy there is no way to begin in the middle of a GOP, so `startMicros` is snapped to the keyframe at or before it. The first frames of the clip are the frames between that keyframe and your requested start. If you need the clip to start on the exact frame, [transcode the range](transcoding.md) instead.
 
 `endMicros` defaults to `Long.MAX_VALUE`, meaning "to the end of the file". To copy from a point to the end, set only `startMicros`:
 
@@ -187,7 +187,7 @@ This opens the source once, keeps only the primary video and audio, copies the k
 
 Failures surface as `FFmpegException`, carrying an `FFmpegError`:
 
-- Semantic subclasses (`FFmpegError.FileNotFound`, `FFmpegError.MuxerNotFound`, `FFmpegError.InvalidData`, …) classify the common `AVERROR_*` codes — for example when a codec cannot be muxed into the chosen container, or the input cannot be opened.
+- Semantic subclasses (`FFmpegError.FileNotFound`, `FFmpegError.MuxerNotFound`, `FFmpegError.InvalidData`, and more) classify the common `AVERROR_*` codes. Two examples are a codec that cannot be muxed into the chosen container, and an input that cannot be opened.
 - `FFmpegError.AvError` carries any code without a dedicated category.
 - `FFmpegError.Internal` signals a library-side invariant failure.
 

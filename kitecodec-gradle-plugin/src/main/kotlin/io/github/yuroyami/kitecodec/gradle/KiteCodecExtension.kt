@@ -14,7 +14,7 @@ import javax.inject.Inject
  *     ffmpeg {
  *         version = "n8.0"
  *         source  = FFmpegSource.Prebuilt
- *         license = FFmpegLicense.LGPL // mandatory — the build fails without an explicit choice
+ *         license = FFmpegLicense.LGPL // mandatory: the build fails without an explicit choice
  *     }
  * }
  * ```
@@ -38,7 +38,7 @@ abstract class FFmpegSpec {
     abstract val source: Property<FFmpegSource>
 
     /**
-     * Licence flavour for desktop targets. **No default** — the flavour decides the consumer's
+     * Licence flavour for desktop targets. **No default**: the flavour decides the consumer's
      * legal obligations, so it must be set explicitly; the plugin fails the build otherwise
      * (unless every wired target is Android, which always uses the LGPL MediaCodec build
      * regardless of this value). Selecting [FFmpegLicense.GPL] logs a warning describing the

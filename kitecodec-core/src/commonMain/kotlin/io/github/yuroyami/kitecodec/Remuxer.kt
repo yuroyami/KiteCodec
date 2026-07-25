@@ -1,7 +1,7 @@
 package io.github.yuroyami.kitecodec
 
 /**
- * Lossless container rewrite — `ffmpeg -c copy`. Packets move from input to output without
+ * Lossless container rewrite: `ffmpeg -c copy`. Packets move from input to output without
  * touching a decoder or encoder, so a full-length movie remuxes in seconds and bit-exact
  * quality is preserved. Use it to change containers (mp4 → mkv), strip streams, cut on
  * keyframes, or re-wrap after a download.
@@ -19,8 +19,8 @@ public expect object Remuxer {
      * Bitstream filters are not applied yet, so container pairs that need one (h264-in-mp4 to
      * MPEG-TS Annex B) fail with a muxer error rather than producing a broken file.
      *
-     * @param startMicros trim start, relative to the start of the content — see
-     *                    [MediaSource.startTimeMicros]
+     * @param startMicros trim start, relative to the start of the content (see
+     *                    [MediaSource.startTimeMicros])
      * @param endMicros trim end, on the same content-relative scale
      * @param metadata container tags written into the output header (`title`, `artist`, …)
      * @param onProgress invoked every ~100 packets with the running packet count

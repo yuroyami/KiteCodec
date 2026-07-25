@@ -1,6 +1,6 @@
 # Decoding
 
-Open a media file, inspect its streams, and pull decoded frames out as a coroutine `Flow`. KiteCodec handles the demux loop, the EAGAIN dance, and the best-effort timestamp promotion for you, so you work with whole `Frame` objects instead of raw packets.
+Open a media file, inspect its streams, and pull decoded frames out as a coroutine `Flow`. Demuxing means splitting a container file into its separate streams. KiteCodec runs the demux loop, the EAGAIN retry handling, and the best-effort timestamp promotion for you. You work with whole `Frame` objects instead of raw packets.
 
 This page covers reading and decoding. To re-encode and write a new file, see [Encoding & muxing](encoding-muxing.md). To run a one-call pipeline instead of a manual loop, see [Transcoding](transcoding.md).
 
@@ -30,7 +30,7 @@ MediaSource.open("input.mp4").use { source ->
 
 ## Streams
 
-Every input carries a list of `StreamInfo`. Each entry describes one track: its index, type, codec, and time-base. Iterate the full list or reach for a primary track directly:
+Every input carries a list of `StreamInfo`. Each entry describes one track: its index, type, codec, and time-base. Iterate the full list, or read a primary track directly:
 
 ```kotlin
 for (stream in source.streams) {
@@ -77,7 +77,7 @@ source.primaryAudio?.audio?.let { a ->
 | `index` | `Int` | Position of the stream in the container |
 | `type` | `MediaType` | `Video`, `Audio`, `Subtitle`, `Data`, `Attachment`, `Unknown` |
 | `codec` | `CodecId` | The decoder codec, e.g. `H264`, `Aac` |
-| `timeBase` | `Rational` | Stream time-base; convert pts to seconds with this |
+| `timeBase` | `Rational` | Stream time-base. Use it to convert a pts (presentation timestamp) to seconds |
 | `durationMicros` | `Long?` | Track duration, or null if the container omits it |
 | `bitrateBps` | `Long?` | Declared bitrate, or null |
 | `video` | `VideoStreamInfo?` | Non-null for video streams |
@@ -114,7 +114,7 @@ The flow is cold. Nothing decodes until you collect, and each fresh collection r
 
 ## Decoding several streams in one pass
 
-If you need both video and audio, do not open two flows. Two concurrently collected `decodedFrames` flows **race on the shared demuxer** — a `MediaSource` wraps one `AVFormatContext`, which is not safe to drive from concurrent coroutines, so the result is corrupted reads, not just wasted work. `decodeStreams(streams)` is the only correct way to decode several streams together: it runs a single demux pass and interleaves frames from every requested stream into one `Flow<Frame>`:
+If you need both video and audio, do not open two flows. Two concurrently collected `decodedFrames` flows **race on the shared demuxer**. A `MediaSource` wraps one `AVFormatContext`, which is not safe to drive from concurrent coroutines. The result is corrupted reads, not just wasted work. `decodeStreams(streams)` is the only correct way to decode several streams together. It runs a single demux pass and interleaves frames from every requested stream into one `Flow<Frame>`:
 
 ```kotlin
 val wanted = listOfNotNull(source.primaryVideo, source.primaryAudio)
@@ -176,9 +176,9 @@ The layout follows `info.pixelFormat` (video) or `info.sampleFormat` (audio). A 
 
 ### Frame ownership
 
-Frames emitted by the flow APIs (`decodedFrames`, `decodeStreams`, `FilterGraph.process`) are **owned by you**: each one stays valid until you `close()` it, so buffering operators (`buffer()`, `toList()`, holding frames in a list) are safe. Internally these are O(1) reference-counted clones of the decoder's landing frame — no pixel copies are made.
+Frames emitted by the flow APIs (`decodedFrames`, `decodeStreams`, `FilterGraph.process`) are **owned by you**: each one stays valid until you `close()` it, so buffering operators (`buffer()`, `toList()`, holding frames in a list) are safe. Internally these are O(1) reference-counted clones of the decoder's landing frame, so no pixel copies are made.
 
-The flip side: **close every frame you collect**, or its native buffers leak.
+There is one obligation: **close every frame you collect**, or its native buffers leak.
 
 ```kotlin
 // Fine: frames stay valid past the next emission…
@@ -187,9 +187,9 @@ val frames = source.decodedFrames(video).toList()
 frames.forEach { it.close() }
 ```
 
-Callback-style APIs are different: a frame handed to `FilterGraph.feedInput`'s `onOutput` callback is valid **only for the duration of the callback** — call `copy()` there to keep one.
+Callback-style APIs are different. A frame handed to `FilterGraph.feedInput`'s `onOutput` callback is valid **only for the duration of the callback**. Call `copy()` there to keep one.
 
-`copy()` is O(1): it shares the underlying pixel data via reference counting rather than duplicating bytes, and the result is owned. Both collected frames and copies are `AutoCloseable`; close them (or `use { }` them) when you are finished. `copyPlanesToByteArray()` is always safe — it copies into a fresh array the moment you call it.
+`copy()` is O(1): it shares the underlying pixel data via reference counting rather than duplicating bytes, and the result is owned. Both collected frames and copies are `AutoCloseable`. Close them (or use `use { }`) when you are finished. `copyPlanesToByteArray()` is always safe. It copies into a fresh array the moment you call it.
 
 !!! note
     The native `AVFrame*` pointer is deliberately not exposed in common code. You interact with frames only through `info`, `copyPlanesToByteArray()`, `copy()`, and `encodeImage()`.
@@ -209,7 +209,7 @@ Seeking affects the shared demuxer position, so it influences every flow you col
 
 ## Thumbnails
 
-To grab a single frame at a point in time, use `extractFrame(atMicros, stream)` — also a `suspend` function. It seeks, decodes forward to the target, and returns one `Frame`. Pass a specific `stream`, or leave it null to use the primary video track:
+To read a single frame at a point in time, use `extractFrame(atMicros, stream)`, which is also a `suspend` function. It seeks, decodes forward to the target, and returns one `Frame`. Pass a specific `stream`, or leave it null to use the primary video track:
 
 ```kotlin
 val thumb = source.extractFrame(atMicros = 90_000_000)   // one frame at 90s

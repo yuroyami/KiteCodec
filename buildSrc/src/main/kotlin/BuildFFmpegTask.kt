@@ -19,10 +19,10 @@ import javax.inject.Inject
  *
  * Desktop targets (macOS / iOS / Linux / mingw) build in one of two licence flavours:
  *
- *   - [FFmpegLicense.LGPL] (default) — no `--enable-gpl`, no x264 / x265. VideoToolbox hardware
+ *   - [FFmpegLicense.LGPL] (default): no `--enable-gpl`, no x264 / x265. VideoToolbox hardware
  *     encode plus a permissive software stack (svtav1, vpx, aom, mp3lame, opus, webp, freetype /
  *     harfbuzz / fribidi / ass). App-Store and closed-source safe.
- *   - [FFmpegLicense.GPL] — the LGPL stack plus libx264 / libx265 (`--enable-gpl`). Quality-focused
+ *   - [FFmpegLicense.GPL]: the LGPL stack plus libx264 / libx265 (`--enable-gpl`). Quality-focused
  *     software encode; open-source / server use only.
  *
  * The **Android** profile is always LGPL regardless of [license]: nothing GPL, nothing external;
@@ -31,7 +31,7 @@ import javax.inject.Inject
  * `ANDROID_NDK_HOME` / `ANDROID_NDK_ROOT` / `ANDROID_NDK_LATEST_HOME`, falling back to the SDK's
  * newest `ndk/<version>`).
  *
- * Every flavour shares the same demuxer/decoder/filter core — the editor-relevant subset, ~75%
+ * Every flavour shares the same demuxer/decoder/filter core: the editor-relevant subset, ~75%
  * smaller than a "full" build (25 MB vs 110 MB per ABI).
  *
  * Expects an FFmpeg source tree at [sourceDir] (`vendor/ffmpeg` by convention). Either a git
@@ -52,7 +52,7 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
 
     /**
      * The FFmpeg tag/commit the [sourceDir] checkout is pinned to (for example `n8.0`). Declared as
-     * an input so bumping the vendored FFmpeg invalidates previously built outputs — hashing the
+     * an input so bumping the vendored FFmpeg invalidates previously built outputs. Hashing the
      * whole FFmpeg source tree as an input directory would be prohibitively slow.
      */
     @get:Input
@@ -64,7 +64,7 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
 
     /**
      * Where the host package manager installed the third-party encoder/text libraries the desktop
-     * macOS profile links (Homebrew's prefix — `/opt/homebrew` on Apple silicon, `/usr/local` on
+     * macOS profile links (Homebrew's prefix: `/opt/homebrew` on Apple silicon, `/usr/local` on
      * Intel). Override with the `kitecodec.macos.homebrew.prefix` Gradle property. Unused on Linux
      * (system paths are already searched) and on the cross targets, which need their own
      * cross-built dependency stack rather than the host's.
@@ -74,7 +74,7 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
     abstract val hostPrefix: Property<String>
 
     /**
-     * Whether the produced tree must be fully self-contained — every third-party archive FFmpeg
+     * Whether the produced tree must be fully self-contained: every third-party archive FFmpeg
      * links present as a `.a` inside it. False (the default) for local development, where linking
      * a dependency from the host is fine. True for anything that becomes a Release asset, where a
      * missing archive means the zip cannot link on a consumer's machine.
@@ -139,7 +139,7 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
         runIn(buildDir, listOf("make", "-j${Runtime.getRuntime().availableProcessors()}"), env)
         runIn(buildDir, listOf("make", "install"), env)
 
-        // `make install` exiting 0 is not proof it installed anything — FFmpeg's install rules are
+        // `make install` exiting 0 is not proof it installed anything. FFmpeg's install rules are
         // driven by variables from config.mak, and a prefix make cannot parse yields a silent
         // no-op. An empty output directory here would then fall through to FFmpegPaths' system
         // lookup, which is exactly the "publication silently drops a target" failure the publish
@@ -165,8 +165,8 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
      * `make install` only installs FFmpeg's own libraries. The static `libavcodec.a` it leaves
      * behind still carries undefined references to svt-av1, vpx, aom, opus, mp3lame, webp and the
      * text stack, which on the build machine live in the package manager's prefix. Without this the
-     * tree links only on a machine that happens to have all of them installed — the very thing
-     * vendoring exists to avoid.
+     * tree links only on a machine that happens to have all of them installed. Vendoring exists to
+     * avoid exactly that.
      */
     private fun bundleThirdPartyArchives(target: TargetTriple, license: FFmpegLicense, outputDir: File) {
         val wanted = StaticLinkFlags.thirdPartyArchives(target, license)
@@ -185,9 +185,9 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
             return
         }
 
-        // Some package managers ship a few of these SHARED only — Homebrew's svt-av1 is the
-        // standing example. A dev build can still link against the host's dylib, so warn rather
-        // than block; a build destined for a Release asset cannot, so make it fatal there.
+        // Some package managers ship a few of these as shared libraries only. Homebrew's svt-av1
+        // is the standing example. A dev build can still link against the host's dylib, so warn
+        // rather than block; a build destined for a Release asset cannot, so make it fatal there.
         val explanation =
             "These static third-party archives are not installed on this machine: " +
                 "${missing.joinToString()}.\n" +
@@ -249,7 +249,7 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
 
     /**
      * `--extra-cflags` / `--extra-ldflags` pointing at the Homebrew prefix. Without these the
-     * desktop macOS build cannot configure at all — it dies on `ERROR: libmp3lame >= 3.98.3 not
+     * desktop macOS build cannot configure at all. It dies on `ERROR: libmp3lame >= 3.98.3 not
      * found` even with `brew install lame` done, because lame ships no pkg-config file.
      */
     private fun macosPrefixArgs(): List<String> {
@@ -267,12 +267,12 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
         "--disable-programs", "--disable-doc", "--disable-debug",
         "--disable-htmlpages", "--disable-manpages", "--disable-podpages", "--disable-txtpages",
 
-        // Codecs / muxers — opinionated, editor-relevant subset.
+        // Codecs / muxers: opinionated, editor-relevant subset.
         "--disable-everything",
         // file/pipe/data always; http+tcp so MediaSource.open() can actually take the URLs its
         // KDoc advertises. https is deliberately absent: it needs a TLS backend (openssl/gnutls/
         // mbedtls) cross-built for every target, which is a dependency escalation this profile
-        // does not take on — see docs/platforms.md. --enable-network is explicit rather than
+        // does not take on. See docs/platforms.md. --enable-network is explicit rather than
         // inherited so a target whose configure probe defaults it off fails loudly here.
         "--enable-network",
         "--enable-protocol=file,pipe,data,http,tcp",
@@ -284,8 +284,8 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
         "--enable-demuxer=mov,mp4,m4v,matroska,webm,mp3,wav,aac,flac,ogg,opus,mpegts,image2,png_pipe,jpeg_pipe",
         "--enable-muxer=mp4,mov,ipod,webm,matroska,matroska_audio,mp3,wav,flac,ogg,opus,mpegts,image2",
         "--enable-decoder=h264,hevc,vp8,vp9,av1,mpeg4,aac,mp3,opus,vorbis,flac,pcm_s16le,pcm_s24le,pcm_f32le,png,mjpeg,webp",
-        // Encoders that need NO third-party library, so every profile — desktop LGPL, desktop GPL,
-        // Android — has them. mpeg4 is the dependency-free video baseline: without it an LGPL build
+        // Encoders that need no third-party library, so every profile (desktop LGPL, desktop GPL,
+        // Android) has them. mpeg4 is the dependency-free video baseline: without it an LGPL build
         // can only encode video via libsvtav1 (slow) or mjpeg (intra-only), and the library's own
         // round-trip tests and sample have nothing portable to write with. flac and the pcm_* set
         // are what make the already-enabled flac/wav MUXERS able to write anything at all.
@@ -293,16 +293,16 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
         "--enable-parser=h264,hevc,vp8,vp9,av1,mpeg4video,aac,mpegaudio,opus,vorbis,flac,png",
 
         // Bitstream filters. libavformat inserts these ITSELF during stream copy, so leaving them
-        // out does not produce a clear error — it produces a corrupt output file. Copying h264 out
+        // out does not produce a clear error. It produces a corrupt output file. Copying h264 out
         // of MPEG-TS into mp4 needs extract_extradata (TS carries parameter sets in band, mp4 wants
         // them in the header) and copying AAC out of TS/ADTS needs aac_adtstoasc. Without them the
         // muxer writes a file that ffprobe rejects with "No start code is found".
         "--enable-bsf=extract_extradata,h264_mp4toannexb,hevc_mp4toannexb,aac_adtstoasc,vp9_superframe,null",
 
-        // buffer/buffersink/abuffer/abuffersink are how KiteCodec feeds and drains every graph —
-        // without them ffkmp_graph_build_* returns AVERROR_FILTER_NOT_FOUND.
+        // buffer/buffersink/abuffer/abuffersink are how KiteCodec feeds and drains every graph.
+        // Without them ffkmp_graph_build_* returns AVERROR_FILTER_NOT_FOUND.
         // Only filters EVERY profile can actually provide. Two kinds of exception live elsewhere,
-        // because configure silently DROPS a filter whose dependencies are unmet — listing one
+        // because configure silently drops a filter whose dependencies are unmet. Listing one
         // here would make this a promise some builds quietly break:
         //   - drawtext needs libfreetype/libharfbuzz → desktopBaseArgs (Android links neither).
         //   - eq and boxblur are `deps="gpl"` in FFmpeg's own configure → desktopGplArgs.
@@ -320,7 +320,7 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
      * `--enable-gpl`, no x264 / x265. The default flavour.
      */
     private fun desktopBaseArgs(): List<String> = listOf(
-        // Extends the dependency-free set in sharedCoreArgs — configure accumulates --enable-encoder.
+        // Extends the dependency-free set in sharedCoreArgs: configure accumulates --enable-encoder.
         "--enable-encoder=libsvtav1,aac,libmp3lame,libopus",
         "--enable-libsvtav1",
         "--enable-libvpx", "--enable-libaom",
@@ -343,7 +343,7 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
         "--enable-encoder=libx264,libx265",
         "--enable-libx264", "--enable-libx265",
         // FFmpeg marks these `deps="gpl"`, so they exist ONLY in this flavour. They were listed in
-        // the shared set for a long time, where configure silently dropped them — which is how
+        // the shared set for a long time, where configure silently dropped them, which is how
         // `eq=brightness=…`, the filter every example reaches for, ended up unavailable in the
         // LGPL build the project actually ships.
         "--enable-filter=eq,boxblur",
@@ -355,7 +355,7 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
      * `--enable-videotoolbox` alone only turns on the framework dependency. Under
      * `--disable-everything` every encoder must additionally be named in `--enable-encoder=`, or
      * the resulting build advertises VideoToolbox support and then has no `h264_videotoolbox`
-     * encoder to find at runtime — exactly the mistake the Android profile avoids by listing
+     * encoder to find at runtime. The Android profile avoids that mistake by listing
      * `h264_mediacodec` explicitly. Simulator targets are excluded: VideoToolbox encode is not
      * available there.
      */
@@ -499,7 +499,7 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
     }
 
     companion object {
-        /** minSdk the native libs are built against — AMediaCodec needs 21+, 24 is a safe floor. */
+        /** minSdk the native libs are built against: AMediaCodec needs 21+, 24 is a safe floor. */
         const val ANDROID_API = 24
 
         /** The FFmpeg tag `vendor/ffmpeg` is expected to be checked out at. */

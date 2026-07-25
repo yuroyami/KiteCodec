@@ -59,10 +59,11 @@ public actual object Transcoder {
                     // keyframe snap.
                     source.seekMicros(startMicros)
                 } else {
-                    // Decoding paths discard forward to the exact start, so landing early is free
-                    // — while landing late (which indexless containers do) would silently cut
-                    // content the caller asked for. Copied audio/subtitles alongside a decoded
-                    // video stream are unaffected: the beforeStart gate drops their pre-roll.
+                    // Decoding paths discard forward to the exact start, so landing early is
+                    // free. Landing late (which indexless containers do) would silently cut
+                    // content the caller asked for. Copied audio and subtitles alongside a
+                    // decoded video stream are unaffected: the beforeStart gate drops their
+                    // pre-roll.
                     source.seekForDecode(startMicros)
                 }
             }
@@ -138,12 +139,14 @@ public actual object Transcoder {
                             }
 
                             /**
-                             * Frame pts → MEDIA-RELATIVE micros, read in the frame's own time-base
-                             * (graph output frames carry the graph's, decoder frames the stream's).
-                             * Relative, not absolute: startMicros/endMicros are "n microseconds
-                             * into the content", while every timestamp libavformat produces
-                             * includes the container's start offset — nonzero on MPEG-TS, which
-                             * would shift the whole trim window by ~1.4s.
+                             * Frame pts to media-relative micros, read in the frame's own
+                             * time-base. Graph output frames carry the graph's time-base and
+                             * decoder frames carry the stream's.
+                             *
+                             * The result is relative, not absolute, because startMicros and
+                             * endMicros are measured from the start of the content.
+                             *
+                             * @see MediaSource.startTimeMicros for the two timelines involved
                              */
                             fun ptsMicros(frame: Frame): Long =
                                 if (frame.info.hasPts) {
@@ -188,7 +191,7 @@ public actual object Transcoder {
                                             // Non-lead frames past the end are just dropped;
                                             // the lead stream decides when to stop demuxing.
                                         }
-                                        // Only filter the head when actually trimming — at
+                                        // Only filter the start when actually trimming. At
                                         // start=0, negative pts (audio priming) must pass.
                                         startMicros > 0 && micros != Long.MIN_VALUE && micros < startMicros ->
                                             frame.close()  // decode-discard up to the exact start
@@ -204,9 +207,10 @@ public actual object Transcoder {
                                 },
                                 onPacket = { packet, info ->
                                     // Copied packets: keyframe-snapped at start (a copied video
-                                    // stream keeps everything from the seek keyframe on — dropping
-                                    // "before start" packets would break decode until the next
-                                    // keyframe), pts-filtered for audio/subtitles, end-bounded.
+                                    // stream keeps everything from the seek keyframe onwards,
+                                    // because dropping "before start" packets would break decode
+                                    // until the next keyframe), pts-filtered for audio and
+                                    // subtitles, end-bounded.
                                     // End detection gates on dts (monotonic in demux order); pts
                                     // reorders around B-frames and would stop the demux early.
                                     val pktDts = ffkmp_packet_dts(packet)

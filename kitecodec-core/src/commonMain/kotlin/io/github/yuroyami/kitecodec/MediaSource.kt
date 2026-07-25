@@ -3,9 +3,9 @@ package io.github.yuroyami.kitecodec
 import kotlinx.coroutines.flow.Flow
 
 /**
- * An opened input — local file or URL. Owns the AVFormatContext and per-stream resources;
- * closing tears everything down. Confined to one coroutine context — libav* objects are not
- * safe to call concurrently.
+ * An opened input: a local file or a URL. It owns the AVFormatContext and the per-stream
+ * resources, and closing it releases them all. Confine it to one coroutine context, because
+ * libav* objects are not safe to call concurrently.
  */
 public expect class MediaSource : AutoCloseable {
 
@@ -15,8 +15,8 @@ public expect class MediaSource : AutoCloseable {
     public val metadata: Map<String, String>
 
     /**
-     * Where this container's timeline begins, in microseconds — 0 for most mp4, commonly around
-     * 1.4s for MPEG-TS.
+     * Where this container's timeline begins, in microseconds. It is 0 for most mp4 files, and
+     * commonly around 1.4s for MPEG-TS.
      *
      * This is the offset between the two timelines KiteCodec deals in. Timestamps it reports
      * ([StreamInfo], [FrameInfo.pts]) are absolute and include this value. Timestamps it accepts
@@ -61,19 +61,19 @@ public expect class MediaSource : AutoCloseable {
      * [FrameInfo.pts] if you need to know exactly where you ended up; [extractFrame] and
      * [Transcoder.transcode]'s trim already do this for you.
      *
-     * @param micros where to seek to, relative to the start of the content — see [startTimeMicros]
+     * @param micros where to seek to, relative to the start of the content (see [startTimeMicros])
      * @throws FFmpegException when the seek fails
      */
     public suspend fun seekMicros(micros: Long)
 
     /**
-     * Decode and return the frame at (or first after) [atMicros] — thumbnail extraction. Seeks to
-     * the preceding keyframe and decodes forward to the exact target. Pair with
-     * [Frame.encodeImage] for jpg/png bytes.
+     * Decode and return the frame at (or first after) [atMicros]. Use this to extract a
+     * thumbnail. It seeks to the preceding keyframe and decodes forward to the exact target.
+     * Pair with [Frame.encodeImage] for jpg/png bytes.
      *
-     * @param atMicros where to read, relative to the start of the content — see [startTimeMicros]
+     * @param atMicros where to read, relative to the start of the content (see [startTimeMicros])
      * @param stream which stream to read; default = primary video
-     * @return an owned frame — hold it as long as you like, close it when done
+     * @return an owned frame: hold it as long as you like, then close it
      * @throws FFmpegException when the seek or decode fails
      */
     public suspend fun extractFrame(atMicros: Long, stream: StreamInfo? = null): Frame
@@ -84,8 +84,9 @@ public expect class MediaSource : AutoCloseable {
         /**
          * Open a local file or URL.
          *
-         * Blocking call — network URLs run I/O inside `avformat_open_input`, so call from a
-         * background dispatcher (`Dispatchers.IO` or your media dispatcher), never the UI thread.
+         * This is a blocking call. Network URLs run I/O inside `avformat_open_input`, so call it
+         * from a background dispatcher (`Dispatchers.IO` or your media dispatcher). Never call it
+         * on the UI thread.
          */
         @Throws(FFmpegException::class)
         public fun open(path: String): MediaSource

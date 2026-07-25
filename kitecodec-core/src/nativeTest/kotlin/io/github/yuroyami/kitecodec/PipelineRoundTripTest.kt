@@ -44,7 +44,7 @@ class PipelineRoundTripTest {
         MediaSink.open(path).use { sink ->
             val enc = sink.addVideoEncoder(
                 VideoEncoderSpec(
-                    codec = CodecId("mpeg4"),  // built into every FFmpeg — no external encoder needed
+                    codec = CodecId("mpeg4"),  // built into every FFmpeg, no external encoder needed
                     width = width, height = height,
                     frameRate = Rational(30, 1),
                     bitrateBps = 500_000,
@@ -82,7 +82,7 @@ class PipelineRoundTripTest {
                 // Owned emission contract: frames collected via toList() must still be readable.
                 val bytes = decoded.first().copyPlanesToByteArray()
                 assertEquals(64 * 64 * 3 / 2, bytes.size)
-                // Distinct frames — the reuse bug would make all list entries alias one buffer.
+                // Distinct frames. The reuse bug would make all list entries alias one buffer.
                 val first = decoded.first().copyPlanesToByteArray()
                 val last = decoded.last().copyPlanesToByteArray()
                 assertTrue(!first.contentEquals(last), "decoded frames alias one reused buffer")
@@ -168,7 +168,7 @@ class PipelineRoundTripTest {
             val first = runBlocking { src.decodedFrames(video).take(1).toList() }
             first.forEach { it.close() }
             assertEquals(1, first.size)
-            // Cancellation released the demux state — a fresh pass must work.
+            // Cancellation released the demux state, so a fresh pass must work.
             runBlocking { src.seekMicros(0) }
             val again = runBlocking { src.decodedFrames(video).take(1).toList() }
             again.forEach { it.close() }
@@ -233,7 +233,7 @@ class PipelineRoundTripTest {
 
     @Test
     fun muxerOptionsAndExplicitFormatAreApplied() {
-        val path = tmp("faststart.bin")  // extension lies on purpose — format param must win
+        val path = tmp("faststart.bin")  // deliberately wrong extension: format param takes priority
         MediaSink.open(path, format = "mp4", options = mapOf("movflags" to "+faststart")).use { sink ->
             val enc = sink.addVideoEncoder(
                 VideoEncoderSpec(
@@ -334,7 +334,7 @@ class PipelineRoundTripTest {
         }
     }
 
-    /** Pixel formats are reconciled; GEOMETRY is not — that is a config error worth surfacing. */
+    /** Pixel formats are reconciled. Geometry is not: a size mismatch is a config error to report. */
     @Test
     fun encoderRejectsAFrameOfTheWrongSize() {
         MediaSink.open(tmp("wrongsize.mp4")).use { sink ->
@@ -379,7 +379,7 @@ class PipelineRoundTripTest {
                     enc.core.encode(packet, Frame.ofVideo(yuvFrame(64, 64, i), 64, 64, PixelFormat.Yuv420p, i * 1_000_000L / 30))
                 }
             }
-            // Deliberately NO finish() — close() is responsible from here.
+            // Deliberately no finish() call. close() is responsible from here.
         }
         MediaSource.open(path).use { src ->
             val video = src.primaryVideo ?: error("no video stream written")
@@ -417,9 +417,9 @@ class PipelineRoundTripTest {
                 endMicros = 11_000_000L,
             )
         }
-        // The file must exist and be a readable container. Whether a track with zero samples
-        // survives is the muxer's call — mp4 drops empty tracks in av_write_trailer — so asserting
-        // on the stream list would be asserting on libavformat's policy, not on this fix. The
+        // The file must exist and be a readable container. The muxer decides whether a track
+        // with zero samples survives (mp4 drops empty tracks in av_write_trailer). Asserting
+        // on the stream list would assert on libavformat's policy, not on this fix. The
         // regression being guarded is "no file at all, and no error".
         MediaSource.open(dst).use { out ->
             assertTrue(out.formatName.isNotEmpty(), "empty-window output is not a readable container")

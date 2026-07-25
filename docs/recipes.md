@@ -24,7 +24,7 @@ val codec = when {
 
 Builds differ. A hardware encoder like `h264_videotoolbox` exists on macOS but not in a Linux VM, so check `hasEncoder` / `hasDecoder` / `hasFilter` at runtime before you commit to a codec or filter.
 
-## Grab one thumbnail at t, encode to JPEG bytes
+## Extract one thumbnail at a timestamp, encode to JPEG bytes
 
 ```kotlin
 import io.github.yuroyami.kitecodec.MediaSource
@@ -38,7 +38,7 @@ MediaSource.open("input.mp4").use { src ->
 }
 ```
 
-`extractFrame` seeks, decodes one frame at the requested timestamp, and hands it back. `encodeImage(CodecId.Mjpeg)` returns JPEG bytes; pass `CodecId.Png` for PNG. Both `MediaSource` and `Frame` are `AutoCloseable`, so wrap them in `use { }`.
+`extractFrame` seeks, decodes one frame at the requested timestamp, and returns it. `encodeImage(CodecId.Mjpeg)` returns JPEG bytes. Pass `CodecId.Png` for PNG. Both `MediaSource` and `Frame` are `AutoCloseable`, so wrap them in `use { }`.
 
 ## Cut a frame-exact clip
 

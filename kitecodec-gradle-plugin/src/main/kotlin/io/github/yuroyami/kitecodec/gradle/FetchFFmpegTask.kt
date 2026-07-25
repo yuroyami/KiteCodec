@@ -80,7 +80,7 @@ abstract class FetchFFmpegTask : DefaultTask() {
         // another terminal writes the very same directory. Without a cross-process lock the
         // deleteRecursively()/move() below can pull the tree out from under a link task that is
         // reading it. Hold an exclusive lock on a sibling file for the whole fetch, and re-check
-        // completeness once inside — the process we waited on has very likely just done the work.
+        // completeness once inside. The process we waited on has very likely just done the work.
         withDirectoryLock(dest) {
             if (isComplete(dest)) {
                 logger.info("FFmpeg was populated at $dest while waiting for the cache lock.")
@@ -157,8 +157,8 @@ abstract class FetchFFmpegTask : DefaultTask() {
 
     /**
      * Fetches the `.sha256` published next to the asset. Returns null only when the checksum is
-     * unobtainable AND `kitecodec.ffmpeg.allowUnverified=true`; otherwise the build fails — an
-     * unverified native binary must never be linked into a consumer app silently.
+     * unobtainable and `kitecodec.ffmpeg.allowUnverified=true`. Otherwise the build fails, because
+     * an unverified native binary must never be linked into a consumer app silently.
      */
     private fun fetchPublishedChecksum(): String? {
         val fetched = runCatching { withRetry("fetch ${sha256Url.get()}") { fetchText(sha256Url.get()) } }
@@ -236,9 +236,9 @@ abstract class FetchFFmpegTask : DefaultTask() {
                     val location = conn.getHeaderField("Location")
                     conn.disconnect()
                     requireNotNull(location) { "Redirect with no Location header fetching $current" }
-                    // Location may legitimately be relative (RFC 7231 §7.1.2) — resolve it against
+                    // Location may legitimately be relative (RFC 7231 §7.1.2). Resolve it against
                     // the URL we just requested instead of parsing it as an absolute URI and
-                    // blowing up on a null scheme. The https check above still gates the result.
+                    // failing on a null scheme. The https check above still gates the result.
                     current = uri.resolve(location)
                 }
                 else -> {

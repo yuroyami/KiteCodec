@@ -1,8 +1,8 @@
 # Filter graphs
 
-A `FilterGraph` wraps a [libavfilter](https://ffmpeg.org/ffmpeg-filters.html) chain and pumps frames through it. You describe the chain as a string (`scale`, `eq`, `vignette`, `format`, `volume`, `atempo`, anything FFmpeg ships), KiteCodec compiles it into a `buffersrc → chain → buffersink` graph, and you feed it `Frame`s. The same chains you would hand to the `ffmpeg` CLI work here, with no subprocess.
+A filter graph is a chain of FFmpeg filters that transforms frames. A `FilterGraph` wraps a [libavfilter](https://ffmpeg.org/ffmpeg-filters.html) chain and passes frames through it. You describe the chain as a string (`scale`, `eq`, `vignette`, `format`, `volume`, `atempo`, anything FFmpeg ships), KiteCodec compiles it into a `buffersrc → chain → buffersink` graph, and you feed it `Frame`s. The same chains you would give to the `ffmpeg` CLI work here, with no subprocess.
 
-Most of the time you do not build a graph by hand. [`Transcoder.transcode`](transcoding.md) takes a `videoFilter` / `audioFilter` string and wires the graph for you. Reach for `FilterGraph` directly when you are composing several inputs, driving frames yourself, or filtering outside the transcode pipeline.
+Most of the time you do not build a graph by hand. [`Transcoder.transcode`](transcoding.md) takes a `videoFilter` / `audioFilter` string and wires the graph for you. Use `FilterGraph` directly when you are composing several inputs, driving frames yourself, or filtering outside the transcode pipeline.
 
 ```kotlin
 import io.github.yuroyami.kitecodec.FilterGraph
@@ -37,7 +37,7 @@ val graph = FilterGraph.buildVideo(
 
 | Parameter | Meaning |
 |---|---|
-| `description` | The filter chain, e.g. `scale=1280:720,hue=b=0.1,format=yuv420p`. Filters must exist in the FFmpeg you linked — `eq` and `boxblur` are GPL-only in FFmpeg itself, so they are absent from KiteCodec's default LGPL profile; `hue` (which has a brightness parameter `b`), `colorlevels` and `curves` are the LGPL equivalents. `FFmpeg.hasFilter("eq")` tells you before you build a graph. |
+| `description` | The filter chain, e.g. `scale=1280:720,hue=b=0.1,format=yuv420p`. Filters must exist in the FFmpeg you linked. `eq` and `boxblur` are GPL-only in FFmpeg itself, so they are absent from KiteCodec's default LGPL profile. `hue` (which has a brightness parameter `b`), `colorlevels` and `curves` are the LGPL equivalents. `FFmpeg.hasFilter("eq")` tells you before you build a graph. |
 | `width`, `height` | Dimensions of the frames you feed in. |
 | `pixelFormat` | Input pixel format, typically the decoder's output (see [`PixelFormat`](https://yuroyami.github.io/KiteCodec/api/)). |
 | `timeBase` | The pts time-base of input frames. |
@@ -69,7 +69,7 @@ The chain is again a plain FFmpeg string. `volume=0.5,atempo=1.25` halves the lo
 
 ### Encoder-ready output
 
-Audio encoders are picky about sample rate, sample format, and channel layout. When you pass the `output*` parameters, the graph appends an `aformat` stage so every frame leaves the graph already resampled, reformatted, and remixed for the encoder.
+Audio encoders are strict about sample rate, sample format, and channel layout. When you pass the `output*` parameters, the graph appends an `aformat` stage so every frame leaves the graph already resampled, reformatted, and remixed for the encoder.
 
 ```kotlin
 val graph = FilterGraph.buildAudio(
@@ -131,7 +131,7 @@ MediaSource.open("input.mp4").use { src ->
 `process` owns the lifecycle. It closes each input frame after the graph consumes it, and it closes the graph itself when the returned flow terminates. You do not call `close()` on a graph you drove with `process`.
 
 !!! warning "Frame ownership"
-    Frames emitted by `process` are owned by the collector — they stay valid until you `close()` them, so buffering operators are safe. Close each one when done (see [frame ownership](decoding.md#frame-ownership)).
+    Frames emitted by `process` are owned by the collector. They stay valid until you `close()` them, so buffering operators are safe. Close each one when done (see [frame ownership](decoding.md#frame-ownership)).
 
 ## Multi-input graphs
 
@@ -172,7 +172,7 @@ val graph = FilterGraph.buildVideoMulti(
 
 ### Audio: mix two tracks
 
-`amix` blends several audio inputs into one. `[in0]` is the main track, `[in1]` a second source; `duration=longest` runs the output until the longer input ends. Like `buildAudio`, the multi builder accepts `output*` pins so the mix lands encoder-ready.
+`amix` blends several audio inputs into one. `[in0]` is the main track and `[in1]` is a second source. `duration=longest` runs the output until the longer input ends. Like `buildAudio`, the multi builder accepts `output*` pins, so the mix leaves the graph ready for the encoder.
 
 ```kotlin
 import io.github.yuroyami.kitecodec.AudioInput
@@ -212,7 +212,7 @@ graph.feedInput(1, logoFrame) { composited ->
 }
 ```
 
-`feedInput` closes the frame you pass in. The graph keeps its own reference, so you must not touch that frame afterward. Output frames handed to the `onOutput` callback are valid **only for the duration of the callback** — use [`Frame.copy`](decoding.md#frame-ownership) to keep one.
+`feedInput` closes the frame you pass in. The graph keeps its own reference, so you must not touch that frame afterward. Output frames passed to the `onOutput` callback are valid **only for the duration of the callback**. Use [`Frame.copy`](decoding.md#frame-ownership) to keep one.
 
 ### Flushing
 
@@ -242,7 +242,7 @@ val graph = FilterGraph.buildAudio(
 println("Output time-base: ${graph.outputTimeBase}")
 ```
 
-When you feed filtered frames into an encoder or muxer, rescale timestamps against `outputTimeBase`, not against the input time-base. Inside `Transcoder` this is handled for you; doing it by hand, reach for `Rational`'s overflow-safe `times` operator. See [Encoding & muxing](encoding-muxing.md) for how the encoder rescales onto the codec time-base from there.
+When you feed filtered frames into an encoder or muxer, rescale timestamps against `outputTimeBase`, not against the input time-base. Inside `Transcoder` this is handled for you. When you do it by hand, use `Rational`'s overflow-safe `times` operator. See [Encoding & muxing](encoding-muxing.md) for how the encoder rescales onto the codec time-base from there.
 
 !!! note "Other graph properties"
     `inputCount` reports how many `buffersrc` inputs the graph was built with. It is the upper bound on the `index` you can pass to `feedInput` / `flushInput` (`0` to `inputCount - 1`).

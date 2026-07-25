@@ -1,12 +1,12 @@
 # About KiteCodec
 
-**One coroutine-first Kotlin API for video and audio.** KiteCodec binds Kotlin/Native directly to FFmpeg's libav\* libraries, so you decode, encode, transcode and filter media from a single suspend-friendly surface. No `ffmpeg` subprocess, no JVM, no JNI hop, and constant memory regardless of input length.
+**One coroutine-first Kotlin API for video and audio.** KiteCodec binds Kotlin/Native directly to FFmpeg's libav\* libraries, so you decode, encode, transcode and filter media from a single suspend-friendly surface. No `ffmpeg` subprocess, no JVM, no JNI layer, and constant memory regardless of input length.
 
-This page covers the project's current status, its roadmap, the binding architecture, and the licence. For the API itself, start with [Getting started](getting-started.md) or the [API reference](https://yuroyami.github.io/KiteCodec/api/).
+This page covers the project's current status, its roadmap, the binding architecture, and the license. For the API itself, start with [Getting started](getting-started.md) or the [API reference](https://yuroyami.github.io/KiteCodec/api/).
 
 ## Approach
 
-Media work from Kotlin normally means launching the `ffmpeg` CLI and scraping its stderr, or wrapping a prebuilt binary like FFmpegKit. You marshal arguments into a string, launch a process, and read progress back out of log lines.
+Media work from Kotlin normally means launching the `ffmpeg` CLI and parsing its stderr output, or wrapping a prebuilt binary like FFmpegKit. You build arguments into a string, launch a process, and read progress back out of log lines.
 
 KiteCodec calls the libraries directly. `Transcoder.transcode(...)` opens the file via libavformat, demuxes once, routes packets to per-stream libavcodec decoders, pushes frames through libavfilter graphs, encodes, and interleaves the streams into a valid container. Progress arrives as a typed callback, errors arrive as typed exceptions, and frames flow as a coroutine `Flow`.
 
@@ -16,7 +16,7 @@ Everything routes through a single demux pass. When you decode several streams, 
 
 KiteCodec is pre-1.0 and actively developed. The full **demux -> decode -> filter -> encode -> mux** pipeline is live for both video and audio, in a single pass, for every published target. The Kotlin library is complete; the binary distribution it needs is not.
 
-There is one status table for the whole project, and it lives in the [README](https://github.com/yuroyami/KiteCodec#targets). It records, per target, whether the target is in the published set, what CI actually builds and tests, and where FFmpeg comes from. Keeping a second copy here is how the two drifted apart before.
+There is one status table for the whole project, and it lives in the [README](https://github.com/yuroyami/KiteCodec#targets). It records, per target, whether the target is in the published set, what CI builds and tests, and where FFmpeg comes from.
 
 The two things a reader most often needs from it:
 
@@ -24,7 +24,7 @@ The two things a reader most often needs from it:
 - **There is no JVM target**, and no web target of any kind. `nativeMain` is the only implementation source set, and every published artifact is a Kotlin/Native klib.
 
 !!! note "Frame ownership"
-    Frames emitted by the public `Flow` APIs (`MediaSource.decodedFrames`, `MediaSource.decodeStreams`, `FilterGraph.process`) are **owned by the collector**. Each stays valid until you close it, so buffering operators such as `buffer()` and `toList()` are safe — and every collected frame must be closed or its native buffers leak. Frames handed to a callback (`FilterGraph.feedInput`'s `onOutput`) are valid only for the duration of that call; `Frame.copy()` takes an O(1) owned snapshot. The native `AVFrame*` is deliberately not exposed in `commonMain`.
+    Frames emitted by the public `Flow` APIs (`MediaSource.decodedFrames`, `MediaSource.decodeStreams`, `FilterGraph.process`) are **owned by the collector**. Each stays valid until you close it, so buffering operators such as `buffer()` and `toList()` are safe. Every collected frame must be closed, or its native buffers leak. Frames passed to a callback (`FilterGraph.feedInput`'s `onOutput`) are valid only for the duration of that call. `Frame.copy()` takes an O(1) owned snapshot. The native `AVFrame*` is deliberately not exposed in `commonMain`.
 
 ## What's next
 
@@ -35,8 +35,6 @@ The two things a reader most often needs from it:
 - **iOS**: nothing in this repository can cross-build an FFmpeg for iOS today, so the iOS targets compile only against a tree you produce yourself. That build chain comes first, CI verification after.
 
 ## Architecture
-
-This section is consolidated here from the README so the guides can stay focused on the API.
 
 ### One consolidated cinterop module
 
@@ -49,10 +47,10 @@ The pragmatic alternative, six separate cinterops (one per library), does not wo
 The `.def` file also exports 141 small `static inline` C helpers, all prefixed `ffkmp_*`. They exist because some of FFmpeg's surface does not survive cinterop cleanly:
 
 - **Macros that don't survive cinterop.** `av_err2str` is a compound-statement macro; `AVERROR(EAGAIN)` and `AVERROR_EOF` are function-style macros. Each gets a real C function the indexer can actually read.
-- **Struct field accessors.** `ffkmp_stream_codecpar(AVStream*)`, `ffkmp_frame_pts(AVFrame*)`, and friends. Modern FFmpeg marks many fields "do not access directly," and several vary across libav versions; a thin C accessor pins one stable read path per field.
+- **Struct field accessors.** `ffkmp_stream_codecpar(AVStream*)`, `ffkmp_frame_pts(AVFrame*)`, and similar accessors. Modern FFmpeg marks many fields "do not access directly," and several vary across libav versions. A thin C accessor pins one stable read path per field.
 - **128-bit-safe timestamp math.** `ffkmp_rescale_q` wraps `av_rescale_q`, the only overflow-safe way to convert timestamps between time-bases.
 - **Double-pointer ceremony for alloc/free pairs.** `avformat_close_input(AVFormatContext**)` and similar become single-pointer wrappers that Kotlin/Native interop calls cleanly.
-- **One-shot pipeline helpers.** `ffkmp_fmt_open_input(...)` does alloc plus open in one call; `ffkmp_graph_build_video(...)` / `ffkmp_graph_build_audio(...)` build a complete buffer -> chain -> buffersink graph from a single filter description. The audio variant appends `aformat` so output arrives encoder-ready, because filter-string syntax (unlike buffersink option names) never churns across FFmpeg versions.
+- **One-shot pipeline helpers.** `ffkmp_fmt_open_input(...)` does alloc plus open in one call; `ffkmp_graph_build_video(...)` / `ffkmp_graph_build_audio(...)` build a complete buffer -> chain -> buffersink graph from a single filter description. The audio variant appends `aformat` so output arrives ready for the encoder. Filter-string syntax stays stable across FFmpeg versions, while buffersink option names do not.
 
 ### Source layout
 
@@ -83,7 +81,7 @@ Every `expect` class in `commonMain` has its `actual` in `nativeMain`. All publi
 
 ### Timestamp handling
 
-KiteCodec follows `ffmpeg.c`'s own discipline at every hop:
+KiteCodec follows `ffmpeg.c`'s own rules at every stage:
 
 - **Decode.** Decoders promote `best_effort_timestamp` to `pts`, so files with missing or broken pts still cut correctly.
 - **Filter.** Filter graphs report their **output** time-base, which is not always the input's: `fps` and `atempo` change it. Frames leaving a graph are stamped with the output time-base. The `FilterGraph.outputTimeBase` property exposes it.
@@ -91,7 +89,7 @@ KiteCodec follows `ffmpeg.c`'s own discipline at every hop:
 - **Mux.** Packet timestamps are rescaled once more onto whatever stream time-base the muxer actually chose after `avformat_write_header`.
 
 !!! tip "Why `Rational` is its own type"
-    FFmpeg time-bases and frame rates are exact fractions, not floats. `Rational` is always normalized, and its `times(scalar: Long)` operator does overflow-safe rescaling. Reach for it instead of converting to seconds and back, where rounding accumulates. See the [API reference](https://yuroyami.github.io/KiteCodec/api/) for the full `Rational` surface.
+    FFmpeg time-bases and frame rates are exact fractions, not floats. `Rational` is always normalized, and its `times(scalar: Long)` operator does overflow-safe rescaling. Use it instead of converting to seconds and back, where rounding accumulates. See the [API reference](https://yuroyami.github.io/KiteCodec/api/) for the full `Rational` surface.
 
 ## FFmpeg sourcing
 
@@ -118,15 +116,15 @@ KiteCodec links against an FFmpeg you provide. In a consumer project the [Gradle
 
 See [Platform support](platforms.md) for the per-target detail.
 
-## Licence
+## License
 
 KiteCodec's own code is licensed under the **Apache License 2.0**. You can freely use, modify, and distribute it in commercial and open-source projects.
 
-The FFmpeg you link against carries its own licence, separate from KiteCodec's. It is **LGPL-2.1+** when FFmpeg is built without `--enable-gpl`, and **GPL** with it — KiteCodec's GPL build flavour also sets `--enable-version3`, so its effective licence is **GPL-3.0**. The default flavour is LGPL and is commercial- and App-Store-safe (with the usual [LGPL distribution obligations](licensing.md)). A `kitecodec-gpl` module that would package the GPL flavour (libx264 / libx265) as a drop-in artifact does not exist: it is a README and nothing else, with no `build.gradle.kts`, commented out of `settings.gradle.kts`.
+The FFmpeg you link against carries its own license, separate from KiteCodec's. It is **LGPL-2.1+** when FFmpeg is built without `--enable-gpl`, and **GPL** with it. KiteCodec's GPL build flavor also sets `--enable-version3`, so its effective license is **GPL-3.0**. The default flavor is LGPL and is commercial- and App-Store-safe (with the usual [LGPL distribution obligations](licensing.md)). A `kitecodec-gpl` module that would package the GPL flavor (libx264 / libx265) as a drop-in artifact does not exist: it is a README and nothing else, with no `build.gradle.kts`, commented out of `settings.gradle.kts`.
 
-When you build a vendored static FFmpeg, the licence flavour is a build-time choice: `buildFFmpegFor<Target>` produces the LGPL default, `buildFFmpegFor<Target>Gpl` the GPL opt-in (selected with `-Pkitecodec.ffmpeg.license=gpl`). Stay on the LGPL default if you ship through a GPL-hostile distribution channel such as the iOS App Store. Full compliance guidance lives in the [Licensing guide](licensing.md).
+When you build a vendored static FFmpeg, the license flavor is a build-time choice: `buildFFmpegFor<Target>` produces the LGPL default, `buildFFmpegFor<Target>Gpl` the GPL opt-in (selected with `-Pkitecodec.ffmpeg.license=gpl`). Stay on the LGPL default if you ship through a GPL-hostile distribution channel such as the iOS App Store. Full compliance guidance lives in the [Licensing guide](licensing.md).
 
-## Acknowledgements
+## Acknowledgments
 
 - **FFmpeg** and the libav\* libraries: the codec, container, and filter engine KiteCodec binds to.
 - **`ffmpeg.c`**: the reference for correct demux, decode, filter, encode, and mux orchestration, especially timestamp handling.

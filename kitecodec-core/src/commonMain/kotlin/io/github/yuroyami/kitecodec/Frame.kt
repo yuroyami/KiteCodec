@@ -1,14 +1,14 @@
 package io.github.yuroyami.kitecodec
 
 /**
- * One decoded frame (video or audio). Wraps an `AVFrame*` — close to release the buffers.
+ * One decoded frame (video or audio). Wraps an `AVFrame*`. Close it to release the buffers.
  *
  * **Ownership rule.** Frames emitted by the public `Flow` APIs ([MediaSource.decodedFrames],
- * [MediaSource.decodeStreams], [FilterGraph.process]) are owned by the collector. Each stays
- * valid until you [close] it, so buffering operators such as `buffer()` and `toList()` are
- * safe, and every collected frame must be closed or its native buffers leak. Frames handed to
- * a callback ([FilterGraph.feedInput]'s `onOutput`) are valid only for that call; [copy] takes
- * an owned snapshot of one.
+ * [MediaSource.decodeStreams], [FilterGraph.process]) are owned by the collector. Each frame
+ * stays valid until you [close] it, so buffering operators such as `buffer()` and `toList()`
+ * are safe. Close every collected frame. An unclosed frame leaks its native buffers. Frames
+ * handed to a callback ([FilterGraph.feedInput]'s `onOutput`) are valid only for that call.
+ * Call [copy] to take an owned snapshot of one.
  *
  * The native pointer is intentionally not exposed in commonMain. Pipeline operators
  * ([FilterGraph], encoders) accept Frames directly and pull the pointer through `internal`
@@ -19,8 +19,8 @@ public expect class Frame : AutoCloseable {
     public val info: FrameInfo
 
     /**
-     * Copy the frame's pixel planes (video) or samples (audio) into a flat ByteArray —
-     * planar formats stay planar, packed stay packed, with **no linesize padding**
+     * Copy the frame's pixel planes (video) or samples (audio) into a flat ByteArray.
+     * Planar formats stay planar and packed formats stay packed, with **no linesize padding**
      * (`align=1`, tightly packed). For yuv420p at WxH this returns `W*H*3/2` bytes
      * (Y plane, then U, then V); for fltp stereo it returns the left plane followed by
      * the right. [Frame.ofVideo] / [Frame.ofAudio] accept exactly this layout back.
@@ -33,9 +33,9 @@ public expect class Frame : AutoCloseable {
     public fun copyPlanesToByteArray(): ByteArray
 
     /**
-     * An owned snapshot of this frame — the escape hatch from the callback-scope validity
-     * rule. O(1): it takes new references to the same refcounted buffers, with no pixel copy.
-     * The returned frame survives the source being recycled; close it yourself.
+     * An owned snapshot of this frame. Use it to keep a callback-scoped frame past that call.
+     * O(1): it takes new references to the same refcounted buffers, with no pixel copy.
+     * The returned frame survives the source being recycled. Close it yourself.
      *
      * @return a new owned frame sharing this one's buffers
      * @throws FFmpegException if the frame cannot be referenced
@@ -44,9 +44,9 @@ public expect class Frame : AutoCloseable {
     public fun copy(): Frame
 
     /**
-     * Encode this (video) frame as a standalone compressed image — default MJPEG (`.jpg`),
-     * or [CodecId.Png]. Converts pixel format automatically when the image codec doesn't
-     * accept the frame's own (e.g. yuv420p → rgb24 for PNG). Leaves this frame untouched,
+     * Encode this (video) frame as a standalone compressed image: MJPEG (`.jpg`) by default,
+     * or [CodecId.Png]. This converts the pixel format automatically when the image codec does
+     * not accept the frame's own (e.g. yuv420p → rgb24 for PNG). It leaves this frame untouched,
      * timestamp included, so a frame can be thumbnailed and still encoded into a video.
      *
      * @throws FFmpegException on audio frames, frames without image data, or encode failure
@@ -58,10 +58,10 @@ public expect class Frame : AutoCloseable {
 
     public companion object {
         /**
-         * Build a video frame from raw pixel bytes — the entry point for generative use:
-         * images-to-video, procedural frames, pixels produced by other libraries.
+         * Build a video frame from raw pixel bytes. This is the entry point for generative
+         * use: images-to-video, procedural frames, and pixels produced by other libraries.
          *
-         * [bytes] must be tightly packed planes in [pixelFormat]'s layout — exactly what
+         * [bytes] must be tightly packed planes in [pixelFormat]'s layout. That is exactly what
          * [copyPlanesToByteArray] produces (yuv420p: Y then U then V, no padding; rgba:
          * interleaved). Size must be at least the format's buffer size for [width]x[height].
          *
@@ -83,7 +83,8 @@ public expect class Frame : AutoCloseable {
         /**
          * Build an audio frame from raw sample bytes. [bytes] layout: planar formats are
          * plane-after-plane (all of channel 0, then channel 1, …), packed formats are
-         * interleaved — matching [copyPlanesToByteArray]. Channels beyond 8 are unsupported.
+         * interleaved. Both match what [copyPlanesToByteArray] produces. Channels beyond 8
+         * are unsupported.
          *
          * @throws FFmpegException on unknown sample format, allocation failure, or short [bytes]
          */

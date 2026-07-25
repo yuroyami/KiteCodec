@@ -17,7 +17,7 @@ kitecodec {
     ffmpeg {
         version = "n8.0"                 // pinned FFmpeg release
         source  = FFmpegSource.Prebuilt  // Prebuilt (default) | System | BuildFromSource
-        license = FFmpegLicense.LGPL     // REQUIRED — no default; see below
+        license = FFmpegLicense.LGPL     // REQUIRED, no default. See below
     }
 }
 ```
@@ -41,5 +41,5 @@ for you and fails configuration with instructions when it is missing.
 
 `LGPL` is App-Store and closed-source safe: no `--enable-gpl`, no x264 / x265. `GPL` adds
 libx264 / libx265 for quality-focused software encode and makes the whole linked application GPL-3.0,
-so it is for open-source or server use only — selecting it logs a warning spelling out those
+so it is for open-source or server use only. Selecting it logs a warning spelling out those
 obligations.

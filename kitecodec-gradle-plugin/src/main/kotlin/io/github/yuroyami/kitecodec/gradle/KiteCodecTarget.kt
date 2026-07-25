@@ -6,7 +6,7 @@ package io.github.yuroyami.kitecodec.gradle
  * can map a consumer's Kotlin/Native targets onto the right FFmpeg build.
  *
  * [hasPrebuiltAsset] marks the triples KiteCodec's own release (release-binaries.yml) actually
- * publishes prebuilt FFmpeg zips for in v0.1: the Android triples (LGPL only — Android has no GPL
+ * publishes prebuilt FFmpeg zips for in v0.1: the Android triples (LGPL only; Android has no GPL
  * flavour, enforced elsewhere) plus macos-arm64 and linux-x64 (both lgpl and gpl). Everything else
  * (ios-*, macos-x64, linux-arm64, mingw-x64) has NO asset yet; [FFmpegSource.Prebuilt] against the
  * default repo fails configuration for those with instructions instead of 404-ing at fetch time.

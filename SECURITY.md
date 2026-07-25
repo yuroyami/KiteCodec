@@ -2,7 +2,7 @@
 
 ## Why this matters here
 
-KiteCodec parses untrusted media. Demuxing, decoding, and filtering attacker-controlled files is a classic native attack surface: a crafted container or bitstream that triggers memory corruption in the linked libav\* libraries — or in KiteCodec's own `ffkmp_*` C helpers and binding layer — runs inside your app's process. If your application feeds user-supplied files into `MediaSource`, `Transcoder`, or `Remuxer`, treat media-parsing bugs as security bugs.
+KiteCodec parses untrusted media. Demuxing, decoding, and filtering attacker-controlled files is a classic native attack surface: a crafted container or bitstream can trigger memory corruption in the linked libav\* libraries, or in KiteCodec's own `ffkmp_*` C helpers and binding layer. That runs inside your app's process. If your application feeds user-supplied files into `MediaSource`, `Transcoder`, or `Remuxer`, treat media-parsing bugs as security bugs.
 
 Note that many such issues are FFmpeg bugs, not KiteCodec bugs. Vulnerabilities in FFmpeg itself should go to the [FFmpeg security process](https://ffmpeg.org/security.html); we still want to hear about them if KiteCodec's pinned builds ship an affected version, so we can bump the pin.
 
@@ -27,11 +27,11 @@ KiteCodec is pre-1.0 and not yet published to a public repository; there are no 
 | Version | Supported |
 |---|---|
 | `main` (latest source) | ✅ |
-| 0.0.x snapshots / anything older | ❌ — rebuild from `main` |
+| 0.0.x snapshots / anything older | no, rebuild from `main` |
 
 ## Hardening notes for integrators
 
-- Prefer the pinned **vendored FFmpeg builds** (`n8.0`, minimal codec/filter set) over an arbitrary system FFmpeg — a smaller demuxer/decoder surface is less to exploit, and the pin makes your exposure auditable.
+- Prefer the pinned **vendored FFmpeg builds** (`n8.0`, minimal codec/filter set) over an arbitrary system FFmpeg. A smaller demuxer/decoder surface is less to exploit, and the pin makes your exposure auditable.
 - Keep the FFmpeg pin fresh: FFmpeg regularly fixes parsing CVEs.
 - The Gradle plugin verifies SHA-256 checksums of downloaded FFmpeg archives; treat a checksum warning (missing `.sha256` asset) as a red flag when using a non-default `repo`.
 - Sandbox or isolate the process that parses fully untrusted input where your platform allows it.

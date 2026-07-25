@@ -3,9 +3,9 @@ package io.github.yuroyami.kitecodec
 import kotlinx.coroutines.flow.Flow
 
 /**
- * An open output file (muxer). Add every encoder first (video and/or audio — the muxer's
- * header freezes the stream list), then push frames through the encoders; close to write
- * the trailer and flush buffers.
+ * An open output file (muxer). Add every encoder first, video and audio, because the muxer's
+ * header freezes the stream list. Then push frames through the encoders. Close the sink to
+ * write the trailer and flush buffers.
  */
 public expect class MediaSink : AutoCloseable {
 
@@ -13,8 +13,8 @@ public expect class MediaSink : AutoCloseable {
      * Add a video encoder. Must be called before any frame is written.
      *
      * Frames whose pixel format differs from [VideoEncoderSpec.pixelFormat] are converted on the
-     * way in — a decoder handing over 10-bit frames, or a filter chain that does not end in
-     * `format=`, is handled rather than rejected. Frame DIMENSIONS are not touched: a size
+     * way in. This handles a decoder that produces 10-bit frames, or a filter chain that does
+     * not end in `format=`, rather than rejecting it. Frame dimensions are not touched: a size
      * mismatch is a configuration error and throws, since silently rescaling would hide it.
      */
     @Throws(FFmpegException::class)
@@ -25,7 +25,7 @@ public expect class MediaSink : AutoCloseable {
     public fun addAudioEncoder(spec: AudioEncoderSpec): AudioEncoder
 
     /**
-     * Add an output stream that copies [stream]'s packets verbatim from [source] — no decode,
+     * Add an output stream that copies [stream]'s packets verbatim from [source]: no decode,
      * no re-encode, only timestamp rescaling into the output's time-base (`ffmpeg -c copy`).
      * Bitstream filters are not applied, so format pairs that need one (e.g. h264 in mp4 →
      * MPEG-TS Annex B) are not yet supported.
@@ -37,8 +37,8 @@ public expect class MediaSink : AutoCloseable {
     public fun addCopyStream(source: MediaSource, stream: StreamInfo): CopyStream
 
     /**
-     * Container-level metadata tags (`title`, `artist`, `comment`, …). Call before any
-     * frame/packet is written — tags ride in the header.
+     * Container-level metadata tags (`title`, `artist`, `comment`, …). Call this before any
+     * frame or packet is written, because the tags are stored in the header.
      */
     @Throws(FFmpegException::class)
     public fun setMetadata(metadata: Map<String, String>)
@@ -47,12 +47,13 @@ public expect class MediaSink : AutoCloseable {
      * Flushes every encoder, writes the trailer, and frees the muxer.
      *
      * The flush matters: encoders buffer (x264's lookahead holds tens of frames), so closing
-     * without draining them would silently truncate the tail of the output. It is best-effort —
-     * a trailer is still written for whatever did land if an encoder fails here — and it is a
-     * no-op for encoders already drained by [VideoEncoder.drive] / [AudioEncoder.drive].
+     * without draining them would silently truncate the end of the output. The flush is
+     * best-effort (if an encoder fails here, a trailer is still written for the data already
+     * muxed). It does nothing for encoders already drained by [VideoEncoder.drive] or
+     * [AudioEncoder.drive].
      *
-     * @throws FFmpegException when the trailer fails, which means the file on disk is broken —
-     *         an mp4 whose moov atom never landed, for example
+     * @throws FFmpegException when the trailer fails. The file on disk is then broken, for
+     *         example an mp4 whose moov atom was never written.
      */
     override fun close()
 
@@ -60,10 +61,10 @@ public expect class MediaSink : AutoCloseable {
         /**
          * Open a sink writing to [path].
          *
-         * @param format container short name (`mp4`, `matroska`, `mpegts`, …) — null infers
-         *               from the [path] extension
-         * @param options muxer private options applied before the header is written —
-         *                `"movflags" to "+faststart"` (mp4 web-ready), `"movie_timescale"`, …
+         * @param format container short name (`mp4`, `matroska`, `mpegts`, …). Null infers the
+         *               format from the [path] extension.
+         * @param options muxer private options applied before the header is written, such as
+         *                `"movflags" to "+faststart"` (mp4 web-ready) or `"movie_timescale"`
          */
         @Throws(FFmpegException::class)
         public fun open(path: String, format: String? = null, options: Map<String, String> = emptyMap()): MediaSink
@@ -82,7 +83,7 @@ public data class VideoEncoderSpec(
     val bitrateBps: Long = 4_000_000L,
     val keyframeIntervalFrames: Int = (frameRate.asDouble * 2).toInt().coerceAtLeast(1),
     /**
-     * Encoder-specific options, passed through as `av_opt_set` strings — `"preset" to "veryfast"`,
+     * Encoder-specific options, passed through as `av_opt_set` strings: `"preset" to "veryfast"`,
      * `"crf" to "23"` (libx264), `"allow_sw" to "1"` (videotoolbox), etc.
      */
     val options: Map<String, String> = emptyMap(),
@@ -100,12 +101,12 @@ public data class AudioEncoderSpec(
 )
 
 /**
- * One configured + opened video encoder. Pull from a `Flow<Frame>` via [drive] — it pushes each
- * frame into the encoder, pulls packets, hands them to the sink's muxer, and flushes when the
- * flow completes.
+ * One configured and opened video encoder. Pull from a `Flow<Frame>` via [drive]. That call
+ * pushes each frame into the encoder, pulls packets, hands them to the sink's muxer, and
+ * flushes when the flow completes.
  *
- * Incoming frame pts are rescaled from the frame's own time-base onto the encoder's; frames
- * without pts fall back to a frame counter. Either way output timestamps stay monotonic.
+ * Incoming frame pts are rescaled from the frame's own time-base onto the encoder's. Frames
+ * without pts fall back to a frame counter. Output timestamps stay monotonic either way.
  */
 public expect class VideoEncoder : AutoCloseable {
     /**
@@ -117,8 +118,8 @@ public expect class VideoEncoder : AutoCloseable {
 }
 
 /**
- * One configured + opened audio encoder. Frame-size-constrained codecs (AAC: 1024 samples)
- * need input chunked accordingly — route frames through [FilterGraph.buildAudio] and call
+ * One configured and opened audio encoder. Some codecs require a fixed input chunk size
+ * (AAC: 1024 samples). For those, route frames through [FilterGraph.buildAudio] and call
  * [FilterGraph.setOutputFrameSize] with [frameSize] (Transcoder does this automatically).
  */
 public expect class AudioEncoder : AutoCloseable {

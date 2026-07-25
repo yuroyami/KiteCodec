@@ -9,7 +9,7 @@ class ErrorsTest {
 
     @Test
     fun ffErrTagValuesMatchFFmpeg() {
-        // FFERRTAG('E','O','F',' ') and friends — computed the same way avutil/error.h does.
+        // FFERRTAG('E','O','F',' ') and the related tags, computed the same way avutil/error.h does.
         assertEquals(-0x20464f45, FFmpegError.AVERROR_EOF)
         assertEquals(-0x41444e49, FFmpegError.AVERROR_INVALIDDATA)
     }

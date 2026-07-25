@@ -2,9 +2,9 @@
 
 Learn how to install FFmpeg, wire the module, probe what your build can do, inspect a media file, and run your first transcode with KiteCodec: a coroutine-first Kotlin/Native binding to FFmpeg's libav* libraries.
 
-!!! warning "What you are getting into"
+!!! warning "Before you start"
 
-    KiteCodec is **Kotlin/Native only** — no JVM target, no Android AAR, no web target. Nothing is published yet either, so this guide walks the in-repository path: build against an FFmpeg you install, or against a vendored static build the Gradle tasks produce. The consumer-project build script and the [release status](https://github.com/yuroyami/KiteCodec#release-status) live in the README; the [target table](https://github.com/yuroyami/KiteCodec#targets) records what CI actually verifies.
+    KiteCodec is **Kotlin/Native only**. There is no JVM target, no Android AAR, and no web target. Nothing is published yet, so this guide uses the in-repository path. You build against an FFmpeg you install, or against a vendored static build the Gradle tasks produce. The consumer-project build script and the [release status](https://github.com/yuroyami/KiteCodec#release-status) are in the README. The [target table](https://github.com/yuroyami/KiteCodec#targets) records what CI verifies.
 
 ## Step 1: Get FFmpeg
 
@@ -30,7 +30,7 @@ KiteCodec links against FFmpeg's libav* libraries. You need them present before 
 
     For a release where you do not want a runtime FFmpeg dependency, build a minimal static FFmpeg from source with the Gradle task. It drops `.a` libraries under `native-libs/<license>/<target>/`, and `FFmpegPaths` switches the cinterop to static linking automatically.
 
-    The task expects the FFmpeg source tree at `vendor/ffmpeg` — cloning it is a **mandatory first step**:
+    The task expects the FFmpeg source tree at `vendor/ffmpeg`. Cloning it is a **mandatory first step**:
 
     ```bash
     git clone --depth 1 --branch n8.0 https://github.com/FFmpeg/FFmpeg vendor/ffmpeg
@@ -40,9 +40,9 @@ KiteCodec links against FFmpeg's libav* libraries. You need them present before 
     ./gradlew :kitecodec-core:buildFFmpegForAll
     ```
 
-    You also need FFmpeg's usual build prerequisites on the machine: `make`, a C toolchain, `nasm`/`yasm` for the x86 assembly, `pkg-config`, and the third-party encoder libraries the profile enables (svt-av1, libvpx, aom, opus, lame, webp, freetype, harfbuzz, fribidi, libass — on macOS: `brew install nasm pkg-config svt-av1 libvpx aom opus lame webp freetype harfbuzz fribidi libass`). See [Troubleshooting](troubleshooting.md#vendored-build-prerequisites) if configure fails.
+    You also need FFmpeg's usual build prerequisites on the machine: `make`, a C toolchain, `nasm`/`yasm` for the x86 assembly, `pkg-config`, and the third-party encoder libraries the profile enables: svt-av1, libvpx, aom, opus, lame, webp, freetype, harfbuzz, fribidi, and libass. On macOS run `brew install nasm pkg-config svt-av1 libvpx aom opus lame webp freetype harfbuzz fribidi libass`. See [Troubleshooting](troubleshooting.md#vendored-build-prerequisites) if configure fails.
 
-    The default flavour is **LGPL** (no libx264 / libx265). For the GPL flavour, run the `Gpl` task variants (for example `buildFFmpegForMacosArm64Gpl`) and build with `-Pkitecodec.ffmpeg.license=gpl`. The resulting executable carries everything it needs (around 25 MB).
+    The default flavor is **LGPL** (no libx264 / libx265). For the GPL flavor, run the `Gpl` task variants (for example `buildFFmpegForMacosArm64Gpl`) and build with `-Pkitecodec.ffmpeg.license=gpl`. The resulting executable carries everything it needs (around 25 MB).
 
 !!! tip "Android"
 
@@ -73,13 +73,13 @@ Nothing is published, so there are two routes.
     }
     ```
 
-    A composite build substitutes the dependency with the included project, so the version is omitted deliberately. Your FFmpeg comes from KiteCodec's own `FFmpegPaths` resolution — Step 1 — not from the Gradle plugin.
+    A composite build substitutes the dependency with the included project, so the version is omitted deliberately. Your FFmpeg comes from KiteCodec's own `FFmpegPaths` resolution (Step 1), not from the Gradle plugin.
 
 Once `kitecodec-core` and the [Gradle plugin](gradle-plugin.md) are published, the consumer build script replaces all of this. It is written out in full in the [README](https://github.com/yuroyami/KiteCodec#install); the short version is that the plugin is mandatory (the klib's `ffmpeg.def` carries no `-L`, so the coordinate alone will not link) and so is the `license` choice.
 
 !!! note "`kitecodec-gpl` does not exist"
 
-    `kitecodec-core` is the LGPL default and is safe for commercial distribution. A `kitecodec-gpl` add-on packaging libx264 / libx265 has a README in the repository and nothing else — no build script, commented out of `settings.gradle.kts`. The GPL flavour is reached through the `Gpl` build tasks plus `-Pkitecodec.ffmpeg.license=gpl`.
+    `kitecodec-core` is the LGPL default and is safe for commercial distribution. A `kitecodec-gpl` add-on packaging libx264 / libx265 has a README in the repository and nothing else. It has no build script, and it is commented out of `settings.gradle.kts`. The GPL flavor is reached through the `Gpl` build tasks plus `-Pkitecodec.ffmpeg.license=gpl`.
 
 ## Step 3: Probe what your build can do
 
@@ -131,7 +131,7 @@ Each `StreamInfo` carries an `index`, a `type` (`MediaType.Video`, `Audio`, `Sub
 
 ## Step 5: Your first transcode
 
-`Transcoder.transcode(...)` runs the full pipeline in one pass: demux -> decode -> filter -> encode -> mux. It is a `suspend` function, so call it from a coroutine.
+`Transcoder.transcode(...)` runs the full pipeline in one pass: demux -> decode -> filter -> encode -> mux. Demux means split a container file into its separate streams. Mux means write streams back into a container file. It is a `suspend` function, so call it from a coroutine.
 
 ```kotlin
 import io.github.yuroyami.kitecodec.Transcoder
@@ -160,7 +160,7 @@ fun main() = runBlocking {
 ```
 
 !!! tip "Pick the video encoder by probing"
-    `mpeg4` is used above because it is in every profile. For H.264 or H.265, ask the linked build what it has rather than hard-coding a name — `CodecId.Libx264` only resolves in a GPL FFmpeg, and the vendored default is LGPL, where asking for it throws `FFmpegException` from `addVideoEncoder`.
+    `mpeg4` is used above because it is in every profile. For H.264 or H.265, ask the linked build what it has rather than hard-coding a name. `CodecId.Libx264` only resolves in a GPL FFmpeg. The vendored default is LGPL, and asking for it there throws `FFmpegException` from `addVideoEncoder`.
 
     ```kotlin
     val codec = listOf(
@@ -175,7 +175,7 @@ fun main() = runBlocking {
 
 A few defaults worth knowing:
 
-- Pass `audioSpec = null` to drop audio, or `audioCopy = true` to stream-copy it bit-exact instead of re-encoding.
+- Pass `audioSpec = null` to drop audio, or `audioCopy = true` to stream-copy it instead of re-encoding. A stream copy moves the encoded packets across unchanged, so the audio stays bit-exact.
 - Pass `spec = null` for an audio-only transcode (for example mp3 -> aac).
 - `startMicros` and `endMicros` cut a frame-exact clip; output timestamps rebase to zero. `endMicros` has no upper bound unless you set it.
 - `onProgress` receives a `TranscodeProgress` with `framesEncoded`, `outputMicros`, and a nullable `percent`. It fires roughly every 30 video frames (or every 100 frames for audio-only work), not on an exact count.

@@ -1,6 +1,6 @@
 # KiteCodec
 
-**One coroutine-first Kotlin API for video and audio.** Decode, encode, transcode and filter media from a single suspend-friendly surface, backed by native bindings to FFmpeg's libav\* libraries. No `ffmpeg` subprocess, no JVM, no JNI hop, and constant memory regardless of how long the input runs.
+**One coroutine-first Kotlin API for video and audio.** Decode, encode, transcode and filter media from a single suspend-friendly surface, backed by native bindings to FFmpeg's libav\* libraries. No `ffmpeg` subprocess, no JVM, no JNI layer, and constant memory regardless of how long the input runs.
 
 ```kotlin
 // One call: demux -> decode -> filter -> encode -> mux, in a single pass.
@@ -31,9 +31,9 @@ For H.264 or H.265, probe first and pick what the linked build has:
 
 ## Why KiteCodec
 
-Media work from Kotlin normally means launching the `ffmpeg` CLI and parsing its stderr, or wrapping a prebuilt binary like FFmpegKit. You marshal arguments into a string, launch a process, and read progress back out of log lines. The codec engine lives outside your program.
+Media work from Kotlin normally means launching the `ffmpeg` CLI and parsing its stderr, or wrapping a prebuilt binary like FFmpegKit. You build arguments into a string, launch a process, and read progress back out of log lines. The codec engine lives outside your program.
 
-KiteCodec is a **single Kotlin API over libav\* directly**. You call `Transcoder.transcode(...)` and it opens the file via libavformat, demuxes **once**, routes packets to per-stream libavcodec decoders, pushes frames through libavfilter graphs, encodes, and interleaves the streams into a valid container. There is no process to spawn and no log to scrape. Progress arrives as a typed callback, errors arrive as typed exceptions, and frames flow as a coroutine `Flow`.
+KiteCodec is a **single Kotlin API over libav\* directly**. You call `Transcoder.transcode(...)` and it opens the file via libavformat, demuxes **once**, routes packets to per-stream libavcodec decoders, pushes frames through libavfilter graphs, encodes, and interleaves the streams into a valid container. There is no process to spawn and no log output to parse. Progress arrives as a typed callback, errors arrive as typed exceptions, and frames flow as a coroutine `Flow`.
 
 Everything routes through one demux pass. When you decode several streams, or composite two inputs, the demuxer reads the file a single time and fans packets out to the decoders that need them.
 
@@ -42,7 +42,7 @@ Everything routes through one demux pass. When you decode several streams, or co
 !!! warning "Not consumable from Maven Central today"
     Neither `kitecodec-core` nor the Gradle plugin has been published, and the FFmpeg Release assets the plugin's default `FFmpegSource.Prebuilt` downloads do not exist. The [README](https://github.com/yuroyami/KiteCodec#install) carries the complete consumer build script and the [release status](https://github.com/yuroyami/KiteCodec#release-status), and is the single place either is tracked. Until that changes, you work inside the KiteCodec checkout.
 
-The bindings link against libav\*, so FFmpeg has to be present at build time and — for a dynamically linked build — at run time.
+The bindings link against libav\*, so FFmpeg has to be present at build time. For a dynamically linked build, it must be present at run time as well.
 
 === "macOS"
 
@@ -84,7 +84,7 @@ MediaSource.open("input.mp4").use { src ->
 }
 ```
 
-Grab a single frame for a thumbnail and encode it straight to image bytes:
+Read a single frame for a thumbnail and encode it straight to image bytes:
 
 ```kotlin
 MediaSource.open("input.mp4").use { src ->
@@ -154,7 +154,7 @@ See **[Filtering](filtering.md)**.
 | **[Concurrency](concurrency.md)** | Threading, confinement, and cancellation rules. |
 | **[Recipes](recipes.md)** | Copy-paste patterns for common tasks. |
 | **[Platform support](platforms.md)** | What runs where, and how FFmpeg is sourced. |
-| **[Licensing](licensing.md)** | LGPL/GPL flavours and what shipping them obligates. |
+| **[Licensing](licensing.md)** | LGPL/GPL flavors and what shipping them obligates. |
 | **[Troubleshooting](troubleshooting.md)** | FFmpeg discovery, Windows setup, VMs, NDK. |
 
 ## Status

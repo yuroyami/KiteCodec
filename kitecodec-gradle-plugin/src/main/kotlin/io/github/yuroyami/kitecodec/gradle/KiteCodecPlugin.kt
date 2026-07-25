@@ -52,7 +52,7 @@ class KiteCodecPlugin : Plugin<Project> {
      * The `kitecodec { ffmpeg { license = ... } }` choice is mandatory whenever a target other than
      * Android is wired (Android is always the LGPL MediaCodec build, so a purely-Android project has
      * nothing to choose). Failing at configuration time with instructions beats the opaque
-     * "provider has no value" error the unset [Provider] would otherwise produce mid-build — and it
+     * "provider has no value" error the unset [Provider] would otherwise produce mid-build, and it
      * forces the consumer to make the licence decision consciously rather than inherit a default.
      */
     private fun validateLicenseChoice(
@@ -105,7 +105,7 @@ class KiteCodecPlugin : Plugin<Project> {
      * KiteCodec v0.1 publishes prebuilt FFmpeg assets only for [KiteCodecTarget.hasPrebuiltAsset]
      * triples. When the consumer keeps the [FFmpegSource.Prebuilt] default (its convention) against
      * KiteCodec's own release repo and wires a target with no asset, the fetch would only fail with
-     * an HTTP 404 mid-build — fail configuration instead, with the actual options. A custom `repo`
+     * an HTTP 404 mid-build. Fail configuration instead, with the actual options. A custom `repo`
      * is exempt: self-hosting assets for extra triples is one of those options.
      */
     private fun validatePrebuiltAvailability(
@@ -139,7 +139,7 @@ class KiteCodecPlugin : Plugin<Project> {
     }
 
     /**
-     * Runs while the consumer's `kotlin { }` block executes — i.e. potentially BEFORE their
+     * Runs while the consumer's `kotlin { }` block executes, which can be before their
      * `kitecodec { }` block. Everything derived from the extension therefore stays a [Provider]
      * and is only resolved once the link tasks are realised (after the build script has finished),
      * so the DSL values the consumer configured are always the ones that take effect.
@@ -151,7 +151,7 @@ class KiteCodecPlugin : Plugin<Project> {
         triple: KiteCodecTarget,
     ) {
         val providers = project.providers
-        // Plain values captured at configuration time — configuration-cache safe (no Project in lambdas).
+        // Plain values captured at configuration time: configuration-cache safe (no Project in lambdas).
         val gradleUserHome = project.gradle.gradleUserHomeDir
         val isOffline = project.gradle.startParameter.isOffline
         val homebrewPrefix = providers.gradleProperty("kitecodec.macos.homebrew.prefix")
@@ -245,7 +245,7 @@ class KiteCodecPlugin : Plugin<Project> {
                     ?.resolve("lib")
             }
             KiteCodecTarget.LinuxX64, KiteCodecTarget.LinuxArm64 -> {
-                // Multiarch dir for THIS host first — /usr/lib may hold a foreign-arch copy.
+                // Multiarch dir for this host first: /usr/lib may hold a foreign-arch copy.
                 val multiarch = if (triple == KiteCodecTarget.LinuxArm64) {
                     "/usr/lib/aarch64-linux-gnu"
                 } else {

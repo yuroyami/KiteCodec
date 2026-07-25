@@ -22,8 +22,8 @@ public data class AudioInput(
 
 /**
  * A compiled `libavfilter` graph. Build with [FilterGraph.buildVideo] / [FilterGraph.buildAudio]
- * (single input) or [buildVideoMulti] / [buildAudioMulti] (N inputs — overlay, amix, …),
- * feed frames through [process] (single input) or [feedInput] (any input), close when done.
+ * (single input) or [buildVideoMulti] / [buildAudioMulti] (N inputs: overlay, amix, …).
+ * Feed frames through [process] (single input) or [feedInput] (any input). Close it when done.
  *
  * A graph is single-shot: once EOF has been flushed through it, it cannot accept more frames.
  * [process] closes the graph itself when its returned flow terminates; push-style users call
@@ -37,7 +37,7 @@ public expect class FilterGraph : AutoCloseable {
     /** Number of buffersrc inputs this graph was built with. */
     public val inputCount: Int
 
-    /** Time-base of frames leaving the graph — filters like `fps`/`atempo` may change it. */
+    /** Time-base of frames leaving the graph. Filters like `fps`/`atempo` may change it. */
     public val outputTimeBase: Rational
 
     /**
@@ -57,8 +57,8 @@ public expect class FilterGraph : AutoCloseable {
 
     /**
      * Signal EOF on input [index] and drain whatever the graph can produce. Filters like
-     * `overlay` only emit their tail once ALL inputs are flushed — flush every input, in any
-     * order; the final call delivers the remainder.
+     * `overlay` emit their final frames only once every input is flushed. Flush every input,
+     * in any order. The last call delivers the remaining frames.
      */
     @Throws(FFmpegException::class)
     public fun flushInput(index: Int, onOutput: (Frame) -> Unit)
@@ -81,7 +81,7 @@ public expect class FilterGraph : AutoCloseable {
          * @param height input frame height
          * @param pixelFormat input pixel format (e.g. [PixelFormat.Yuv420p])
          * @param timeBase pts time-base of input frames
-         * @param frameRate frame rate of input — used by `setpts`/`fps`-style filters
+         * @param frameRate frame rate of input, used by `setpts`/`fps`-style filters
          * @param sampleAspectRatio SAR of input frames; default 1:1 for square pixels
          */
         @Throws(FFmpegException::class)
@@ -100,7 +100,8 @@ public expect class FilterGraph : AutoCloseable {
          * `aformat` stage is appended so emitted frames arrive encoder-ready (resampled /
          * reformatted / remixed inside the graph).
          *
-         * @param description filter chain, e.g. `volume=0.5,atempo=1.25` — empty/`anull` for passthrough
+         * @param description filter chain, e.g. `volume=0.5,atempo=1.25`. Empty or `anull`
+         *                    means passthrough.
          * @param sampleRate input sample rate
          * @param sampleFormat input sample format (decoder output, e.g. fltp)
          * @param channels input channel count
@@ -119,14 +120,14 @@ public expect class FilterGraph : AutoCloseable {
         ): FilterGraph
 
         /**
-         * N-input video graph — compositions: `"[in0][in1]overlay=W-w-10:H-h-10[out]"` puts
+         * N-input video graph for compositions. `"[in0][in1]overlay=W-w-10:H-h-10[out]"` puts
          * input 1 as a watermark in input 0's bottom-right corner.
          */
         @Throws(FFmpegException::class)
         public fun buildVideoMulti(description: String, inputs: List<VideoInput>): FilterGraph
 
         /**
-         * N-input audio graph — `"[in0][in1]amix=inputs=2:duration=longest[out]"` mixes two
+         * N-input audio graph. `"[in0][in1]amix=inputs=2:duration=longest[out]"` mixes two
          * tracks.
          *
          * The `output*` parameters append an `aformat` stage exactly as [buildAudio] does, but

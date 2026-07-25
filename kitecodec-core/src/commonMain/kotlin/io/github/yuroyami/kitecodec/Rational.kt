@@ -1,7 +1,7 @@
 package io.github.yuroyami.kitecodec
 
 /**
- * FFmpeg's `AVRational` — exact fraction. Used for time-bases, frame rates, sample aspect ratios.
+ * FFmpeg's `AVRational`: an exact fraction. Use it for time-bases, frame rates and aspect ratios.
  * Float conversion is lossy; do all arithmetic on the rational form when possible.
  *
  * Always stored normalized: reduced by gcd, denominator positive. `Rational(2, 4) == Rational(1, 2)`.
@@ -12,7 +12,7 @@ public class Rational private constructor(public val num: Int, public val den: I
     public val asFloat: Float   get() = asDouble.toFloat()
 
     /**
-     * Reciprocal — `Rational(1, 30).inverse == Rational(30, 1)`.
+     * Reciprocal: `Rational(1, 30).inverse == Rational(30, 1)`.
      *
      * @throws IllegalArgumentException on [Zero] (the reciprocal would need a zero denominator)
      */
@@ -56,7 +56,7 @@ public class Rational private constructor(public val num: Int, public val den: I
         return product / (den / g)
     }
 
-    /** Exact comparison — `Rational(1, 30) < Rational(1, 25)`. */
+    /** Exact comparison: `Rational(1, 30) < Rational(1, 25)`. */
     override fun compareTo(other: Rational): Int =
         (num.toLong() * other.den).compareTo(other.num.toLong() * den)
 

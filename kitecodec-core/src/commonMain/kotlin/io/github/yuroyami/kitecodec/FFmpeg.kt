@@ -1,7 +1,7 @@
 package io.github.yuroyami.kitecodec
 
 /**
- * Static facade for global FFmpeg state — version info, build flags, capability probing.
+ * Static facade for global FFmpeg state: version info, build flags, capability probing.
  *
  * Use it to feature-detect the bound FFmpeg before opening a codec or a filter, because builds
  * differ in what they contain. A system FFmpeg may or may not have `libx264`; KiteCodec's
@@ -13,7 +13,7 @@ public expect object FFmpeg {
     /** Comma-separated configure flags the bound FFmpeg was built with. */
     public val buildConfiguration: String
 
-    /** Per-library version triplets — useful for compatibility checks. */
+    /** Per-library version triplets, useful for compatibility checks. */
     public val versions: Versions
 
     /** Whether the bound FFmpeg has a given encoder compiled in. Pass an FFmpeg codec name. */

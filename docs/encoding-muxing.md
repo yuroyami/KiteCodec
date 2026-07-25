@@ -1,8 +1,8 @@
 # Encoding and muxing
 
-Use `MediaSink` to open an output file, attach encoders, and write a valid container. This is the low-level path that sits underneath [Transcoder](transcoding.md): you control the encoders, you feed the frames, and you decide when streams open and close.
+Use `MediaSink` to open an output file, attach encoders, and write a valid container. Muxing means writing encoded streams into a container file. This is the low-level path underneath [Transcoder](transcoding.md): you control the encoders, you feed the frames, and you decide when streams open and close.
 
-If all you want is "file in, file out", reach for [`Transcoder.transcode`](transcoding.md) first. Drop down to `MediaSink` when you need to drive encoders by hand: generated frames, a custom pipeline, or several encoders fed from different sources.
+If you only need file in, file out, use [`Transcoder.transcode`](transcoding.md) first. Use `MediaSink` when you need to drive encoders by hand: generated frames, a custom pipeline, or several encoders fed from different sources.
 
 ## The shape of an output file
 
@@ -62,9 +62,9 @@ val encoder = sink.addVideoEncoder(spec)
 | `frameRate` | `Rational` | required | Exact fraction, e.g. `Rational(30000, 1001)` for 29.97. |
 | `bitrateBps` | `Long` | `4_000_000` | Target bitrate. Ignored when you set `crf`. |
 | `keyframeIntervalFrames` | `Int` | `frameRate × 2` | GOP length. Computed from the frame rate unless you override it. |
-| `options` | `Map<String,String>` | empty | Codec-specific knobs passed straight to `av_opt_set`. |
+| `options` | `Map<String,String>` | empty | Codec-specific options passed straight to `av_opt_set`. |
 
-### Per-encoder options: preset, crf, and friends
+### Per-encoder options: preset, crf, and others
 
 The `options` map is passed through verbatim to the underlying encoder. The keys are exactly the FFmpeg option names, so anything `ffmpeg -h encoder=libx264` lists is valid:
 
@@ -107,7 +107,7 @@ The encode core is **EAGAIN-correct**: it respects the codec's "I need more inpu
 
 You do not compute output timestamps. The encoder takes each incoming frame's pts (in the frame's own time-base) and rescales it onto the codec time-base. Frames that arrive with no pts at all fall back to a frame counter. Either way the output is **monotonic and zero-based**: the first written frame lands at pts 0 and timestamps only ever increase.
 
-This is the part that is easy to get wrong by hand, so KiteCodec does it the same way `ffmpeg.c` does and forces strict monotonicity at the encoder boundary. See the [transcoding guide](transcoding.md) for how trim offsets are rebased to zero on top of this.
+KiteCodec does this the same way `ffmpeg.c` does, and it forces strict monotonicity at the encoder boundary. See the [transcoding guide](transcoding.md) for how trim offsets are rebased to zero on top of this.
 
 ## Adding an audio encoder
 
@@ -137,7 +137,7 @@ audio.drive(audioFrames)         // audioFrames: Flow<Frame>
 | `channels` | `Int` | `2` | Channel count. |
 | `sampleFormat` | `SampleFormat` | `None` | `None` lets the encoder pick its preferred format (`fltp` for AAC). |
 | `bitrateBps` | `Long` | `128_000` | Target bitrate. |
-| `options` | `Map<String,String>` | empty | Codec-specific knobs. |
+| `options` | `Map<String,String>` | empty | Codec-specific options. |
 
 After the encoder opens, the `AudioEncoder` handle exposes the values that were actually negotiated:
 
@@ -180,7 +180,7 @@ graph.setOutputFrameSize(audio.frameSize)   // 1024: the graph re-chunks to exac
 audio.drive(graph.process(source.decodedFrames(audioStream)))
 ```
 
-The graph re-chunks the audio stream into exact 1024-sample frames before they reach the encoder. [Transcoder](transcoding.md) wires this up automatically, reading `frameSize` off the encoder and calling `setOutputFrameSize` for you. When you drive `MediaSink` by hand, this one call is what keeps AAC happy.
+The graph re-chunks the audio stream into exact 1024-sample frames before they reach the encoder. [Transcoder](transcoding.md) wires this up automatically, reading `frameSize` from the encoder and calling `setOutputFrameSize` for you. When you drive `MediaSink` by hand, this one call is what satisfies AAC's framing requirement.
 
 !!! note "Why a filter graph for plain copy of samples?"
     Even when you are not changing the audio, the filter graph is doing real work: resampling to the encoder's negotiated format and re-chunking to the codec's frame size. `"anull"` is the no-op filter description; the resampling and chunking happen in the buffer sink regardless.
@@ -198,7 +198,7 @@ val audioStream = source.primaryAudio!!
 MediaSink.open("output.mp4").use { sink ->
     val video = sink.addVideoEncoder(videoSpec)   // re-encode video
     sink.addCopyStream(source, audioStream)        // copy audio bit-exact
-    // ... drive the video encoder; the copy stream rides along
+    // ... drive the video encoder; the copy stream is written too
 }
 ```
 
@@ -297,9 +297,9 @@ MediaSink.open("output.mp4").use { sink ->
 The muxer interleaves packets from both encoders into the container. `close()` waits until both encoders have flushed before writing the trailer, so the file is complete and seekable.
 
 !!! warning "Do not drive one sink's encoders from concurrent coroutines"
-    All encoders attached to a `MediaSink` share the underlying muxer, and libav contexts are not thread-safe. Drive them from a single coroutine, one after the other as above — or, when both streams come from the same input file, use `decodeStreams` (one demux pass, frames already interleaved) and route each frame to the right encoder as it arrives, which is what [Transcoder](transcoding.md) does internally. See [Concurrency](concurrency.md) for the full threading rules.
+    All encoders attached to a `MediaSink` share the underlying muxer, and libav contexts are not thread-safe. Drive them from a single coroutine, one after the other, as shown above. When both streams come from the same input file, you can instead use `decodeStreams` (one demux pass, frames already interleaved) and route each frame to the right encoder as it arrives. That is what [Transcoder](transcoding.md) does internally. See [Concurrency](concurrency.md) for the full threading rules.
 
-For the common case of demux one file, re-encode, and mux, the [Transcoder](transcoding.md) already orchestrates this interleaving for you, including the AAC frame-size wiring and the trim rebasing. Reach for raw `MediaSink` when your frames come from somewhere a single input file cannot describe.
+For the common case of demux one file, re-encode, and mux, the [Transcoder](transcoding.md) already orchestrates this interleaving for you, including the AAC frame-size wiring and the trim rebasing. Use raw `MediaSink` when your frames come from a source a single input file cannot describe.
 
 ## Container metadata
 
@@ -315,7 +315,7 @@ sink.setMetadata(
 )
 ```
 
-These ride in the container header, so the call has to come before any frame is written, alongside the encoder declarations.
+These are written into the container header, so the call has to come before any frame is written, alongside the encoder declarations.
 
 ## Closing is not optional
 
@@ -333,7 +333,7 @@ The encoders (`VideoEncoder`, `AudioEncoder`) are also `AutoCloseable`, but `dri
 
 ## Errors
 
-Every libav failure surfaces as an [`FFmpegException`](https://yuroyami.github.io/KiteCodec/api/) wrapping an `FFmpegError` — a sealed hierarchy of semantic categories (`FileNotFound`, `EncoderNotFound`, `MuxerNotFound`, `InvalidData`, …) mapped from the raw `AVERROR_*` codes. Unmapped codes arrive as `FFmpegError.AvError`; a library-side invariant violation arrives as `FFmpegError.Internal`. Every subclass exposes the numeric `code`:
+Every libav failure surfaces as an [`FFmpegException`](https://yuroyami.github.io/KiteCodec/api/) wrapping an `FFmpegError`. `FFmpegError` is a sealed hierarchy of semantic categories (`FileNotFound`, `EncoderNotFound`, `MuxerNotFound`, `InvalidData`, and more) mapped from the raw `AVERROR_*` codes. Unmapped codes arrive as `FFmpegError.AvError`. A library-side invariant violation arrives as `FFmpegError.Internal`. Every subclass exposes the numeric `code`:
 
 ```kotlin
 import io.github.yuroyami.kitecodec.FFmpegException

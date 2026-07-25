@@ -9,11 +9,11 @@ import java.io.File
  *
  * Two resolution modes:
  *
- *   - **System / Homebrew (default)** — for developer machines, just use whatever the OS package
+ *   - **System / Homebrew (default)**: for developer machines, just use whatever the OS package
  *     manager dropped on the box. Fastest path to a working build; users of the resulting library
  *     need their own FFmpeg installed.
  *
- *   - **Vendored static** — for releases. We expect a directory tree like
+ *   - **Vendored static**: for releases. We expect a directory tree like
  *     `<repoRoot>/native-libs/<license>/<targetTriple>/{include,lib}` populated by the
  *     `:buildFFmpegFor<Target>[Gpl]` tasks (see `BuildFFmpegTask.kt`). The resulting binaries fully
  *     embed FFmpeg. The `<license>` segment (`lgpl` / `gpl`) keeps the two flavours from colliding.
@@ -64,7 +64,7 @@ data class FFmpegPaths(
          * The paths below (`/opt/homebrew`, `/usr/lib/x86_64-linux-gnu`, …) are matched by
          * existence, not by architecture, so without this gate `resolve(project, MacosX64)` on an
          * Apple-silicon Mac happily returns the arm64 Homebrew prefix and `resolve(project,
-         * LinuxArm64)` on an x64 box returns the x86_64 libraries — cinterop then parses headers
+         * LinuxArm64)` on an x64 box returns the x86_64 libraries: cinterop then parses headers
          * for one architecture and the linker is handed archives for another. Cross targets have
          * exactly one correct answer: a vendored build under `native-libs/`.
          */
@@ -98,7 +98,7 @@ data class FFmpegPaths(
                     val candidates = listOf("/usr/include", "/usr/local/include")
                     val include = candidates.firstOrNull { File("$it/libavformat/avformat.h").exists() }
                         ?: return null
-                    // Multiarch dir for THIS host first — /usr/lib may hold a foreign-arch copy.
+                    // Multiarch dir for this host first: /usr/lib may hold a foreign-arch copy.
                     val multiarch = if (target == TargetTriple.LinuxArm64) {
                         "/usr/lib/aarch64-linux-gnu"
                     } else {

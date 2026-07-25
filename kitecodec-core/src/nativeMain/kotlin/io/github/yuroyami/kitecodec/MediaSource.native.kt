@@ -75,13 +75,11 @@ public actual class MediaSource internal constructor(
     public actual val formatName: String,
     public actual val metadata: Map<String, String>,
     /**
-     * Where the container's timeline begins, in microseconds (0 for most mp4, ~1.4s for MPEG-TS).
+     * Where the container's timeline begins, in microseconds. This is the offset between the
+     * absolute timeline libavformat uses and the content-relative timeline the public API uses.
+     * The expect declaration in commonMain describes both timelines in full.
      *
-     * Everything libavformat hands out — packet dts/pts, decoded frame pts, seek targets with
-     * `stream_index = -1` — is ABSOLUTE and includes this offset. Everything KiteCodec's public
-     * API takes or reports — [seekMicros], [extractFrame]'s `atMicros`, `Transcoder`/`Remuxer`
-     * trim bounds — is media-RELATIVE, i.e. "n microseconds into the content". This is the single
-     * conversion between the two; [toRelativeMicros] and [toAbsoluteMicros] apply it.
+     * [toRelativeMicros] and [toAbsoluteMicros] are the only two places that apply this offset.
      */
     public actual val startTimeMicros: Long,
 ) : AutoCloseable {
@@ -94,10 +92,9 @@ public actual class MediaSource internal constructor(
     internal fun toAbsoluteMicros(relativeMicros: Long): Long = relativeMicros + startTimeMicros
 
     /**
-     * Guards the {closed, demuxing} state machine. The demuxer is ONE cursor: exactly one
-     * decode pass may run at a time, seek is rejected while a pass runs, and close is
-     * rejected until the pass ends — turning would-be native crashes into
-     * [IllegalStateException]s.
+     * Guards the {closed, demuxing} state machine. The demuxer is a single cursor, so exactly
+     * one decode pass may run at a time. Seek is rejected while a pass runs. Close is rejected
+     * until the pass ends. These checks turn native crashes into [IllegalStateException]s.
      */
     private val stateLock = SynchronizedObject()
     private var closed = false
@@ -128,9 +125,9 @@ public actual class MediaSource internal constructor(
     }
 
     /**
-     * The one demuxer pass everything builds on: packets for [decode] streams go through a
-     * decoder and surface as [onFrame] callbacks; packets for [copy] streams surface raw via
-     * [onPacket] (stream-copy / remux — the packet is valid only during the callback).
+     * The one demuxer pass everything builds on. Packets for [decode] streams go through a
+     * decoder and surface as [onFrame] callbacks. Packets for [copy] streams surface raw via
+     * [onPacket] for stream-copy and remux, and are valid only during the callback.
      * Decoders are flushed at container EOF.
      */
     internal suspend fun demuxRouted(
@@ -158,8 +155,8 @@ public actual class MediaSource internal constructor(
                             pump(decoders, copyByIndex, packet, frame, onFrame, onPacket)
                         } catch (_: StopDemux) {
                             // A callback decided it has everything it needs (trim end bound,
-                            // frame found). Buffered decoder frames are FUTURE frames —
-                            // deliberately not flushed; fall through to normal teardown.
+                            // frame found). Buffered decoder frames sit after the stop point,
+                            // so they are deliberately not flushed. Continue to normal teardown.
                         }
                     }
                 } finally {
@@ -202,7 +199,7 @@ public actual class MediaSource internal constructor(
                 ffkmp_packet_unref(packet)
             }
         }
-        // EOF on the container — flush each decoder's buffered frames.
+        // EOF on the container. Flush each decoder's buffered frames.
         for (decoder in decoders) {
             sendAndDrain(decoder, null, frame, onFrame)
         }
@@ -210,7 +207,7 @@ public actual class MediaSource internal constructor(
 
     /**
      * Correct send/receive interleaving: `avcodec_send_packet` returning EAGAIN means the
-     * decoder's output queue is full — drain it and retry the SAME packet. The previous
+     * decoder's output queue is full. Drain the queue, then retry the same packet. The previous
      * implementation dropped the packet on EAGAIN, silently losing frames.
      */
     private suspend fun sendAndDrain(
@@ -228,11 +225,11 @@ public actual class MediaSource internal constructor(
                 sendRc == eagain -> drain(decoder, frame, onFrame)  // output full → drain, then resend
                 // A packet the decoder cannot use is not a reason to abandon the file. Every seek
                 // into a stream that carries its parameter sets in band (MPEG-TS above all) lands
-                // before the next SPS/PPS, so the first packets after it decode to nothing —
+                // before the next SPS/PPS, so the first packets after it decode to nothing:
                 // "non-existing PPS 0 referenced". Aborting there would make trimming a broadcast
-                // capture impossible. Skip the packet and keep going, which is what ffmpeg's own
-                // CLI does; if the stream is genuinely broken, no frames arrive and the callers
-                // that need output say so.
+                // capture impossible. Skip the packet and continue, which is what ffmpeg's own
+                // CLI does. If the stream is genuinely broken, no frames arrive and the callers
+                // that need output report it.
                 sendRc == FFmpegError.AVERROR_INVALIDDATA -> { drain(decoder, frame, onFrame); return }
                 else -> throw FFmpegException(avError(sendRc))
             }
@@ -249,7 +246,7 @@ public actual class MediaSource internal constructor(
             // packets seen so far is skipped, not fatal.
             if (rc == FFmpegError.AVERROR_INVALIDDATA) return
             if (rc < 0) throw FFmpegException(avError(rc))
-            // Decoders fill best_effort_timestamp even for files with missing pts — promote it
+            // Decoders fill best_effort_timestamp even for files with missing pts. Promote it
             // so everything downstream (filters, encoders) sees a usable timestamp.
             ffkmp_frame_use_best_effort_ts(frame.nativeFrame)
             onFrame(FrameOps.wrap(frame.nativeFrame, decoder.stream.index, decoder.stream.type, decoder.stream.timeBase))
@@ -272,25 +269,25 @@ public actual class MediaSource internal constructor(
     }
 
     /**
-     * Seek for a pipeline that will DECODE forward to the exact target.
+     * Seek for a pipeline that will decode forward to the exact target.
      *
      * [seekMicros] asks libavformat for the keyframe at or before the target, but that is a
      * preference, not a guarantee. Indexless containers (MPEG-TS above all) resolve a seek by
-     * binary-searching byte positions, so the demuxer can hand back a position slightly PAST the
-     * keyframe it aimed at — and then the video decoder, which cannot output anything until it
-     * sees the next IDR, silently starts a whole GOP late. Landing early costs a few discarded
-     * frames; landing late is unrecoverable, because nothing downstream can rewind.
+     * binary-searching byte positions, so the demuxer can return a position slightly past the
+     * keyframe it aimed at. The video decoder cannot output anything until it sees the next IDR,
+     * so it then silently starts a whole GOP late. Landing early costs a few discarded frames.
+     * Landing late is unrecoverable, because nothing downstream can rewind.
      *
      * So aim deliberately early by [DECODE_SEEK_BACKOFF_MICROS] and let the caller's existing
-     * decode-and-discard loop walk forward to the frame it actually wants. Callers that stream-copy
-     * instead of decoding ([Remuxer]) must NOT use this — for them the extra pre-roll would land in
-     * the output as real content.
+     * decode-and-discard loop move forward to the frame it actually wants. Callers that
+     * stream-copy instead of decoding ([Remuxer]) must not use this, because for them the extra
+     * pre-roll would appear in the output as real content.
      */
     internal suspend fun seekForDecode(micros: Long) {
         seekMicros((micros - DECODE_SEEK_BACKOFF_MICROS).coerceAtLeast(0L))
     }
 
-    /** Native codec parameters of a stream — for stream-copy setups ([MediaSink.addCopyStream]). */
+    /** Native codec parameters of a stream, for stream-copy setups ([MediaSink.addCopyStream]). */
     internal fun codecparOf(stream: StreamInfo): CPointer<ffmpeg.AVCodecParameters>? {
         check(!isClosed) { "MediaSource is closed" }
         return ffkmp_fmt_stream(ctx, stream.index.toUInt())?.let { ffkmp_stream_codecpar(it) }
@@ -489,7 +486,7 @@ private fun readMetadata(dict: CPointer<cnames.structs.AVDictionary>?): Map<Stri
     return out
 }
 
-/** AVMediaType in cinterop is a typedef'd enum — reduce it to a plain Int for comparisons. */
+/** AVMediaType in cinterop is a typedef'd enum. Reduce it to a plain Int for comparisons. */
 private fun mediaTypeAsInt(value: Any): Int = when (value) {
     is Int  -> value
     is UInt -> value.toInt()

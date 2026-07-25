@@ -10,7 +10,7 @@ public data class StreamInfo(
     val bitrateBps: Long?,
     val video: VideoStreamInfo? = null,
     val audio: AudioStreamInfo? = null,
-    /** Per-stream tags — `language` (`eng`, `jpn`, …), `title`, `handler_name`, … */
+    /** Per-stream tags: `language` (`eng`, `jpn`, …), `title`, `handler_name`, … */
     val metadata: Map<String, String> = emptyMap(),
 )
 
@@ -28,7 +28,7 @@ public data class AudioStreamInfo(
     val sampleFormat: SampleFormat,
 )
 
-/** Immutable per-frame metadata snapshot — no native handle, safe to hold forever. */
+/** Immutable per-frame metadata snapshot: no native handle, safe to hold forever. */
 public data class FrameInfo(
     val streamIndex: Int,
     val type: MediaType,
@@ -42,7 +42,7 @@ public data class FrameInfo(
     val channelCount: Int = 0,
     val sampleFormat: SampleFormat = SampleFormat.None,
 ) {
-    /** False when the frame carries no timestamp (`AV_NOPTS_VALUE`) — [ptsSeconds] is meaningless then. */
+    /** False when the frame carries no timestamp (`AV_NOPTS_VALUE`). [ptsSeconds] is meaningless then. */
     val hasPts: Boolean get() = pts != NOPTS
 
     val ptsSeconds: Double get() = if (hasPts) pts * timeBase.asDouble else Double.NaN

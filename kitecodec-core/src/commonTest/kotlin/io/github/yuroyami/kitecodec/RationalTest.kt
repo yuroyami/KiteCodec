@@ -23,7 +23,7 @@ class RationalTest {
 
     @Test
     fun multiplicationReduces() {
-        // 30000/1001 * 1001/30000 = 1 — naive Int math would overflow before reducing.
+        // 30000/1001 * 1001/30000 = 1. Naive Int math would overflow before reducing.
         assertEquals(Rational(1, 1), Rational.Fps2997 * Rational(1001, 30_000))
         // Two large co-factors that overflow Int when multiplied naively (worst case ~4.6e18 fits Long).
         val a = Rational(1_000_000, 7)
@@ -79,7 +79,7 @@ class RationalEdgeCaseTest {
 
     @Test
     fun intMinValueNormalizes() {
-        // Int.MIN_VALUE math must happen in Long — naive sign*num overflows.
+        // Int.MIN_VALUE math must happen in Long, because naive sign*num overflows.
         val r = Rational(Int.MIN_VALUE, 2)
         assertEquals(Int.MIN_VALUE / 2, r.num)
         assertEquals(1, r.den)

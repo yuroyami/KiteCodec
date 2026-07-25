@@ -5,16 +5,16 @@ package io.github.yuroyami.kitecodec.buildtools
  * (`native-libs/<license>/<target>/`).
  *
  * `ffmpeg.def` names only the six libav* libraries. That is enough for a shared/system FFmpeg,
- * whose dylibs resolve their own dependencies at load time — but a static `libavcodec.a` resolves
+ * whose dylibs resolve their own dependencies at load time, but a static `libavcodec.a` resolves
  * nothing. Every symbol it draws from the third-party encoder and text stack (svt-av1, vpx, aom,
  * opus, mp3lame, webp, freetype/harfbuzz/fribidi/ass, plus x264/x265 under GPL) has to be satisfied
  * by naming that archive explicitly, or the link dies with pages of `symbol(s) not found`.
  *
  * Two halves, and both matter:
- *  - [thirdPartyArchives] — the `.a` files [BuildFFmpegTask] copies INTO the vendored tree, so
+ *  - [thirdPartyArchives]: the `.a` files [BuildFFmpegTask] copies into the vendored tree, so
  *    `native-libs/<license>/<target>/lib` is self-contained and has the same layout as the
  *    published release zip.
- *  - [forTarget] — the `-l` flags naming those archives plus the handful the OS/SDK provides.
+ *  - [forTarget]: the `-l` flags naming those archives plus the handful the OS/SDK provides.
  *
  * KEEP IN SYNC with `PrebuiltLinkFlags.kt` in `kitecodec-gradle-plugin` and the bundling step in
  * `.github/scripts/package-ffmpeg.sh`, which solve the identical problem for consumers of the
@@ -38,14 +38,14 @@ object StaticLinkFlags {
         "png16", "graphite2",
     )
 
-    /** GPL flavour adds the x264/x265 archives (x265 is C++ — see the runtime flags below). */
+    /** GPL flavour adds the x264/x265 archives (x265 is C++; see the runtime flags below). */
     private val DESKTOP_GPL_EXTRA = listOf("x264", "x265")
 
     /**
      * Whether this (target, source) combination links a static third-party stack at all.
      *
      * Android's profile links no third-party libraries (MediaCodec is a platform service), and
-     * `mingw-x64` is populated from BtbN's SHARED build — import libraries that already carry their
+     * `mingw-x64` is populated from BtbN's shared build: import libraries that already carry their
      * own dependencies.
      */
     private fun needsStaticStack(target: TargetTriple, isStaticVendored: Boolean): Boolean {
@@ -63,8 +63,8 @@ object StaticLinkFlags {
 
     /**
      * Archive FILENAMES to bundle into the vendored tree's `lib/`, so it is self-contained.
-     * OS/SDK-provided libraries (zlib, bz2, iconv, the C++ runtime) are deliberately excluded —
-     * they must come from the platform, not from a copy.
+     * OS/SDK-provided libraries (zlib, bz2, iconv, the C++ runtime) are deliberately excluded. They
+     * must come from the platform, not from a copy.
      */
     fun thirdPartyArchives(target: TargetTriple, license: FFmpegLicense): List<String> {
         if (!needsStaticStack(target, isStaticVendored = true)) return emptyList()
@@ -98,7 +98,7 @@ object StaticLinkFlags {
         target == TargetTriple.MacosArm64 || target == TargetTriple.MacosX64 -> listOf("-L$hostPrefix/lib")
         target == TargetTriple.LinuxX64 -> listOf("-L/usr/lib/x86_64-linux-gnu", "-L/usr/lib", "-L/usr/local/lib")
         target == TargetTriple.LinuxArm64 -> listOf("-L/usr/lib/aarch64-linux-gnu", "-L/usr/lib", "-L/usr/local/lib")
-        // iOS has no host prefix to fall back on — its stack must be cross-built and bundled.
+        // iOS has no host prefix to fall back on. Its stack must be cross-built and bundled.
         else -> emptyList()
     }
 
@@ -141,8 +141,8 @@ object StaticLinkFlags {
                 add("-lc++")
             } else {
                 // NOTE: the Linux text stack may additionally want fontconfig/expat/libunibreak
-                // behind libass. There is no vendored-static Linux job yet to prove it either way
-                // — when one is added, read the undefined symbols and extend this list and
+                // behind libass. There is no vendored-static Linux job yet to prove it either
+                // way. When one is added, read the undefined symbols and extend this list and
                 // [thirdPartyArchives] together, exactly as the Apple entries above were derived.
                 add("-lstdc++")
                 if (license == FFmpegLicense.GPL) add("-lnuma")

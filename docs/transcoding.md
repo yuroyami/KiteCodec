@@ -1,6 +1,6 @@
 # Transcoding A/V in one call
 
-Use `Transcoder.transcode` to run a complete audio and video pipeline from a single suspending call. It opens the input, demuxes it once, decodes the selected streams, optionally filters them, encodes with the codecs you ask for, and interleaves everything back into a valid output container.
+Use `Transcoder.transcode` to run a complete audio and video pipeline from a single suspending call. It opens the input, demuxes it once, decodes the selected streams, optionally filters them, encodes with the codecs you ask for, and interleaves everything back into a valid output container. Demuxing means splitting a container file into its separate streams.
 
 ## Basic workflow
 
@@ -29,9 +29,9 @@ Transcoder.transcode(
 )
 ```
 
-The call opens the file through libavformat, demuxes it **once**, routes packets to per-stream libavcodec decoders, pushes video frames through a libavfilter graph, resamples and chunks audio through a second graph, encodes with the codecs you named, and interleaves both streams into the output as they are produced. There is no `ffmpeg` subprocess, no JVM, and no JNI hop. Memory stays constant regardless of how long the input is.
+The call opens the file through libavformat, demuxes it **once**, routes packets to per-stream libavcodec decoders, pushes video frames through a libavfilter graph, resamples and chunks audio through a second graph, encodes with the codecs you named, and interleaves both streams into the output as they are produced. There is no `ffmpeg` subprocess, no JVM, and no JNI layer. Memory stays constant regardless of how long the input is.
 
-`transcode` is a `suspend fun`, so call it from a coroutine. It suspends until the whole file is written, and it honours cancellation at the demux loop.
+`transcode` is a `suspend fun`, so call it from a coroutine. It suspends until the whole file is written, and it honors cancellation at the demux loop.
 
 !!! note "Requires FFmpeg present at link time"
     KiteCodec binds to FFmpeg's libav\* libraries. The library is consumed by building from source today; install FFmpeg first (`brew install ffmpeg` on macOS, `apt install` on Linux) or use a vendored static build. See [Platform support](platforms.md) for what runs where.
@@ -64,7 +64,7 @@ suspend fun transcode(
 | `output` | required | Output file path. The container is chosen from the extension. |
 | `spec` | `null` | Video encoder spec. `null` (with `videoCopy` false) produces audio-only output (any input video is dropped). |
 | `videoFilter` | `null` | Filter graph for the video stream. `null` passes decoded frames straight to the encoder. Requires `spec`. |
-| `videoCopy` | `false` | Stream-copy video instead of re-encoding (`-c:v copy`) — bit-exact and near-free. Mutually exclusive with `spec` and `videoFilter`. Trimming a copied video stream is keyframe-snapped. |
+| `videoCopy` | `false` | Stream-copy video instead of re-encoding (`-c:v copy`). A stream copy moves the encoded packets across unchanged, so it is bit-exact and near-free. Mutually exclusive with `spec` and `videoFilter`. Trimming a copied video stream is keyframe-snapped. |
 | `audioSpec` | `null` | Audio encoder spec. `null` (with `audioCopy` false) drops audio. |
 | `audioFilter` | `null` | Filter chain for the audio stream. `null` plain resamples and reformats to what the encoder needs. |
 | `audioCopy` | `false` | Stream-copy audio instead of re-encoding. Mutually exclusive with `audioSpec` and `audioFilter`. |
@@ -105,7 +105,7 @@ Rational(30000, 1001)  // 29.97 fps, exact
 
 `Rational` also ships common rates as companion constants: `Rational.Fps24`, `Rational.Fps25`, `Rational.Fps30`, `Rational.Fps60`, `Rational.Fps2997`, `Rational.Fps2398`.
 
-The `options` map passes codec-specific knobs straight through (`preset`, `crf`, `allow_sw`, and so on). They are not validated by KiteCodec; they reach the encoder as-is.
+The `options` map passes codec-specific settings straight through (`preset`, `crf`, `allow_sw`, and so on). KiteCodec does not validate them. They reach the encoder unchanged.
 
 ### Choosing a codec
 
@@ -130,7 +130,7 @@ The `options` map passes codec-specific knobs straight through (`preset`, `crf`,
     ).first { FFmpeg.hasEncoder(it.name) }
     ```
 
-    `libx264` and `libx265` exist only in a GPL-flavour FFmpeg. The vendored default is LGPL and excludes them, so asking for one there throws `FFmpegException` from `addVideoEncoder` before a frame is read. Reach them with the `buildFFmpegFor<Target>Gpl` tasks plus `-Pkitecodec.ffmpeg.license=gpl`, or the Gradle plugin's `license = FFmpegLicense.GPL` — and read [Licensing](licensing.md) first, because it makes your whole application GPL-3.0.
+    `libx264` and `libx265` exist only in a GPL-flavor FFmpeg. The vendored default is LGPL and excludes them, so asking for one there throws `FFmpegException` from `addVideoEncoder` before a frame is read. Enable them with the `buildFFmpegFor<Target>Gpl` tasks plus `-Pkitecodec.ffmpeg.license=gpl`, or with the Gradle plugin's `license = FFmpegLicense.GPL`. Read [Licensing](licensing.md) first, because that choice makes your whole application GPL-3.0.
 
 ## Audio encoding, copy, or drop
 
@@ -173,7 +173,7 @@ There are three ways to treat audio, and they are mutually exclusive.
     !!! warning
         `audioCopy = true` is mutually exclusive with `audioSpec` and `audioFilter`. Pass one or the other, not both.
 
-    The mirror image also works — keep the video bit-exact and only fix the audio (`-c:v copy -c:a aac`):
+    The reverse also works. Keep the video bit-exact and re-encode only the audio (`-c:v copy -c:a aac`):
 
     ```kotlin
     Transcoder.transcode(
@@ -238,6 +238,8 @@ For the full filter syntax, multi-input composition (overlay, amix), and how to 
 
 `startMicros` and `endMicros` cut a clip out of the input. Both are in microseconds.
 
+Both values count from the start of the content. They are not raw container timestamps. Some containers begin their timeline at a nonzero point, and MPEG-TS files typically begin near 1.4 s. KiteCodec converts your value onto that timeline for you, so `startMicros = 0` always means the first frame of the content.
+
 ```kotlin
 // ffmpeg -ss 12.3 -to 45.6
 Transcoder.transcode(
@@ -251,10 +253,10 @@ Transcoder.transcode(
 
 Output begins at the first frame whose pts is at or past `startMicros`, and demuxing stops once the lead stream passes `endMicros`. **Output timestamps are rebased to zero**, so the clip starts at 0 in its own timeline rather than carrying the original offset.
 
-The trim is frame-exact for re-encoded streams. A stream that is being copied (`audioCopy = true`, or a copied subtitle) starts at the preceding keyframe instead, because copying cannot synthesise an intermediate frame.
+The trim is frame-exact for re-encoded streams. A stream that is being copied (`audioCopy = true`, or a copied subtitle) starts at the preceding keyframe instead, because copying cannot synthesize an intermediate frame.
 
 !!! note "Lossless trim"
-    If you only want to cut a clip and do not need to re-encode anything, [`Remuxer.remux`](remuxing.md) does a keyframe-snapped trim with no decode or encode, in seconds. Reach for `transcode` only when you actually need to change codecs, resolution, or filters.
+    If you only want to cut a clip and do not need to re-encode anything, [`Remuxer.remux`](remuxing.md) does a keyframe-snapped trim with no decode or encode, in seconds. Use `transcode` only when you need to change codecs, resolution, or filters.
 
 ## Subtitles
 
@@ -337,7 +339,7 @@ try {
 }
 ```
 
-`FFmpegError` is a sealed hierarchy of semantic categories mapped from the raw `AVERROR_*` codes — `FileNotFound`, `PermissionDenied`, `InvalidData`, `EncoderNotFound`, `DecoderNotFound`, `MuxerNotFound`, `FilterNotFound`, and more; anything unmapped arrives as `FFmpegError.AvError`, and every subclass keeps the raw code in `code`. `FFmpegError.Internal` signals a library-side invariant failure. Asking for a `spec` when the input has no video stream throws; a missing audio stream with `audioSpec` set is tolerated and the output is silently video-only.
+`FFmpegError` is a sealed hierarchy of semantic categories mapped from the raw `AVERROR_*` codes: `FileNotFound`, `PermissionDenied`, `InvalidData`, `EncoderNotFound`, `DecoderNotFound`, `MuxerNotFound`, `FilterNotFound`, and more. Anything unmapped arrives as `FFmpegError.AvError`, and every subclass keeps the raw code in `code`. `FFmpegError.Internal` signals a library-side invariant failure. Asking for a `spec` when the input has no video stream throws. A missing audio stream with `audioSpec` set is tolerated, and the output is video-only.
 
 ## Complete example
 

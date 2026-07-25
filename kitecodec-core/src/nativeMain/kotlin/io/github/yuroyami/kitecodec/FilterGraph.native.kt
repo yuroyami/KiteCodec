@@ -65,8 +65,8 @@ public actual class FilterGraph internal constructor(
         val src = srcs.getOrNull(index)
             ?: throw IllegalArgumentException("Input $index out of range (graph has ${srcs.size} inputs)")
         try {
-            // EAGAIN from buffersrc means the frame was NOT consumed — drain the sink to
-            // make room and retry the SAME frame (dropping it would silently lose frames).
+            // EAGAIN from buffersrc means the frame was not consumed. Drain the sink to
+            // make room, then retry the same frame (dropping it would silently lose frames).
             while (true) {
                 val sendRc = ffkmp_graph_send(src, frame.nativeFrame)
                 if (sendRc >= 0) break
@@ -95,7 +95,7 @@ public actual class FilterGraph internal constructor(
     /** Single-input convenience used by Transcoder. */
     internal fun feedFrame(frame: Frame, onOutput: (Frame) -> Unit) = feedInput(0, frame, onOutput)
 
-    /** Flush EVERY input, then drain — after this the graph is spent. */
+    /** Flush every input, then drain. After this the graph cannot accept more frames. */
     internal fun flushInto(onOutput: (Frame) -> Unit) {
         for (i in srcs.indices) flushInput(i, onOutput)
     }
@@ -118,8 +118,8 @@ public actual class FilterGraph internal constructor(
         val src = srcs[0]
         try {
             val landing = outFrame()
-            // Emissions are OWNED clones (O(1) refcount bumps) — collectors may buffer/hold
-            // frames and must close each one; the reusable landing frame never escapes.
+            // Emissions are owned clones (O(1) refcount bumps). See Frame for the ownership
+            // rule collectors follow. The reusable landing frame never escapes this call.
             suspend fun FlowCollector<Frame>.drainEmit() {
                 while (true) {
                     val recRc = ffkmp_graph_receive(sink, landing.nativeFrame)
@@ -138,7 +138,7 @@ public actual class FilterGraph internal constructor(
                     while (true) {
                         val sendRc = ffkmp_graph_send(src, srcFrame.nativeFrame)
                         if (sendRc >= 0) break
-                        if (sendRc == eagain) { drainEmit(); continue }  // not consumed — retry
+                        if (sendRc == eagain) { drainEmit(); continue }  // not consumed, retry
                         throw FFmpegException(avError(sendRc))
                     }
                 } finally {
@@ -155,7 +155,7 @@ public actual class FilterGraph internal constructor(
             }
             drainEmit()
         } finally {
-            close()  // The graph is spent after EOF — release it with the flow.
+            close()  // The graph cannot be reused after EOF, so release it with the flow.
         }
     }
 
