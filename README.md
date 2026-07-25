@@ -5,7 +5,6 @@ encode and mux, bound directly to FFmpeg's libav\* libraries.
 
 [![CI](https://img.shields.io/github/actions/workflow/status/yuroyami/KiteCodec/ci.yml?label=CI)](https://github.com/yuroyami/KiteCodec/actions/workflows/ci.yml)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.4.10-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org)
-[![Docs](https://img.shields.io/badge/docs-yuroyami.github.io-1f6feb)](https://yuroyami.github.io/KiteCodec/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue)](LICENSE)
 
 ## What you get
@@ -118,7 +117,7 @@ closed-source and App Store distribution and has no libx264 / libx265;
 plugin fails configuration with the block to paste when the choice is missing,
 and warns loudly when GPL is picked. Purely-Android projects are exempt, since
 Android always links the LGPL MediaCodec build. Full DSL:
-[Gradle plugin](https://yuroyami.github.io/KiteCodec/gradle-plugin/).
+[Gradle plugin](docs/gradle-plugin.md).
 
 ### Release status
 
@@ -363,7 +362,7 @@ time-base, since `fps` and `atempo` change it; encoders rescale onto the codec
 time-base and force strict monotonicity; the muxer rescales once more onto
 whatever stream time-base `avformat_write_header` settled on.
 
-Full write-up: [About KiteCodec](https://yuroyami.github.io/KiteCodec/about/).
+Full write-up: [About KiteCodec](docs/about.md).
 
 ## Try it
 
@@ -407,9 +406,14 @@ no TODOs, no stubs and no unimplemented paths in the Kotlin source.
 
 ## Documentation
 
-[Guides and API reference](https://yuroyami.github.io/KiteCodec/) — getting
-started, the transcode pipeline, filter graphs, the Gradle plugin, licensing,
-and the generated reference for every public type.
+The guides are in [`docs/`](docs/): [getting started](docs/getting-started.md),
+[decoding](docs/decoding.md), [encoding and muxing](docs/encoding-muxing.md),
+[filtering](docs/filtering.md), [the Gradle plugin](docs/gradle-plugin.md),
+[platforms](docs/platforms.md) and [licensing](docs/licensing.md).
+
+There is no hosted site yet. Building the API reference needs the FFmpeg
+headers on the machine that generates it, so the docs workflow is blocked behind
+the same missing release binaries described under Install.
 
 ## Licence
 
@@ -420,7 +424,7 @@ your binary can ship. LGPL-2.1+ without `--enable-gpl`; with it, and because
 these builds also pass `--enable-version3`, the effective licence of a
 GPL-flavour binary is **GPL-3.0**. The default everywhere is LGPL. Do not ship a
 GPL-flavour binary through a GPL-hostile channel such as the iOS App Store. Full
-compliance guidance: [Licensing](https://yuroyami.github.io/KiteCodec/licensing/).
+compliance guidance: [Licensing](docs/licensing.md).
 
 Part of the Kite family: [KiteCore](https://github.com/yuroyami/KiteCore),
 [KitePDF](https://github.com/yuroyami/KitePDF),
