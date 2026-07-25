@@ -18,7 +18,7 @@ internal const val DEFAULT_RELEASE_REPO = "yuroyami/KiteCodec"
  * fetch task in ahead of the link step.
  *
  * KiteCodec's published klib contains no FFmpeg bytes; this plugin supplies them at the consumer's
- * build time, which also keeps the FFmpeg licence (LGPL / GPL) cleanly separate from KiteCodec's own
+ * build time, which also keeps the FFmpeg license (LGPL / GPL) cleanly separate from KiteCodec's own
  * Apache-2.0 artifact.
  */
 class KiteCodecPlugin : Plugin<Project> {
@@ -27,7 +27,7 @@ class KiteCodecPlugin : Plugin<Project> {
         val ext = project.extensions.create("kitecodec", KiteCodecExtension::class.java)
         ext.ffmpeg.version.convention(DEFAULT_FFMPEG_VERSION)
         ext.ffmpeg.source.convention(FFmpegSource.Prebuilt)
-        // license has NO convention on purpose: the flavour decides the consumer's legal obligations,
+        // license has NO convention on purpose: the flavor decides the consumer's legal obligations,
         // so they must pick one themselves. Validated in validateLicenseChoice() after evaluation.
         ext.ffmpeg.repo.convention(DEFAULT_RELEASE_REPO)
         ext.ffmpeg.pinnedSha256.convention(emptyMap())
@@ -53,7 +53,7 @@ class KiteCodecPlugin : Plugin<Project> {
      * Android is wired (Android is always the LGPL MediaCodec build, so a purely-Android project has
      * nothing to choose). Failing at configuration time with instructions beats the opaque
      * "provider has no value" error the unset [Provider] would otherwise produce mid-build, and it
-     * forces the consumer to make the licence decision consciously rather than inherit a default.
+     * forces the consumer to make the license decision consciously rather than inherit a default.
      */
     private fun validateLicenseChoice(
         project: Project,
@@ -65,9 +65,9 @@ class KiteCodecPlugin : Plugin<Project> {
         if (!ext.ffmpeg.license.isPresent) {
             throw GradleException(
                 """
-                |kitecodec: no FFmpeg licence flavour selected.
+                |kitecodec: no FFmpeg license flavor selected.
                 |
-                |The FFmpeg flavour you link decides your app's legal obligations, so KiteCodec does
+                |The FFmpeg flavor you link decides your app's legal obligations, so KiteCodec does
                 |not choose one for you. Add the block below to your build script:
                 |
                 |    kitecodec {
@@ -75,12 +75,12 @@ class KiteCodecPlugin : Plugin<Project> {
                 |            license = FFmpegLicense.LGPL
                 |            // LGPL: closed-source-friendly. No x264/x265; hardware encoders
                 |            //       (VideoToolbox/MediaCodec) + svtav1/opus/mp3lame instead.
-                |            // GPL:  adds x264/x265, but your ENTIRE app becomes GPL-3.0 —
-                |            //       you must open-source it if you distribute it.
+                |            // GPL:  adds x264/x265, but your entire app becomes GPL-3.0.
+                |            //       You must open-source it if you distribute it.
                 |        }
                 |    }
                 |
-                |Details: https://yuroyami.github.io/KiteCodec/licensing/
+                |Details: https://github.com/yuroyami/KiteCodec/blob/main/docs/licensing.md
                 |(Targets needing the choice: ${nonAndroidTriples.joinToString { it.triple }})
                 """.trimMargin(),
             )
@@ -89,13 +89,14 @@ class KiteCodecPlugin : Plugin<Project> {
         if (ext.ffmpeg.license.get() == FFmpegLicense.GPL) {
             project.logger.warn(
                 """
-                |kitecodec: GPL FFmpeg flavour selected (x264/x265 enabled).
-                |WARNING: linking GPL FFmpeg makes your WHOLE application GPL-3.0. If you distribute
-                |the app, its complete source code must be available under a GPL-compatible licence —
-                |no closed-source, proprietary, or App Store distribution. Server-side and internal
-                |use is fine (GPL obligations trigger on distribution).
+                |kitecodec: GPL FFmpeg flavor selected (x264/x265 enabled).
+                |Warning: linking GPL FFmpeg makes your whole application GPL-3.0. If you distribute
+                |the app, its complete source code must be available under a GPL-compatible
+                |license. That rules out closed-source, proprietary and App Store distribution.
+                |Server-side and internal use is fine, because GPL obligations trigger on
+                |distribution.
                 |If that is not what you want, switch to FFmpegLicense.LGPL.
-                |Details: https://yuroyami.github.io/KiteCodec/licensing/
+                |Details: https://github.com/yuroyami/KiteCodec/blob/main/docs/licensing.md
                 """.trimMargin(),
             )
         }
@@ -127,13 +128,13 @@ class KiteCodecPlugin : Plugin<Project> {
             |GitHub Releases, which currently cover: ${KiteCodecTarget.entries.filter { it.hasPrebuiltAsset }.joinToString { it.triple }}.
             |
             |Options:
-            |  - source = FFmpegSource.System — link a system FFmpeg (brew/apt) where one exists
-            |    for the target (desktop hosts only).
+            |  - source = FFmpegSource.System links a system FFmpeg (brew/apt) where one exists
+            |    for the target. Desktop hosts only.
             |  - Self-host the asset: build FFmpeg for the target yourself, publish
             |    ffmpeg-<version>-<license>-<triple>.zip to your own repo's Releases, then set
             |    kitecodec { ffmpeg { repo = "you/yourrepo" } } and pin its checksum via
             |    pinnedSha256.put("<asset>.zip", "<sha256>").
-            |  - Drop the target for now — prebuilt coverage grows in later KiteCodec releases.
+            |  - Drop the target for now. Prebuilt coverage grows in later KiteCodec releases.
             """.trimMargin(),
         )
     }
@@ -157,7 +158,7 @@ class KiteCodecPlugin : Plugin<Project> {
         val homebrewPrefix = providers.gradleProperty("kitecodec.macos.homebrew.prefix")
 
         val source = ext.ffmpeg.source
-        // Android has no GPL flavour, so its targets always link the LGPL MediaCodec build.
+        // Android has no GPL flavor, so its targets always link the LGPL MediaCodec build.
         val license: Provider<FFmpegLicense> =
             if (triple.android) providers.provider { FFmpegLicense.LGPL } else ext.ffmpeg.license
         val versionAndLicense = ext.ffmpeg.version.zip(license) { v, l -> v to l }
