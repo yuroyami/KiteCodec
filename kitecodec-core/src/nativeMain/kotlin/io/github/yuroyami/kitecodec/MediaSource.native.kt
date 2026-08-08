@@ -47,6 +47,16 @@ import ffmpeg.ffkmp_stream_codecpar
 import ffmpeg.ffkmp_stream_duration_micros
 import ffmpeg.ffkmp_stream_index
 import ffmpeg.ffkmp_stream_metadata
+import ffmpeg.ffkmp_stream_discard_all
+import ffmpeg.ffkmp_stream_discard_none
+import ffmpeg.ffkmp_stream_disposition
+import ffmpeg.ffkmp_stream_rotation_degrees
+import ffmpeg.ffkmp_stream_start_time
+import ffmpeg.ffkmp_disposition_attached_pic
+import ffmpeg.ffkmp_disposition_default
+import ffmpeg.ffkmp_disposition_forced
+import ffmpeg.ffkmp_disposition_hearing_impaired
+import ffmpeg.ffkmp_disposition_visual_impaired
 import ffmpeg.ffkmp_stream_time_base
 import ffmpeg.ffkmp_dict_entry_key
 import ffmpeg.ffkmp_dict_entry_value
@@ -99,17 +109,24 @@ public actual class MediaSource internal constructor(
     private val stateLock = SynchronizedObject()
     private var closed = false
     private var demuxing = false
+    private var readerActive = false
 
     private fun beginDemux() = synchronized(stateLock) {
         check(!closed) { "MediaSource is closed" }
         check(!demuxing) {
-            "Another decode flow is already collecting on this MediaSource — the demuxer is a " +
+            "Another decode flow is already collecting on this MediaSource. The demuxer is a " +
                 "single cursor. Use decodeStreams(listOf(a, b)) to read several streams in one pass."
+        }
+        check(!readerActive) {
+            "A PacketReader is open on this MediaSource and owns the demuxer cursor. Close it " +
+                "before using the batch decode API."
         }
         demuxing = true
     }
 
     private fun endDemux() = synchronized(stateLock) { demuxing = false }
+
+    internal fun endPacketReader() = synchronized(stateLock) { readerActive = false }
 
     private val isClosed: Boolean get() = synchronized(stateLock) { closed }
 
@@ -259,7 +276,11 @@ public actual class MediaSource internal constructor(
     public actual suspend fun seekMicros(micros: Long) {
         synchronized(stateLock) {
             check(!closed) { "MediaSource is closed" }
-            check(!demuxing) { "Cannot seek while a decode flow is collecting — the demuxer cursor is shared" }
+            // A batch decode flow owns the cursor for its whole run, so seeking under it would make
+            // the frames it is emitting come from somewhere else half way through. A PacketReader is
+            // different: seeking is part of how a player uses it, and the caller serialises reads and
+            // seeks itself, which is stated in PacketReader's own contract.
+            check(!demuxing) { "Cannot seek while a decode flow is collecting: the demuxer cursor is shared" }
         }
         // [micros] is media-relative; av_seek_frame with stream_index = -1 wants an absolute
         // AV_TIME_BASE timestamp. On a container that starts at a nonzero time (MPEG-TS) the
@@ -322,9 +343,74 @@ public actual class MediaSource internal constructor(
             ?: throw FFmpegException(FFmpegError.Internal("No frame at ${atMicros}µs (beyond end of stream?)"))
     }
 
+    /**
+     * Opens a reader that hands out owned packets, one at a time, under your control.
+     *
+     * This is the demuxing half of a player. The batch API fuses demuxing and decoding, which is
+     * right for transcoding and wrong for playback: a player needs audio and video to decode
+     * independently, so a slow video decoder cannot stop the audio clock, and it needs to seek while
+     * all of that runs.
+     *
+     * Streams outside [streams] are marked for the demuxer to discard, so their packets are skipped
+     * inside libavformat instead of being read and thrown away here. On a file with ten audio tracks
+     * that is most of the read work.
+     *
+     * One reader at a time, and it excludes the batch decode API for as long as it is open. Close it
+     * when done.
+     */
+    @KiteCodecLowLevelApi
+    public fun openPacketReader(streams: List<StreamInfo>): PacketReader {
+        require(streams.isNotEmpty()) { "Need at least one stream to read" }
+        require(streams.distinctBy { it.index }.size == streams.size) { "Duplicate stream indices" }
+
+        synchronized(stateLock) {
+            check(!closed) { "MediaSource is closed" }
+            check(!demuxing) { "A decode flow is collecting on this MediaSource" }
+            check(!readerActive) { "A PacketReader is already open on this MediaSource" }
+            readerActive = true
+        }
+        try {
+            val selected = streams.map { it.index }.toSet()
+            for (info in this.streams) {
+                val ptr = ffkmp_fmt_stream(ctx, info.index.toUInt()) ?: continue
+                if (info.index in selected) ffkmp_stream_discard_none(ptr) else ffkmp_stream_discard_all(ptr)
+            }
+            return PacketReader(this, ctx, streams.associate { it.index to it.timeBase })
+        } catch (t: Throwable) {
+            endPacketReader()
+            throw t
+        }
+    }
+
+    /**
+     * Opens one decoder for one stream, for you to drive.
+     *
+     * Independent of every other decoder and of the reader, which is the point: this is what lets a
+     * player decode audio and video at their own rates.
+     *
+     * @param threadCount 0 lets libavcodec choose, which is usually the core count. Video gets
+     *        frame-level threading, without which real-time 4K is not possible.
+     * @param lowDelay stops the decoder holding frames back for reordering. Right for audio in a
+     *        player, wrong for video, where it costs decode efficiency.
+     */
+    @KiteCodecLowLevelApi
+    public fun openDecoder(
+        stream: StreamInfo,
+        threadCount: Int = 0,
+        lowDelay: Boolean = false,
+    ): StreamDecoder {
+        check(!isClosed) { "MediaSource is closed" }
+        require(stream.type.isAv) { "Only video and audio streams can be decoded, got ${stream.type}" }
+        return StreamDecoder.open(ctx, stream, threadCount, lowDelay)
+    }
+
     actual override fun close() {
         synchronized(stateLock) {
             if (closed) return
+            check(!readerActive) {
+                "Cannot close MediaSource while a PacketReader is open. Close the reader first: " +
+                    "freeing the demuxer under it would leave a dangling cursor."
+            }
             check(!demuxing) {
                 "Cannot close MediaSource while a decode flow is collecting — cancel/finish " +
                     "collection first (freeing the demuxer under an active decode would crash)."
@@ -461,10 +547,24 @@ private fun buildStreams(ctx: CPointer<AVFormatContext>): List<StreamInfo> {
                 sampleFormat = sampleFormatFromAv(ffkmp_codecpar_format(par)),
             ) else null,
             metadata = readMetadata(ffkmp_stream_metadata(s)),
+            disposition = readDisposition(ffkmp_stream_disposition(s)),
+            rotationDegrees = ffkmp_stream_rotation_degrees(s),
+            startTimeMicros = ffkmp_stream_start_time(s)
+                .takeIf { it != Long.MIN_VALUE }
+                ?.let { ffkmp_rescale_q(it, timeBase.num, timeBase.den, 1, 1_000_000) }
+                ?: 0L,
         )
     }
     return out
 }
+
+private fun readDisposition(flags: Int): Disposition = Disposition(
+    default = flags and ffkmp_disposition_default() != 0,
+    forced = flags and ffkmp_disposition_forced() != 0,
+    hearingImpaired = flags and ffkmp_disposition_hearing_impaired() != 0,
+    visualImpaired = flags and ffkmp_disposition_visual_impaired() != 0,
+    attachedPicture = flags and ffkmp_disposition_attached_pic() != 0,
+)
 
 /** Call [block] with two IntVar out-params, return the resulting [Rational]. */
 private inline fun readRational(block: (CPointer<IntVar>, CPointer<IntVar>) -> Unit): Rational = memScoped {

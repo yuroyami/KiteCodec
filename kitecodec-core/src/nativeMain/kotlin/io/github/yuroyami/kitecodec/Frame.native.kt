@@ -42,7 +42,20 @@ import ffmpeg.ffkmp_packet_size
 import ffmpeg.ffkmp_packet_unref
 import ffmpeg.ffkmp_samples_copy_to_buffer
 import ffmpeg.ffkmp_samples_get_buffer_size
+import ffmpeg.ffkmp_frame_chroma_location
+import ffmpeg.ffkmp_frame_color_primaries
+import ffmpeg.ffkmp_frame_color_range
+import ffmpeg.ffkmp_frame_color_trc
+import ffmpeg.ffkmp_frame_colorspace
+import ffmpeg.ffkmp_frame_duration
+import ffmpeg.ffkmp_frame_is_hardware
+import ffmpeg.ffkmp_frame_is_keyframe
+import ffmpeg.ffkmp_frame_sample_aspect_ratio
 import kotlinx.cinterop.ByteVar
+import kotlinx.cinterop.IntVar
+import kotlinx.cinterop.alloc
+import kotlinx.cinterop.ptr
+import kotlinx.cinterop.value
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.allocArray
@@ -85,7 +98,36 @@ public actual class Frame internal constructor(
             sampleRate    = ffkmp_frame_sample_rate(nativeFrame),
             channelCount  = if (streamType == MediaType.Audio) ffkmp_frame_channels(nativeFrame) else 0,
             sampleFormat  = if (streamType == MediaType.Audio) sampleFormatFromAv(ffkmp_frame_format(nativeFrame)) else SampleFormat.None,
+            duration      = ffkmp_frame_duration(nativeFrame),
+            isKeyframe    = ffkmp_frame_is_keyframe(nativeFrame) != 0,
+            color         = if (streamType == MediaType.Video) readColorInfo() else ColorInfo.Unspecified,
+            sampleAspectRatio = if (streamType == MediaType.Video) readFrameSar() else Rational(1, 1),
+            isHardware    = ffkmp_frame_is_hardware(nativeFrame) != 0,
         )
+    }
+
+    private fun readColorInfo(): ColorInfo {
+        val declared = ColorInfo(
+            matrix = ColorMatrix.fromAv(ffkmp_frame_colorspace(nativeFrame)),
+            primaries = ColorPrimaries.fromAv(ffkmp_frame_color_primaries(nativeFrame)),
+            transfer = ColorTransfer.fromAv(ffkmp_frame_color_trc(nativeFrame)),
+            // AVCOL_RANGE_JPEG is 2 and means full range. Anything else, including unspecified,
+            // means the studio range, which is what almost all video uses.
+            fullRange = ffkmp_frame_color_range(nativeFrame) == 2,
+            chromaLocation = ChromaLocation.fromAv(ffkmp_frame_chroma_location(nativeFrame)),
+        )
+        // A container that declares nothing is common. Handing the renderer "unspecified" would make
+        // it guess, and it would guess without knowing the height. Guess here, where the height is
+        // known, and by the rule every player uses.
+        if (!declared.isUnspecified) return declared
+        val guessed = ColorInfo.guessFor(ffkmp_frame_height(nativeFrame))
+        return declared.copy(matrix = guessed.matrix, primaries = guessed.primaries, transfer = guessed.transfer)
+    }
+
+    private fun readFrameSar(): Rational = memScoped {
+        val n = alloc<IntVar>(); val d = alloc<IntVar>()
+        ffkmp_frame_sample_aspect_ratio(nativeFrame, n.ptr, d.ptr)
+        Rational(n.value, d.value.takeIf { it != 0 } ?: 1)
     }
 
     public actual fun copyPlanesToByteArray(): ByteArray {

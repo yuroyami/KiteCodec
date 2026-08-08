@@ -1,0 +1,395 @@
+@file:OptIn(KiteCodecLowLevelApi::class)
+
+package io.github.yuroyami.kitecodec
+
+import ffmpeg.AVCodecContext
+import ffmpeg.AVFrame
+import ffmpeg.AVPacket
+import ffmpeg.avcodec_receive_frame
+import ffmpeg.avcodec_send_packet
+import ffmpeg.ffkmp_avseek_flag_any
+import ffmpeg.ffkmp_avseek_flag_backward
+import ffmpeg.ffkmp_codecctx_alloc
+import ffmpeg.ffkmp_codecctx_flush
+import ffmpeg.ffkmp_codecctx_free
+import ffmpeg.ffkmp_codecctx_from_par
+import ffmpeg.ffkmp_codecctx_open
+import ffmpeg.ffkmp_codecctx_set_low_delay
+import ffmpeg.ffkmp_codecctx_set_threads
+import ffmpeg.ffkmp_codecpar_codec_id
+import ffmpeg.ffkmp_find_decoder_by_id
+import ffmpeg.ffkmp_fmt_read_frame
+import ffmpeg.ffkmp_fmt_seek_file
+import ffmpeg.ffkmp_fmt_stream
+import ffmpeg.ffkmp_frame_alloc
+import ffmpeg.ffkmp_frame_clone
+import ffmpeg.ffkmp_frame_free
+import ffmpeg.ffkmp_frame_linesize
+import ffmpeg.ffkmp_frame_plane
+import ffmpeg.ffkmp_frame_plane_count
+import ffmpeg.ffkmp_frame_plane_height
+import ffmpeg.ffkmp_frame_hw_surface
+import ffmpeg.ffkmp_frame_use_best_effort_ts
+import ffmpeg.ffkmp_packet_alloc
+import ffmpeg.ffkmp_packet_duration
+import ffmpeg.ffkmp_packet_dts
+import ffmpeg.ffkmp_packet_free
+import ffmpeg.ffkmp_packet_is_keyframe
+import ffmpeg.ffkmp_packet_move_ref
+import ffmpeg.ffkmp_packet_pos
+import ffmpeg.ffkmp_packet_pts
+import ffmpeg.ffkmp_packet_size
+import ffmpeg.ffkmp_packet_stream_index
+import ffmpeg.ffkmp_packet_unref
+import ffmpeg.ffkmp_stream_codecpar
+import ffmpeg.ffkmp_stream_discard_all
+import ffmpeg.ffkmp_stream_discard_none
+import kotlinx.cinterop.COpaquePointer
+import kotlinx.cinterop.UByteVar
+import kotlinx.cinterop.CPointer
+import kotlinx.cinterop.ExperimentalForeignApi
+
+/**
+ * A demuxed packet the caller owns.
+ *
+ * A player has to queue packets: it reads ahead of its decoders so a slow disk or a network stall
+ * does not stop playback. So a packet must outlive the read that produced it, which the batch API's
+ * packets deliberately do not.
+ *
+ * Taking ownership costs nothing. The payload is reference counted inside FFmpeg and moved rather
+ * than copied, so this is a pointer swap and not a memcpy of the compressed data.
+ *
+ * Close it exactly once. An unclosed packet leaks its buffer.
+ */
+@KiteCodecLowLevelApi
+@OptIn(ExperimentalForeignApi::class)
+public class Packet internal constructor(
+    internal val native: CPointer<AVPacket>,
+    /** The stream's time base, so the caller can convert [pts] without looking the stream up. */
+    public val timeBase: Rational,
+) : AutoCloseable {
+
+    private var closed = false
+
+    public val streamIndex: Int get() = ffkmp_packet_stream_index(native)
+
+    /** Presentation timestamp in [timeBase] units, or [FrameInfo.NOPTS] when the container gave none. */
+    public val pts: Long get() = ffkmp_packet_pts(native)
+
+    public val dts: Long get() = ffkmp_packet_dts(native)
+
+    /** Duration in [timeBase] units. 0 when unknown, which is common and not an error. */
+    public val duration: Long get() = ffkmp_packet_duration(native)
+
+    public val isKeyframe: Boolean get() = ffkmp_packet_is_keyframe(native) != 0
+
+    public val sizeBytes: Int get() = ffkmp_packet_size(native)
+
+    /** Byte offset in the container, or -1. Useful for progress when timestamps are broken. */
+    public val bytePosition: Long get() = ffkmp_packet_pos(native)
+
+    public val hasPts: Boolean get() = pts != FrameInfo.NOPTS
+
+    /** [pts] converted to microseconds on the stream's own timeline. Null when there is no pts. */
+    public val ptsMicros: Long?
+        get() = if (hasPts) ffmpeg.ffkmp_rescale_q(pts, timeBase.num, timeBase.den, 1, 1_000_000) else null
+
+    override fun close() {
+        if (closed) return
+        closed = true
+        ffkmp_packet_free(native)
+    }
+}
+
+/** Which way a seek may land relative to the target. */
+@KiteCodecLowLevelApi
+public enum class SeekDirection {
+    /** At or before the target, on a keyframe. What a player wants before decoding forward. */
+    Backward,
+
+    /** At or after the target. */
+    Forward,
+
+    /**
+     * The nearest frame, keyframe or not.
+     *
+     * Only useful for a container whose index is trustworthy. On anything else the decoder cannot
+     * produce output until the next keyframe anyway, so this lands somewhere unpredictable.
+     */
+    Any,
+}
+
+/**
+ * Reads packets from a container, one at a time, under the caller's control.
+ *
+ * This is the demuxing half of a player, separated from decoding. The batch API fuses the two, which
+ * is right for transcoding and wrong for playback: a player needs audio and video decoding to
+ * proceed independently, so that a slow video decoder cannot stop the audio clock, and it needs to
+ * seek while all of that is running.
+ *
+ * One reader per [MediaSource]. Reading, seeking and closing must all happen from one coroutine, or
+ * be serialised by the caller. libavformat's context is a single cursor and is not thread safe.
+ */
+@KiteCodecLowLevelApi
+@OptIn(ExperimentalForeignApi::class)
+public class PacketReader internal constructor(
+    private val source: MediaSource,
+    private val ctx: CPointer<ffmpeg.AVFormatContext>,
+    private val timeBaseByStream: Map<Int, Rational>,
+) : AutoCloseable {
+
+    private val scratch: CPointer<AVPacket> = ffkmp_packet_alloc()
+        ?: throw FFmpegException(FFmpegError.Internal("av_packet_alloc returned NULL"))
+    private var closed = false
+
+    /**
+     * Reads the next packet from a selected stream.
+     *
+     * @return an owned packet, or null at the end of the container. Null is the signal to start the
+     *         decoder drain, by sending a null packet to each decoder.
+     */
+    public fun read(): Packet? {
+        check(!closed) { "PacketReader is closed" }
+        while (true) {
+            val rc = ffkmp_fmt_read_frame(ctx, scratch)
+            if (rc == FFErrors.EOF) return null
+            if (rc < 0) throw FFmpegException(avError(rc))
+
+            val index = ffkmp_packet_stream_index(scratch)
+            val timeBase = timeBaseByStream[index]
+            if (timeBase == null) {
+                // A stream the caller did not select. AVDISCARD_ALL means libavformat usually skips
+                // these before they get here, but a container can still deliver one.
+                ffkmp_packet_unref(scratch)
+                continue
+            }
+
+            val owned = ffkmp_packet_alloc()
+                ?: throw FFmpegException(FFmpegError.Internal("av_packet_alloc returned NULL"))
+            // Moves the reference. The compressed payload is not copied, so queueing packets ahead
+            // of the decoders costs a pointer swap per packet and nothing else.
+            ffkmp_packet_move_ref(owned, scratch)
+            return Packet(owned, timeBase)
+        }
+    }
+
+    /**
+     * Moves the read cursor.
+     *
+     * This moves the cursor and nothing else. It does not flush the decoders and it does not clear
+     * anything the caller has queued, because only the caller knows which generation those belong to.
+     * Flushing here would let a packet read before the seek reach a decoder that was just reset.
+     *
+     * The window matters. [SeekDirection.Backward] with an unbounded lower limit lets libavformat
+     * land arbitrarily early on a container without an index, and MPEG-TS resolves a seek by
+     * searching byte positions, so it can also land *after* the target. Passing [notEarlierThan]
+     * bounds the first case; the caller detects the second from the first decoded frame and retries.
+     *
+     * @param micros where to seek to, on the content-relative timeline the rest of the API uses.
+     * @param notEarlierThan a lower bound on where the seek may land. Null means no bound.
+     */
+    public fun seek(
+        micros: Long,
+        direction: SeekDirection = SeekDirection.Backward,
+        notEarlierThan: Long? = null,
+    ) {
+        check(!closed) { "PacketReader is closed" }
+        val target = source.toAbsoluteMicros(micros)
+        val min = notEarlierThan?.let { source.toAbsoluteMicros(it) } ?: Long.MIN_VALUE
+        val max = if (direction == SeekDirection.Forward) Long.MAX_VALUE else target
+        val flags = when (direction) {
+            SeekDirection.Backward -> ffkmp_avseek_flag_backward()
+            SeekDirection.Forward -> 0
+            SeekDirection.Any -> ffkmp_avseek_flag_any()
+        }
+        val rc = ffkmp_fmt_seek_file(ctx, -1, min, target, max, flags)
+        if (rc < 0) throw FFmpegException(avError(rc))
+    }
+
+    override fun close() {
+        if (closed) return
+        closed = true
+        ffkmp_packet_free(scratch)
+        source.endPacketReader()
+    }
+}
+
+/**
+ * One decoder, driven by the caller.
+ *
+ * The send and receive shape mirrors libavcodec, including the cases a simpler interface cannot
+ * express: one packet producing no frames, one packet producing several, and a decoder that must be
+ * drained before it accepts more input.
+ *
+ * Three rules that are easy to get wrong and expensive to debug:
+ *
+ * 1. Drain with [receive] until it returns null before assuming [send] will accept anything.
+ * 2. When [send] returns false the packet was *not* consumed. Drain, then offer the same packet
+ *    again. Discarding it loses frames silently.
+ * 3. [flush] after every seek, and only after the caller has cleared its own queues. Flushing
+ *    first lets a packet from the old position reach a freshly reset decoder.
+ */
+@KiteCodecLowLevelApi
+@OptIn(ExperimentalForeignApi::class)
+public class StreamDecoder internal constructor(
+    public val stream: StreamInfo,
+    private val codecCtx: CPointer<AVCodecContext>,
+) : AutoCloseable {
+
+    private val landing: CPointer<AVFrame> = ffkmp_frame_alloc()
+        ?: throw FFmpegException(FFmpegError.Internal("av_frame_alloc returned NULL"))
+    private var closed = false
+
+    /**
+     * Offers a packet, or null to begin the end-of-stream drain.
+     *
+     * @return true when the packet was consumed. False means the decoder's output queue is full:
+     *         call [receive] until it returns null, then offer this same packet again.
+     */
+    public fun send(packet: Packet?): Boolean {
+        check(!closed) { "StreamDecoder is closed" }
+        val rc = avcodec_send_packet(codecCtx, packet?.native)
+        return when {
+            rc == 0 -> true
+            rc == FFErrors.EOF -> true
+            rc == FFErrors.EAGAIN -> false
+            // A packet the decoder cannot use is not a reason to abandon the file. Every seek into a
+            // stream that carries its parameter sets in band, MPEG-TS above all, lands before the
+            // next parameter set, so the first packets after it decode to nothing. Treating that as
+            // fatal would make seeking a broadcast capture impossible.
+            rc == FFmpegError.AVERROR_INVALIDDATA -> true
+            else -> throw FFmpegException(avError(rc))
+        }
+    }
+
+    /**
+     * Takes the next decoded frame.
+     *
+     * @return an owned frame, or null when the decoder needs more input. The frame is an O(1) clone,
+     *         so it shares its buffers with nothing the decoder will reuse, and the caller may queue
+     *         it. Close it exactly once.
+     */
+    public fun receive(): Frame? {
+        check(!closed) { "StreamDecoder is closed" }
+        val rc = avcodec_receive_frame(codecCtx, landing)
+        if (rc == FFErrors.EAGAIN || rc == FFErrors.EOF) return null
+        // Same tolerance as the send side: a frame that could not be reconstructed from the packets
+        // seen so far is skipped rather than fatal.
+        if (rc == FFmpegError.AVERROR_INVALIDDATA) return null
+        if (rc < 0) throw FFmpegException(avError(rc))
+
+        // Decoders fill best_effort_timestamp even for files with missing presentation timestamps.
+        // Promoting it here means everything downstream sees one usable timestamp field.
+        ffkmp_frame_use_best_effort_ts(landing)
+        val cloned = ffkmp_frame_clone(landing)
+            ?: throw FFmpegException(FFmpegError.Internal("av_frame_clone returned NULL"))
+        return Frame(
+            nativeFrame = cloned,
+            ownsPointer = true,
+            streamIndex = stream.index,
+            streamType = stream.type,
+            streamTimeBase = stream.timeBase,
+        )
+    }
+
+    /**
+     * Discards the decoder's internal state.
+     *
+     * Required after every seek. Without it the decoder emits frames reconstructed from packets
+     * belonging to the position the viewer just left, which looks like a flash of the wrong picture.
+     */
+    public fun flush() {
+        check(!closed) { "StreamDecoder is closed" }
+        ffkmp_codecctx_flush(codecCtx)
+    }
+
+    override fun close() {
+        if (closed) return
+        closed = true
+        ffkmp_frame_free(landing)
+        ffkmp_codecctx_free(codecCtx)
+    }
+
+    internal companion object {
+        fun open(
+            ctx: CPointer<ffmpeg.AVFormatContext>,
+            stream: StreamInfo,
+            threadCount: Int,
+            lowDelay: Boolean,
+        ): StreamDecoder {
+            val streamPtr = ffkmp_fmt_stream(ctx, stream.index.toUInt())
+                ?: throw FFmpegException(FFmpegError.Internal("Stream ${stream.index} disappeared"))
+            val codecpar = ffkmp_stream_codecpar(streamPtr)
+                ?: throw FFmpegException(FFmpegError.Internal("Stream ${stream.index} missing codecpar"))
+            val codecId = ffkmp_codecpar_codec_id(codecpar)
+            val codec = ffkmp_find_decoder_by_id(codecId)
+                ?: throw FFmpegException(FFmpegError.Internal("No decoder for codec id $codecId"))
+
+            val codecCtx = ffkmp_codecctx_alloc(codec)
+                ?: throw FFmpegException(FFmpegError.Internal("avcodec_alloc_context3 returned NULL"))
+            try {
+                check0(ffkmp_codecctx_from_par(codecCtx, codecpar), "avcodec_parameters_to_context")
+                // Frame-level threading for video is what makes real-time 4K possible at all. Low
+                // delay for audio keeps the decoder from holding frames a player is waiting for.
+                ffkmp_codecctx_set_threads(codecCtx, threadCount, if (stream.type == MediaType.Video) 1 else 0)
+                ffkmp_codecctx_set_low_delay(codecCtx, if (lowDelay) 1 else 0)
+                check0(ffkmp_codecctx_open(codecCtx, codec), "avcodec_open2")
+            } catch (t: Throwable) {
+                ffkmp_codecctx_free(codecCtx)
+                throw t
+            }
+            return StreamDecoder(stream, codecCtx)
+        }
+    }
+}
+
+/**
+ * Reads a video frame's planes without copying them.
+ *
+ * [block] receives one pointer and one row pitch per plane. Both are valid only until it returns:
+ * they point into the frame's own buffers, and the frame may be closed straight afterwards.
+ *
+ * The row pitch is not the width. It is almost never the width. A renderer that assumes otherwise
+ * produces an image that skews diagonally, which is the most common first bug in every new video
+ * pipeline. The pitch is given here rather than left to be computed for exactly that reason.
+ *
+ * The alternative is [Frame.copyPlanesToByteArray], which is correct and costs a full copy of the
+ * frame: 3.11 MB for 1080p and 24.9 MB for 4K 10-bit, so between 187 MB/s and 1.5 GB/s at 60 frames
+ * a second, plus one allocation per frame. That is right for a thumbnail and unusable for playback.
+ *
+ * @throws IllegalStateException when the frame lives in hardware memory, which has no readable
+ *         planes. Check [FrameInfo.isHardware] first, and use [Frame.hardwareSurface] instead.
+ */
+@KiteCodecLowLevelApi
+@OptIn(ExperimentalForeignApi::class)
+public fun <R> Frame.withPlanes(
+    block: (planes: List<CPointer<UByteVar>>, strides: List<Int>, heights: List<Int>) -> R,
+): R {
+    check(!info.isHardware) {
+        "This frame lives in hardware memory and has no readable planes. Use hardwareSurface, or " +
+            "download it first."
+    }
+    val count = ffkmp_frame_plane_count(nativeFrame)
+    val planes = ArrayList<CPointer<UByteVar>>(count)
+    val strides = ArrayList<Int>(count)
+    val heights = ArrayList<Int>(count)
+    for (i in 0 until count) {
+        val plane = ffkmp_frame_plane(nativeFrame, i) ?: break
+        planes += plane
+        strides += ffkmp_frame_linesize(nativeFrame, i)
+        heights += ffkmp_frame_plane_height(nativeFrame, i)
+    }
+    return block(planes, strides, heights)
+}
+
+/**
+ * The hardware surface behind this frame, or null when its pixels are in main memory.
+ *
+ * What the pointer is depends on the decoder: a `CVPixelBuffer` for VideoToolbox, a MediaCodec
+ * output buffer, a VA-API surface. Only a renderer matched to that decoder can interpret it, which
+ * is why it is returned untyped. It is valid until the frame is closed.
+ */
+@KiteCodecLowLevelApi
+@OptIn(ExperimentalForeignApi::class)
+public val Frame.hardwareSurface: COpaquePointer?
+    get() = ffkmp_frame_hw_surface(nativeFrame)

@@ -1,7 +1,7 @@
 package = ffmpeg
 language = C
-headers = libavformat/avformat.h libavformat/avio.h libavformat/version.h libavcodec/avcodec.h libavcodec/codec.h libavcodec/codec_id.h libavcodec/codec_par.h libavcodec/packet.h libavcodec/bsf.h libavcodec/defs.h libavcodec/version.h libavfilter/avfilter.h libavfilter/buffersrc.h libavfilter/buffersink.h libavfilter/version.h libavutil/avutil.h libavutil/error.h libavutil/dict.h libavutil/log.h libavutil/mem.h libavutil/opt.h libavutil/pixfmt.h libavutil/pixdesc.h libavutil/samplefmt.h libavutil/channel_layout.h libavutil/rational.h libavutil/frame.h libavutil/imgutils.h libavutil/buffer.h libavutil/hwcontext.h libavutil/version.h libswscale/swscale.h libswscale/version.h libswresample/swresample.h libswresample/version.h
-headerFilter = libavformat/* libavcodec/* libavfilter/* libavutil/* libswscale/* libswresample/*
+headers = libavutil/display.h libavformat/avformat.h libavformat/avio.h libavformat/version.h libavcodec/avcodec.h libavcodec/codec.h libavcodec/codec_id.h libavcodec/codec_par.h libavcodec/packet.h libavcodec/bsf.h libavcodec/defs.h libavcodec/version.h libavfilter/avfilter.h libavfilter/buffersrc.h libavfilter/buffersink.h libavfilter/version.h libavutil/avutil.h libavutil/error.h libavutil/dict.h libavutil/log.h libavutil/mem.h libavutil/opt.h libavutil/pixfmt.h libavutil/pixdesc.h libavutil/samplefmt.h libavutil/channel_layout.h libavutil/rational.h libavutil/frame.h libavutil/imgutils.h libavutil/buffer.h libavutil/hwcontext.h libavutil/version.h libswscale/swscale.h libswscale/version.h libswresample/swresample.h libswresample/version.h
+headerFilter = libavutil/display.h libavformat/* libavcodec/* libavfilter/* libavutil/* libswscale/* libswresample/*
 linkerOpts.osx = -lavformat -lavcodec -lavfilter -lavutil -lswscale -lswresample
 linkerOpts.linux = -lavformat -lavcodec -lavfilter -lavutil -lswscale -lswresample
 linkerOpts.mingw = -lavformat -lavcodec -lavfilter -lavutil -lswscale -lswresample
@@ -26,6 +26,7 @@ linkerOpts.android = -lavformat -lavcodec -lavfilter -lavutil -lswscale -lswresa
 #include <libavutil/frame.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/opt.h>
+#include <libavutil/display.h>
 #include <libavutil/pixdesc.h>
 #include <libavutil/samplefmt.h>
 #include <libswscale/swscale.h>
@@ -761,4 +762,150 @@ static inline void ffkmp_buffersink_time_base(AVFilterContext *sink, int *n, int
     if (!sink || !n || !d) { if (n) *n = 0; if (d) *d = 1; return; }
     AVRational tb = av_buffersink_get_time_base(sink);
     *n = tb.num; *d = tb.den ? tb.den : 1;
+}
+
+/* ════════════ Playback additions ════════════
+   Everything below exists for KitePlayer. A batch transcoder reads a file once, front to back, and
+   needs none of it. A player needs to drive demuxing and decoding as separate stages, to flush a
+   decoder after a seek, to know a frame's colour metadata before it can draw it correctly, and to
+   reach a frame's pixels without copying them. */
+
+/* --- Decoder control --- */
+
+/* Discards a decoder's internal state. Required after every seek: without it the decoder emits
+   frames reconstructed from packets belonging to the position the viewer just left. */
+static inline void ffkmp_codecctx_flush(AVCodecContext *c) { if (c) avcodec_flush_buffers(c); }
+
+/* Frame-level threading for video, and low delay for audio. A player wants the first and not the
+   second; a transcoder does not care. 0 lets libavcodec choose. */
+static inline void ffkmp_codecctx_set_threads(AVCodecContext *c, int count, int frame_level) {
+    if (!c) return;
+    c->thread_count = count;
+    c->thread_type = frame_level ? FF_THREAD_FRAME : FF_THREAD_SLICE;
+}
+static inline void ffkmp_codecctx_set_low_delay(AVCodecContext *c, int on) {
+    if (c) { if (on) c->flags |= AV_CODEC_FLAG_LOW_DELAY; else c->flags &= ~AV_CODEC_FLAG_LOW_DELAY; }
+}
+
+/* --- Seeking with the full flag set --- */
+
+static inline int ffkmp_avseek_flag_backward(void) { return AVSEEK_FLAG_BACKWARD; }
+static inline int ffkmp_avseek_flag_any(void)      { return AVSEEK_FLAG_ANY; }
+static inline int ffkmp_avseek_flag_byte(void)     { return AVSEEK_FLAG_BYTE; }
+static inline int ffkmp_avseek_flag_frame(void)    { return AVSEEK_FLAG_FRAME; }
+
+/* avformat_seek_file, which av_seek_frame cannot express: a bounded window rather than a single
+   target. A player uses it to say "land at or before here, but no earlier than there", which is
+   what makes a retry ladder cheap instead of a fixed pessimistic backoff. */
+static inline int ffkmp_fmt_seek_file(AVFormatContext *ctx, int stream_index,
+                                     int64_t min_ts, int64_t ts, int64_t max_ts, int flags) {
+    if (!ctx) return AVERROR(EINVAL);
+    return avformat_seek_file(ctx, stream_index, min_ts, ts, max_ts, flags);
+}
+
+/* --- Stream selection at the demuxer --- */
+
+/* AVDISCARD_ALL on an unselected stream makes libavformat skip its packets instead of the caller
+   reading and throwing them away. On a file with ten audio tracks that is most of the read work. */
+static inline void ffkmp_stream_discard_all(AVStream *s)  { if (s) s->discard = AVDISCARD_ALL; }
+static inline void ffkmp_stream_discard_none(AVStream *s) { if (s) s->discard = AVDISCARD_DEFAULT; }
+
+/* --- Stream metadata a track menu and a renderer need --- */
+
+static inline int ffkmp_stream_disposition(AVStream *s) { return s ? s->disposition : 0; }
+static inline int ffkmp_disposition_default(void)           { return AV_DISPOSITION_DEFAULT; }
+static inline int ffkmp_disposition_forced(void)            { return AV_DISPOSITION_FORCED; }
+static inline int ffkmp_disposition_hearing_impaired(void)  { return AV_DISPOSITION_HEARING_IMPAIRED; }
+static inline int ffkmp_disposition_visual_impaired(void)   { return AV_DISPOSITION_VISUAL_IMPAIRED; }
+static inline int ffkmp_disposition_attached_pic(void)      { return AV_DISPOSITION_ATTACHED_PIC; }
+
+static inline void ffkmp_stream_r_frame_rate(AVStream *s, int *n, int *d) {
+    if (!s || !n || !d) { if (n) *n = 0; if (d) *d = 1; return; }
+    *n = s->r_frame_rate.num; *d = s->r_frame_rate.den ? s->r_frame_rate.den : 1;
+}
+
+/* Rotation, in degrees, from the display matrix a phone writes into its recordings. Without this
+   every video shot in portrait plays on its side. av_display_rotation_get returns the angle the
+   image must be rotated by counter-clockwise, as a double; the sign is flipped here so the result
+   is the clockwise rotation a renderer should apply. */
+static inline int ffkmp_stream_rotation_degrees(AVStream *s) {
+    if (!s) return 0;
+    const AVPacketSideData *sd = av_packet_side_data_get(s->codecpar->coded_side_data,
+                                                         s->codecpar->nb_coded_side_data,
+                                                         AV_PKT_DATA_DISPLAYMATRIX);
+    if (!sd || sd->size < 9 * 4) return 0;
+    double theta = -av_display_rotation_get((const int32_t *)sd->data);
+    int deg = (int)(theta < 0 ? theta - 0.5 : theta + 0.5);
+    deg %= 360;
+    if (deg < 0) deg += 360;
+    return deg;
+}
+
+/* --- Packet ownership --- */
+
+/* Moves the reference rather than copying the payload, so a player can queue a packet without a
+   memcpy. The source is left blank and reusable. */
+static inline void ffkmp_packet_move_ref(AVPacket *dst, AVPacket *src) {
+    if (dst && src) av_packet_move_ref(dst, src);
+}
+static inline int64_t ffkmp_packet_pos(AVPacket *p) { return p ? p->pos : -1; }
+
+/* --- Frame metadata a renderer cannot be correct without --- */
+
+/* Getting any of these wrong is visible. The matrix decides hue, the range decides whether black
+   is black, and the chroma location decides whether colour bleeds at a sharp edge. All four are
+   already on the frame; only the accessor was missing. */
+static inline int ffkmp_frame_color_range(AVFrame *f)     { return f ? (int)f->color_range : 0; }
+static inline int ffkmp_frame_colorspace(AVFrame *f)      { return f ? (int)f->colorspace : 2; }
+static inline int ffkmp_frame_color_primaries(AVFrame *f) { return f ? (int)f->color_primaries : 2; }
+static inline int ffkmp_frame_color_trc(AVFrame *f)       { return f ? (int)f->color_trc : 2; }
+static inline int ffkmp_frame_chroma_location(AVFrame *f) { return f ? (int)f->chroma_location : 0; }
+static inline int ffkmp_frame_is_keyframe(AVFrame *f) {
+    return (f && (f->flags & AV_FRAME_FLAG_KEY)) ? 1 : 0;
+}
+static inline void ffkmp_frame_sample_aspect_ratio(AVFrame *f, int *n, int *d) {
+    if (!f || !n || !d) { if (n) *n = 1; if (d) *d = 1; return; }
+    *n = f->sample_aspect_ratio.num ? f->sample_aspect_ratio.num : 1;
+    *d = f->sample_aspect_ratio.den ? f->sample_aspect_ratio.den : 1;
+}
+
+/* --- Reaching a frame's pixels without copying them --- */
+
+/* A plane pointer and its row pitch. This is what a renderer uploads from. The alternative, the
+   copy that av_image_copy_to_buffer performs, is 3.11 MB for one 1080p frame and 24.9 MB for one
+   4K 10-bit frame, which at 60 fps is between 187 MB/s and 1.5 GB/s of pointless work. */
+static inline uint8_t* ffkmp_frame_plane(AVFrame *f, int p) {
+    return (f && p >= 0 && p < AV_NUM_DATA_POINTERS) ? f->data[p] : NULL;
+}
+
+/* How many planes this frame's format actually has. */
+static inline int ffkmp_frame_plane_count(AVFrame *f) {
+    if (!f) return 0;
+    if (f->nb_samples > 0) {
+        const AVChannelLayout *cl = &f->ch_layout;
+        return av_sample_fmt_is_planar((enum AVSampleFormat)f->format) ? cl->nb_channels : 1;
+    }
+    const AVPixFmtDescriptor *d = av_pix_fmt_desc_get((enum AVPixelFormat)f->format);
+    return d ? av_pix_fmt_count_planes((enum AVPixelFormat)f->format) : 0;
+}
+
+/* The height of plane p in rows, which for a chroma plane of a subsampled format is not the
+   frame height. Uploading with the wrong value is the other half of the stride mistake. */
+static inline int ffkmp_frame_plane_height(AVFrame *f, int p) {
+    if (!f || p < 0) return 0;
+    const AVPixFmtDescriptor *d = av_pix_fmt_desc_get((enum AVPixelFormat)f->format);
+    if (!d) return 0;
+    if (p == 1 || p == 2) return AV_CEIL_RSHIFT(f->height, d->log2_chroma_h);
+    return f->height;
+}
+
+/* Non-NULL when the frame lives in GPU or hardware memory. For VideoToolbox this is the
+   CVPixelBuffer, for MediaCodec the output buffer, for VA-API the surface id. The renderer that
+   matches the decoder knows what to do with it; nobody else may touch it. */
+static inline void* ffkmp_frame_hw_surface(AVFrame *f) {
+    if (!f || !f->hw_frames_ctx) return NULL;
+    return (void *)f->data[3];
+}
+static inline int ffkmp_frame_is_hardware(AVFrame *f) {
+    return (f && f->hw_frames_ctx) ? 1 : 0;
 }
