@@ -15,6 +15,7 @@ import ffmpeg.ffkmp_codecctx_free
 import ffmpeg.ffkmp_codecctx_from_par
 import ffmpeg.ffkmp_codecctx_open
 import ffmpeg.ffkmp_codecpar_bit_rate
+import ffmpeg.ffkmp_codecpar_ch_layout_mask
 import ffmpeg.ffkmp_codecpar_channels
 import ffmpeg.ffkmp_codecpar_codec_id
 import ffmpeg.ffkmp_codecpar_codec_type
@@ -35,6 +36,7 @@ import ffmpeg.ffkmp_fmt_close_input
 import ffmpeg.ffkmp_fmt_duration
 import ffmpeg.ffkmp_fmt_find_stream_info
 import ffmpeg.ffkmp_fmt_iformat_name
+import ffmpeg.ffkmp_fmt_is_seekable
 import ffmpeg.ffkmp_fmt_metadata
 import ffmpeg.ffkmp_fmt_nb_streams
 import ffmpeg.ffkmp_fmt_open_input
@@ -128,7 +130,28 @@ public actual class MediaSource internal constructor(
 
     internal fun endPacketReader() = synchronized(stateLock) { readerActive = false }
 
+    /**
+     * Undoes the stream selection [openPacketReader] applied, putting every stream back on
+     * AVDISCARD_DEFAULT.
+     *
+     * The discard flags live on the demuxer, not on the reader, so a reader that did not restore
+     * them would leave the source permanently unable to read the streams it had not selected: the
+     * batch decode API would return zero frames for them and report no error, because a discarded
+     * packet is skipped inside libavformat and looks exactly like a stream with nothing in it.
+     */
+    internal fun restoreStreamDiscardDefaults() {
+        for (info in streams) {
+            ffkmp_fmt_stream(ctx, info.index.toUInt())?.let { ffkmp_stream_discard_none(it) }
+        }
+    }
+
     private val isClosed: Boolean get() = synchronized(stateLock) { closed }
+
+    /**
+     * Read once at open, because it cannot change afterwards and because reading it lazily would
+     * mean touching the format context, which [close] frees.
+     */
+    public actual val isSeekable: Boolean = ffkmp_fmt_is_seekable(ctx) != 0
 
     public actual val primaryVideo: StreamInfo? get() = streams.firstOrNull { it.type == MediaType.Video }
     public actual val primaryAudio: StreamInfo? get() = streams.firstOrNull { it.type == MediaType.Audio }
@@ -281,6 +304,15 @@ public actual class MediaSource internal constructor(
             // different: seeking is part of how a player uses it, and the caller serialises reads and
             // seeks itself, which is stated in PacketReader's own contract.
             check(!demuxing) { "Cannot seek while a decode flow is collecting: the demuxer cursor is shared" }
+            // A PacketReader owns the cursor too, and it reads through its own scratch packet. A
+            // seek behind its back would move the cursor while its caller believes it is reading
+            // forward from where it left off, and nothing would tell the caller the packets after
+            // it belong to another position. PacketReader.seek exists so the caller can seek and
+            // know it happened, at the point where it also drops the packets it had queued.
+            check(!readerActive) {
+                "Cannot seek this MediaSource while a PacketReader is open: the reader owns the " +
+                    "demuxer cursor. Use PacketReader.seek instead."
+            }
         }
         // [micros] is media-relative; av_seek_frame with stream_index = -1 wants an absolute
         // AV_TIME_BASE timestamp. On a container that starts at a nonzero time (MPEG-TS) the
@@ -353,7 +385,8 @@ public actual class MediaSource internal constructor(
      *
      * Streams outside [streams] are marked for the demuxer to discard, so their packets are skipped
      * inside libavformat instead of being read and thrown away here. On a file with ten audio tracks
-     * that is most of the read work.
+     * that is most of the read work. Closing the reader puts every stream back, so a later reader or
+     * decode pass over a stream this one skipped still sees its packets.
      *
      * One reader at a time, and it excludes the batch decode API for as long as it is open. Close it
      * when done.
@@ -377,6 +410,9 @@ public actual class MediaSource internal constructor(
             }
             return PacketReader(this, ctx, streams.associate { it.index to it.timeBase })
         } catch (t: Throwable) {
+            // Same reason close() restores them: a half-opened reader must not leave the demuxer
+            // skipping streams nobody selected.
+            restoreStreamDiscardDefaults()
             endPacketReader()
             throw t
         }
@@ -545,6 +581,8 @@ private fun buildStreams(ctx: CPointer<AVFormatContext>): List<StreamInfo> {
                 sampleRate = ffkmp_codecpar_sample_rate(par),
                 channels = ffkmp_codecpar_channels(par),
                 sampleFormat = sampleFormatFromAv(ffkmp_codecpar_format(par)),
+                // 0 from the helper means there is no mask to report, which is what null says here.
+                channelLayoutMask = ffkmp_codecpar_ch_layout_mask(par).takeIf { it != 0L },
             ) else null,
             metadata = readMetadata(ffkmp_stream_metadata(s)),
             disposition = readDisposition(ffkmp_stream_disposition(s)),

@@ -352,6 +352,13 @@ internal class EncoderCore(
     private val streamIndex = ffkmp_stream_index(stream)
     private var lastPts = Long.MIN_VALUE
     private var basePts = Long.MIN_VALUE
+
+    /**
+     * Sample count of the audio frame that produced [lastPts], which is how far the timeline runs
+     * past it. Kept in a field because the step a synthetic timestamp needs is the PREVIOUS frame's
+     * duration, and by the time the next frame arrives that number is gone.
+     */
+    private var lastSampleCount = 0
     var framesEncoded: Long = 0; private set
 
     /** Where the output timeline currently ends, in microseconds. 0 until the first frame. */
@@ -435,16 +442,17 @@ internal class EncoderCore(
      * timeline to start at zero (trimmed inputs would otherwise produce a file whose first
      * frame sits at the trim offset). The base offset is SHARED across the sink's streams
      * ([MediaSink.claimBaseMicros]) so the relative A/V offset survives the rebase. Frames
-     * with no pts fall back to a synthetic timeline (frame count for video, accumulated
-     * samples for audio). Output is forced strictly monotonic because both libx264 and muxers
-     * reject non-increasing pts.
+     * with no pts fall back to a synthetic timeline: one tick per frame for video, and for audio
+     * each frame starting where the previous one ended ([stepPastLastPts]). Output is forced
+     * strictly monotonic because both libx264 and muxers reject non-increasing pts.
      */
     private fun restampPts(frame: Frame) {
         val raw = ffkmp_frame_pts(frame.nativeFrame)
         val sourceTb = frame.streamTimeBase
+        val sampleCount = if (isAudio) ffkmp_frame_nb_samples(frame.nativeFrame) else 0
         var pts = if (raw == FrameInfo.NOPTS) {
             if (lastPts == Long.MIN_VALUE) 0
-            else lastPts + if (isAudio) ffkmp_frame_nb_samples(frame.nativeFrame).toLong().coerceAtLeast(1) else 1
+            else lastPts + stepPastLastPts()
         } else {
             val rescaled = ffkmp_rescale_q(raw, sourceTb.num, sourceTb.den, codecTimeBase.num, codecTimeBase.den)
             if (basePts == Long.MIN_VALUE) {
@@ -456,18 +464,26 @@ internal class EncoderCore(
         }
         // Force strictly increasing output. The step matters: the codec time-base is 1/sample_rate
         // for audio, so a one-TICK bump would collapse a whole 1024-sample AAC frame into a single
-        // sample and desync everything after it. Advance by the frame's own duration instead.
+        // sample and desync everything after it. Advance by the duration of the frame already
+        // written instead, which is exactly where this one begins.
         if (lastPts != Long.MIN_VALUE && pts <= lastPts) {
-            val step = if (isAudio) {
-                ffkmp_frame_nb_samples(frame.nativeFrame).toLong().coerceAtLeast(1)
-            } else {
-                1L
-            }
-            pts = lastPts + step
+            pts = lastPts + stepPastLastPts()
         }
         lastPts = pts
+        lastSampleCount = sampleCount
         ffkmp_frame_set_pts(frame.nativeFrame, pts)
     }
+
+    /**
+     * Where the timeline stands after [lastPts], in codec time-base ticks: the duration of the
+     * frame that SET lastPts, never the duration of the one now being stamped. Audio measures that
+     * in samples and its codec time-base is 1/sample_rate, so 960 samples followed by 1024 must
+     * land at 0 and 960, because 960 is where the first frame ended; stepping by the current
+     * frame's count would put the second at 1024 and shift everything after it. Video steps one
+     * tick, its time-base being the inverse of the frame rate.
+     */
+    private fun stepPastLastPts(): Long =
+        if (isAudio) lastSampleCount.toLong().coerceAtLeast(1) else 1L
 
     /**
      * `avcodec_send_frame` returning EAGAIN means the output queue is full; drain packets and

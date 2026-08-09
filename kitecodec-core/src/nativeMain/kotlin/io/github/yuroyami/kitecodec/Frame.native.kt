@@ -40,8 +40,10 @@ import ffmpeg.ffkmp_packet_data
 import ffmpeg.ffkmp_packet_free
 import ffmpeg.ffkmp_packet_size
 import ffmpeg.ffkmp_packet_unref
+import ffmpeg.ffkmp_rescale_q
 import ffmpeg.ffkmp_samples_copy_to_buffer
 import ffmpeg.ffkmp_samples_get_buffer_size
+import ffmpeg.ffkmp_frame_ch_layout_mask
 import ffmpeg.ffkmp_frame_chroma_location
 import ffmpeg.ffkmp_frame_color_primaries
 import ffmpeg.ffkmp_frame_color_range
@@ -98,6 +100,11 @@ public actual class Frame internal constructor(
             sampleRate    = ffkmp_frame_sample_rate(nativeFrame),
             channelCount  = if (streamType == MediaType.Audio) ffkmp_frame_channels(nativeFrame) else 0,
             sampleFormat  = if (streamType == MediaType.Audio) sampleFormatFromAv(ffkmp_frame_format(nativeFrame)) else SampleFormat.None,
+            // 0 from the helper means there is no mask to report (unspecified, custom or
+            // ambisonic order), which is what null says here.
+            channelLayoutMask = if (streamType == MediaType.Audio) {
+                ffkmp_frame_ch_layout_mask(nativeFrame).takeIf { it != 0L }
+            } else null,
             duration      = ffkmp_frame_duration(nativeFrame),
             isKeyframe    = ffkmp_frame_is_keyframe(nativeFrame) != 0,
             color         = if (streamType == MediaType.Video) readColorInfo() else ColorInfo.Unspecified,
@@ -342,6 +349,38 @@ public actual class Frame internal constructor(
         }
     }
 }
+
+/**
+ * [FrameInfo.pts] converted to microseconds on the stream's own timeline. Null when the frame
+ * carries no timestamp.
+ *
+ * The conversion is not `pts * 1_000_000 * num / den`. That form overflows a 64 bit signed multiply
+ * on a fine time base: a nanosecond-timescale mp4 passes it after about two and a half hours. This
+ * one goes through `av_rescale_q`, which carries a 128 bit intermediate.
+ *
+ * The value is on the stream's timeline, so it still includes the container's start offset. A
+ * player that shows a position starting at zero subtracts [MediaSource.startTimeMicros] once, at
+ * the boundary where it takes ownership of the timeline.
+ */
+@KiteCodecLowLevelApi
+public val Frame.ptsMicros: Long?
+    get() = info.let {
+        if (it.hasPts) ffkmp_rescale_q(it.pts, it.timeBase.num, it.timeBase.den, 1, 1_000_000) else null
+    }
+
+/**
+ * [FrameInfo.duration] converted to microseconds. Null when the decoder gave none.
+ *
+ * A duration is an interval, not a point on a timeline, so no start offset applies to it. Zero
+ * means unknown, which reads as null here rather than as a frame that lasts no time at all.
+ */
+@KiteCodecLowLevelApi
+public val Frame.durationMicros: Long?
+    get() = info.let {
+        if (it.duration > 0) {
+            ffkmp_rescale_q(it.duration, it.timeBase.num, it.timeBase.den, 1, 1_000_000)
+        } else null
+    }
 
 internal object FrameOps {
     /** Allocate a fresh AVFrame wrapper that owns its pointer. */

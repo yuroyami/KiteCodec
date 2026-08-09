@@ -59,7 +59,8 @@ import kotlinx.cinterop.ExperimentalForeignApi
  * Taking ownership costs nothing. The payload is reference counted inside FFmpeg and moved rather
  * than copied, so this is a pointer swap and not a memcpy of the compressed data.
  *
- * Close it exactly once. An unclosed packet leaks its buffer.
+ * Close it exactly once. An unclosed packet leaks its buffer, and reading anything off it after that
+ * throws rather than dereferencing memory the allocator has taken back.
  */
 @KiteCodecLowLevelApi
 @OptIn(ExperimentalForeignApi::class)
@@ -71,28 +72,71 @@ public class Packet internal constructor(
 
     private var closed = false
 
-    public val streamIndex: Int get() = ffkmp_packet_stream_index(native)
+    /**
+     * Rejects use after [close].
+     *
+     * Every getter that reads native memory calls this first, and so does [StreamDecoder.send] for
+     * the packet it is offered. [close] frees the `AVPacket`, so without the check a getter reads
+     * memory the allocator is free to hand to something else and returns a plausible number instead
+     * of failing. The derived getters ([hasPts], [ptsMicros], [dtsMicros], [durationMicros]) read
+     * through the checked ones, so they are covered by those.
+     */
+    internal fun checkOpen() {
+        check(!closed) { "Packet is closed" }
+    }
+
+    public val streamIndex: Int get() { checkOpen(); return ffkmp_packet_stream_index(native) }
 
     /** Presentation timestamp in [timeBase] units, or [FrameInfo.NOPTS] when the container gave none. */
-    public val pts: Long get() = ffkmp_packet_pts(native)
+    public val pts: Long get() { checkOpen(); return ffkmp_packet_pts(native) }
 
-    public val dts: Long get() = ffkmp_packet_dts(native)
+    public val dts: Long get() { checkOpen(); return ffkmp_packet_dts(native) }
 
     /** Duration in [timeBase] units. 0 when unknown, which is common and not an error. */
-    public val duration: Long get() = ffkmp_packet_duration(native)
+    public val duration: Long get() { checkOpen(); return ffkmp_packet_duration(native) }
 
-    public val isKeyframe: Boolean get() = ffkmp_packet_is_keyframe(native) != 0
+    public val isKeyframe: Boolean get() { checkOpen(); return ffkmp_packet_is_keyframe(native) != 0 }
 
-    public val sizeBytes: Int get() = ffkmp_packet_size(native)
+    public val sizeBytes: Int get() { checkOpen(); return ffkmp_packet_size(native) }
 
     /** Byte offset in the container, or -1. Useful for progress when timestamps are broken. */
-    public val bytePosition: Long get() = ffkmp_packet_pos(native)
+    public val bytePosition: Long get() { checkOpen(); return ffkmp_packet_pos(native) }
 
     public val hasPts: Boolean get() = pts != FrameInfo.NOPTS
 
-    /** [pts] converted to microseconds on the stream's own timeline. Null when there is no pts. */
+    /**
+     * [pts] converted to microseconds on the stream's own timeline. Null when there is no pts.
+     *
+     * The conversion is not `pts * 1_000_000 * num / den`. That form overflows a 64 bit signed
+     * multiply on a fine time base: a nanosecond-timescale mp4 passes it after about two and a
+     * half hours. This one goes through `av_rescale_q`, which carries a 128 bit intermediate.
+     */
     public val ptsMicros: Long?
         get() = if (hasPts) ffmpeg.ffkmp_rescale_q(pts, timeBase.num, timeBase.den, 1, 1_000_000) else null
+
+    /**
+     * [dts] converted to microseconds on the stream's own timeline. Null when there is no dts.
+     *
+     * Decode timestamps run behind presentation timestamps wherever frames are reordered, which is
+     * why a player watches them: they are what the demuxer's read position actually is. Overflow
+     * safe on the same grounds as [ptsMicros].
+     */
+    public val dtsMicros: Long?
+        get() = if (dts != FrameInfo.NOPTS) {
+            ffmpeg.ffkmp_rescale_q(dts, timeBase.num, timeBase.den, 1, 1_000_000)
+        } else null
+
+    /**
+     * [duration] converted to microseconds. Null when the container gave none.
+     *
+     * A duration is an interval, not a point on a timeline, so nothing about the container's start
+     * offset applies to it. Zero means unknown, which is common and not an error, and reads as null
+     * here rather than as an instantaneous packet.
+     */
+    public val durationMicros: Long?
+        get() = if (duration > 0) {
+            ffmpeg.ffkmp_rescale_q(duration, timeBase.num, timeBase.den, 1, 1_000_000)
+        } else null
 
     override fun close() {
         if (closed) return
@@ -210,6 +254,11 @@ public class PacketReader internal constructor(
         if (closed) return
         closed = true
         ffkmp_packet_free(scratch)
+        // Before releasing the source's reader slot, undo this reader's stream selection. The
+        // discard flags belong to the demuxer and outlive the reader, so leaving them set would
+        // make the batch decode API return zero frames for every stream this reader skipped, with
+        // no error to explain it.
+        source.restoreStreamDiscardDefaults()
         source.endPacketReader()
     }
 }
@@ -241,13 +290,30 @@ public class StreamDecoder internal constructor(
     private var closed = false
 
     /**
+     * True once this decoder has emitted its last frame and will emit no more without a [flush].
+     *
+     * [receive] returns null for two different reasons and a player must tell them apart: the
+     * decoder needs more input, or the stream is over. Without this the caller can only guess, and
+     * the guess that ends playback on the first empty poll cuts the last frames off every file.
+     * Set when [receive] sees end of stream, which happens after `send(null)` has been drained.
+     * Cleared by [flush], because a flushed decoder accepts input again.
+     */
+    public var isDrained: Boolean = false
+        private set
+
+    /**
      * Offers a packet, or null to begin the end-of-stream drain.
+     *
+     * A closed packet is rejected. Its payload is gone, so sending it would hand the decoder a
+     * dangling pointer, and a queue that closed a packet it still owed the decoder is a bug worth
+     * hearing about at the call that made it rather than as corrupt output later.
      *
      * @return true when the packet was consumed. False means the decoder's output queue is full:
      *         call [receive] until it returns null, then offer this same packet again.
      */
     public fun send(packet: Packet?): Boolean {
         check(!closed) { "StreamDecoder is closed" }
+        packet?.checkOpen()
         val rc = avcodec_send_packet(codecCtx, packet?.native)
         return when {
             rc == 0 -> true
@@ -265,14 +331,18 @@ public class StreamDecoder internal constructor(
     /**
      * Takes the next decoded frame.
      *
-     * @return an owned frame, or null when the decoder needs more input. The frame is an O(1) clone,
-     *         so it shares its buffers with nothing the decoder will reuse, and the caller may queue
-     *         it. Close it exactly once.
+     * @return an owned frame, or null when the decoder needs more input, or when it is drained and
+     *         [isDrained] says so. The frame is an O(1) clone, so it shares its buffers with nothing
+     *         the decoder will reuse, and the caller may queue it. Close it exactly once.
      */
     public fun receive(): Frame? {
         check(!closed) { "StreamDecoder is closed" }
         val rc = avcodec_receive_frame(codecCtx, landing)
-        if (rc == FFErrors.EAGAIN || rc == FFErrors.EOF) return null
+        if (rc == FFErrors.EOF) {
+            isDrained = true
+            return null
+        }
+        if (rc == FFErrors.EAGAIN) return null
         // Same tolerance as the send side: a frame that could not be reconstructed from the packets
         // seen so far is skipped rather than fatal.
         if (rc == FFmpegError.AVERROR_INVALIDDATA) return null
@@ -297,10 +367,13 @@ public class StreamDecoder internal constructor(
      *
      * Required after every seek. Without it the decoder emits frames reconstructed from packets
      * belonging to the position the viewer just left, which looks like a flash of the wrong picture.
+     *
+     * Clears [isDrained]: the decoder is ready for input again, wherever the caller seeks to.
      */
     public fun flush() {
         check(!closed) { "StreamDecoder is closed" }
         ffkmp_codecctx_flush(codecCtx)
+        isDrained = false
     }
 
     override fun close() {
@@ -357,6 +430,10 @@ public class StreamDecoder internal constructor(
  * frame: 3.11 MB for 1080p and 24.9 MB for 4K 10-bit, so between 187 MB/s and 1.5 GB/s at 60 frames
  * a second, plus one allocation per frame. That is right for a thumbnail and unusable for playback.
  *
+ * @throws IllegalStateException when the frame is not a video frame. Rows and a row pitch are
+ *         picture concepts: an audio frame's format is a SAMPLE format, so reading its planes as
+ *         picture planes would report the geometry of whatever pixel format shares that ordinal.
+ *         Use [Frame.copyPlanesToByteArray] for audio samples.
  * @throws IllegalStateException when the frame lives in hardware memory, which has no readable
  *         planes. Check [FrameInfo.isHardware] first, and use [Frame.hardwareSurface] instead.
  */
@@ -365,6 +442,10 @@ public class StreamDecoder internal constructor(
 public fun <R> Frame.withPlanes(
     block: (planes: List<CPointer<UByteVar>>, strides: List<Int>, heights: List<Int>) -> R,
 ): R {
+    check(info.type == MediaType.Video) {
+        "withPlanes reads a video frame's picture planes, and this is a ${info.type} frame. Audio " +
+            "samples are not laid out in rows: use copyPlanesToByteArray."
+    }
     check(!info.isHardware) {
         "This frame lives in hardware memory and has no readable planes. Use hardwareSurface, or " +
             "download it first."

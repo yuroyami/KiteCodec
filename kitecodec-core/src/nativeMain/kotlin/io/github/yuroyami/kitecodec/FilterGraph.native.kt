@@ -4,6 +4,7 @@ import ffmpeg.AVFilterContext
 import ffmpeg.AVFilterGraph
 import ffmpeg.ffkmp_buffersink_set_frame_size
 import ffmpeg.ffkmp_buffersink_time_base
+import ffmpeg.ffkmp_frame_unref
 import ffmpeg.ffkmp_graph_build_audio
 import ffmpeg.ffkmp_graph_build_audio_multi
 import ffmpeg.ffkmp_graph_build_video
@@ -27,6 +28,12 @@ import kotlinx.cinterop.value
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
+
+/**
+ * Consecutive send attempts that drain nothing before the graph is declared starved. Two: the
+ * first EAGAIN gets a real chance to make room, the second proves the graph cannot.
+ */
+private const val MAX_STARVED_ATTEMPTS = 2
 
 public actual class FilterGraph internal constructor(
     private val graph: CPointer<AVFilterGraph>,
@@ -65,13 +72,8 @@ public actual class FilterGraph internal constructor(
         val src = srcs.getOrNull(index)
             ?: throw IllegalArgumentException("Input $index out of range (graph has ${srcs.size} inputs)")
         try {
-            // EAGAIN from buffersrc means the frame was not consumed. Drain the sink to
-            // make room, then retry the same frame (dropping it would silently lose frames).
-            while (true) {
-                val sendRc = ffkmp_graph_send(src, frame.nativeFrame)
-                if (sendRc >= 0) break
-                if (sendRc == FFErrors.EAGAIN) { drainTo(onOutput); continue }
-                throw FFmpegException(avError(sendRc))
+            sendUntilAccepted(index, eofIsDone = false, onOutput = onOutput) {
+                ffkmp_graph_send(src, frame.nativeFrame)
             }
         } finally {
             frame.close()
@@ -83,13 +85,57 @@ public actual class FilterGraph internal constructor(
         check(!closed.value) { "FilterGraph is closed" }
         val src = srcs.getOrNull(index)
             ?: throw IllegalArgumentException("Input $index out of range (graph has ${srcs.size} inputs)")
-        while (true) {
-            val rc = ffkmp_graph_send(src, null)
-            if (rc >= 0 || rc == FFErrors.EOF) break
-            if (rc == FFErrors.EAGAIN) { drainTo(onOutput); continue }
-            throw FFmpegException(avError(rc))
-        }
+        // A pad already at EOF is done, not broken, so a second flush is a no-op.
+        sendUntilAccepted(index, eofIsDone = true, onOutput = onOutput) { ffkmp_graph_send(src, null) }
         drainTo(onOutput)
+    }
+
+    /**
+     * Repeat [send] until the graph accepts it, draining the sink between attempts.
+     *
+     * EAGAIN from a buffersrc means the pad did not consume what it was given, so the SAME send
+     * must be retried; dropping it would silently lose a frame. What the retry may not do is run
+     * forever. In a multi-input graph an empty sink often means "this filter is waiting on the
+     * OTHER pad": `overlay` and `amix` hold their output until every input has something, so
+     * draining frees nothing and the retry never ends. Two attempts in a row that produce no
+     * output therefore stop with a typed error naming that condition instead of spinning. Fair
+     * scheduling across pads, which would let the caller be told WHICH pad to feed, is a larger
+     * design and not this function's job.
+     *
+     * [send] is a parameter rather than an inlined call so both entry points obey one rule, and so
+     * the starvation branch can be driven in a test: the FFmpeg this binds to answers a buffersrc
+     * write with 0 or a hard error and never with EAGAIN, which leaves the branch unreachable from
+     * the outside while still being the thing that has to terminate.
+     */
+    internal fun sendUntilAccepted(
+        index: Int,
+        eofIsDone: Boolean,
+        onOutput: (Frame) -> Unit,
+        send: () -> Int,
+    ) {
+        var starvedAttempts = 0
+        while (true) {
+            val rc = send()
+            if (rc >= 0) return
+            if (eofIsDone && rc == FFErrors.EOF) return
+            if (rc != FFErrors.EAGAIN) throw FFmpegException(avError(rc))
+            if (drainTo(onOutput)) {
+                starvedAttempts = 0
+            } else if (++starvedAttempts >= MAX_STARVED_ATTEMPTS) {
+                throw FFmpegException(FFmpegError.InvalidArgument(0, starvedInputMessage(index)))
+            }
+        }
+    }
+
+    private fun starvedInputMessage(index: Int): String = if (srcs.size > 1) {
+        "Filter graph input $index would not take a frame and the sink produced nothing, twice in a " +
+            "row. This graph has ${srcs.size} inputs, and a multi-input filter such as overlay or " +
+            "amix emits nothing until every input has frames, so feeding input $index alone starves " +
+            "it: it can neither accept more here nor produce anything. Feed every input, and flush " +
+            "the ones whose source has ended."
+    } else {
+        "Filter graph input $index would not take a frame and the sink produced nothing, twice in a " +
+            "row, so the frame can never be consumed and retrying would not end."
     }
 
     /** Single-input convenience used by Transcoder. */
@@ -100,13 +146,30 @@ public actual class FilterGraph internal constructor(
         for (i in srcs.indices) flushInput(i, onOutput)
     }
 
-    private fun drainTo(onOutput: (Frame) -> Unit) {
+    /**
+     * Hand every frame the sink has ready to [onOutput], and report whether any came out at all,
+     * which is how [sendUntilAccepted] tells "the graph made room" apart from "the graph is starved".
+     *
+     * The landing frame is released after EVERY callback, with no exception for one that returns
+     * quietly. `av_buffersink_get_frame` MOVES its result into the destination and requires that
+     * destination to arrive empty; a callback that neither took ownership nor threw would otherwise
+     * leave the previous frame's buffers sitting in it, and the next receive would overwrite and
+     * leak them. A consumer that needs the data after its callback takes a [Frame.copy], which is
+     * an O(1) reference bump.
+     */
+    private fun drainTo(onOutput: (Frame) -> Unit): Boolean {
         val landing = outFrame()
+        var produced = false
         while (true) {
             val rc = ffkmp_graph_receive(sink, landing.nativeFrame)
-            if (rc == FFErrors.EAGAIN || rc == FFErrors.EOF) return
+            if (rc == FFErrors.EAGAIN || rc == FFErrors.EOF) return produced
             if (rc < 0) throw FFmpegException(avError(rc))
-            onOutput(FrameOps.wrap(landing.nativeFrame, -1, inputType, outputTimeBase))
+            produced = true
+            try {
+                onOutput(FrameOps.wrap(landing.nativeFrame, -1, inputType, outputTimeBase))
+            } finally {
+                ffkmp_frame_unref(landing.nativeFrame)
+            }
         }
     }
 

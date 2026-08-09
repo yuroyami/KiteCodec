@@ -819,6 +819,23 @@ static inline int ffkmp_fmt_seek_file(AVFormatContext *ctx, int stream_index,
     return avformat_seek_file(ctx, stream_index, min_ts, ts, max_ts, flags);
 }
 
+/* Whether this input can seek at all, read from the input itself instead of assumed. A player
+   that assumes yes offers a seek bar that does nothing on a pipe, a capture device or a live
+   stream, and hands libavformat a request it answers with an error on every drag.
+   Two things must hold. The demuxer must not have declared the input unseekable, which is what
+   AVFMTCTX_UNSEEKABLE means, and the byte stream must report AVIO_SEEKABLE_NORMAL. A
+   protocol-less input (AVFMT_NOFILE, so a device or a capture) has no byte stream at all and
+   answers 0. That last case is conservative: a demuxer may implement its own seek without a
+   seekable byte stream, but since FFmpeg 7 the function pointer that would prove it lives in a
+   private struct, so it cannot be read from the public headers. Under-promising is the safe
+   direction for a capability. */
+static inline int ffkmp_fmt_is_seekable(AVFormatContext *c) {
+    if (!c) return 0;
+    if (c->ctx_flags & AVFMTCTX_UNSEEKABLE) return 0;
+    if (!c->pb) return 0;
+    return (c->pb->seekable & AVIO_SEEKABLE_NORMAL) ? 1 : 0;
+}
+
 /* --- Stream selection at the demuxer --- */
 
 /* AVDISCARD_ALL on an unselected stream makes libavformat skip its packets instead of the caller
@@ -834,11 +851,6 @@ static inline int ffkmp_disposition_forced(void)            { return AV_DISPOSIT
 static inline int ffkmp_disposition_hearing_impaired(void)  { return AV_DISPOSITION_HEARING_IMPAIRED; }
 static inline int ffkmp_disposition_visual_impaired(void)   { return AV_DISPOSITION_VISUAL_IMPAIRED; }
 static inline int ffkmp_disposition_attached_pic(void)      { return AV_DISPOSITION_ATTACHED_PIC; }
-
-static inline void ffkmp_stream_r_frame_rate(AVStream *s, int *n, int *d) {
-    if (!s || !n || !d) { if (n) *n = 0; if (d) *d = 1; return; }
-    *n = s->r_frame_rate.num; *d = s->r_frame_rate.den ? s->r_frame_rate.den : 1;
-}
 
 /* Rotation, in degrees, from the display matrix a phone writes into its recordings. Without this
    every video shot in portrait plays on its side. av_display_rotation_get returns the angle the
@@ -885,6 +897,25 @@ static inline void ffkmp_frame_sample_aspect_ratio(AVFrame *f, int *n, int *d) {
     *d = f->sample_aspect_ratio.den ? f->sample_aspect_ratio.den : 1;
 }
 
+/* --- Which speaker each channel belongs to --- */
+
+/* A channel count is not a layout. Six channels are 5.1 with side surrounds or 5.1 with back
+   surrounds, and a downmix that guesses wrong sends the surround content to the wrong speakers.
+   The mask carries one bit per speaker, so it answers the question a count cannot.
+   0 means there is no mask to report: the layout is unspecified (the container never said), a
+   custom order (per-channel positions, which only the extended layout describes) or ambisonic.
+   A caller that gets 0 must fall back to the count and say that it did. */
+static inline int64_t ffkmp_ch_layout_mask_(const AVChannelLayout *l) {
+    if (!l || l->order != AV_CHANNEL_ORDER_NATIVE) return 0;
+    return (int64_t)l->u.mask;
+}
+static inline int64_t ffkmp_frame_ch_layout_mask(AVFrame *f) {
+    return f ? ffkmp_ch_layout_mask_(&f->ch_layout) : 0;
+}
+static inline int64_t ffkmp_codecpar_ch_layout_mask(AVCodecParameters *p) {
+    return p ? ffkmp_ch_layout_mask_(&p->ch_layout) : 0;
+}
+
 /* --- Reaching a frame's pixels without copying them --- */
 
 /* A plane pointer and its row pitch. This is what a renderer uploads from. The alternative, the
@@ -906,9 +937,12 @@ static inline int ffkmp_frame_plane_count(AVFrame *f) {
 }
 
 /* The height of plane p in rows, which for a chroma plane of a subsampled format is not the
-   frame height. Uploading with the wrong value is the other half of the stride mistake. */
+   frame height. Uploading with the wrong value is the other half of the stride mistake.
+   A frame with no width is not a picture: on an audio frame `format` holds a sample format, so
+   reading it as a pixel format would answer with the subsampling of whatever pixel format shares
+   that ordinal. 0 rows is the only honest answer. */
 static inline int ffkmp_frame_plane_height(AVFrame *f, int p) {
-    if (!f || p < 0) return 0;
+    if (!f || p < 0 || f->width == 0) return 0;
     const AVPixFmtDescriptor *d = av_pix_fmt_desc_get((enum AVPixelFormat)f->format);
     if (!d) return 0;
     if (p == 1 || p == 2) return AV_CEIL_RSHIFT(f->height, d->log2_chroma_h);

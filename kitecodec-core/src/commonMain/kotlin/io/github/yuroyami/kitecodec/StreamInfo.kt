@@ -42,6 +42,16 @@ public data class AudioStreamInfo(
     val sampleRate: Int,
     val channels: Int,
     val sampleFormat: SampleFormat,
+    /**
+     * Which speaker each channel belongs to, as FFmpeg's native order mask: one bit per speaker.
+     *
+     * [channels] alone cannot answer this. Six channels are 5.1 with side surrounds or 5.1 with
+     * back surrounds, and a downmix that guesses wrong sends the surround content to the wrong
+     * speakers. Null when the container declared no layout, or declared one no mask can describe
+     * (a custom channel order, or ambisonics). A caller that gets null falls back to [channels]
+     * and should say that it did.
+     */
+    val channelLayoutMask: Long? = null,
 )
 
 /** Immutable per-frame metadata snapshot: no native handle, safe to hold forever. */
@@ -57,6 +67,13 @@ public data class FrameInfo(
     val sampleRate: Int = 0,
     val channelCount: Int = 0,
     val sampleFormat: SampleFormat = SampleFormat.None,
+    /**
+     * Which speaker each channel of this audio frame belongs to, as FFmpeg's native order mask.
+     *
+     * Same meaning and same null cases as [AudioStreamInfo.channelLayoutMask]. It is repeated per
+     * frame because the decoder, not the container, is the authority on what it produced.
+     */
+    val channelLayoutMask: Long? = null,
     /** The decoder's own duration for this frame, in [timeBase] units. 0 when it gave none. */
     val duration: Long = 0,
     /** True when this frame can be decoded without any earlier frame. */

@@ -26,6 +26,19 @@ public expect class MediaSource : AutoCloseable {
      */
     public val startTimeMicros: Long
 
+    /**
+     * Whether this input can seek at all, read from the input rather than assumed.
+     *
+     * False for a pipe, a capture device and anything else whose bytes only move forward. A player
+     * must ask before it offers a seek bar, because on such an input every [seekMicros] and every
+     * `PacketReader.seek` fails.
+     *
+     * It is conservative in one direction: a demuxer that implements its own seek without a
+     * seekable byte stream reports false here, because since FFmpeg 7 nothing in the public
+     * headers proves otherwise. It never reports true for an input that cannot seek.
+     */
+    public val isSeekable: Boolean
+
     public val primaryVideo: StreamInfo?
     public val primaryAudio: StreamInfo?
 
