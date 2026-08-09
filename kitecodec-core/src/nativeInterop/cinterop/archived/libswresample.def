@@ -1,7 +1,0 @@
-package = ffmpeg.libswresample
-language = C
-headers = libswresample/swresample.h libswresample/version.h
-headerFilter = libswresample/* libavutil/*
-linkerOpts.osx = -lswresample
-linkerOpts.linux = -lswresample
-linkerOpts.mingw = -lswresample

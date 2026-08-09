@@ -7,26 +7,29 @@
  *
  * What "ownership helper" means here, stated so the coverage claim is checkable. An exported
  * helper belongs in this suite when its body reaches a libav function that allocates a heap
- * object, frees one, or moves a reference. Applied mechanically to src/kitecodec_helpers.c that
- * selects 43 of the 172 exported helpers, listed below by section, and every one of them is
- * called by a case here. Plan section 15.2 says 29 and never enumerates them; 43 is a superset
+ * object, frees one, or moves a reference. Applied mechanically to the nine src/helpers_*.c units
+ * that selects 39 of the 157 exported helpers, listed below by section, and every one of them is
+ * called by a case here. Plan section 15.2 says 29 and never enumerates them; 39 is a superset
  * of any 29 that reading could pick, so the plan's requirement is met either way, and the
  * difference is recorded in the run report rather than silently resolved. The two internal
  * helpers ffkmp_graph_finish_ and ffkmp_graph_finish_multi_ also allocate
  * (avfilter_inout_alloc, av_strdup); they are static and unreachable by name, so they are
  * covered through the four graph builders that call them.
  *
- *   Frames  (9)  frame_alloc, frame_free, frame_unref, frame_ref, frame_get_buffer,
- *                frame_make_writable, frame_clone, frame_convert_pixfmt,
- *                frame_set_ch_layout_default
- *   Packets (5)  packet_alloc, packet_free, packet_unref, packet_ref, packet_move_ref
+ * The set was 43 until B1.4, which deleted four of them as dead exported surface: frame_ref,
+ * frame_make_writable, packet_ref and fmt_alloc_output, none of which any Kotlin file imported
+ * (register item B1-08). Their cases went with them, except that container inference from the
+ * path extension moved to ffkmp_fmt_alloc_output2, which takes the same path with a NULL format.
+ *
+ *   Frames  (7)  frame_alloc, frame_free, frame_unref, frame_get_buffer, frame_clone,
+ *                frame_convert_pixfmt, frame_set_ch_layout_default
+ *   Packets (4)  packet_alloc, packet_free, packet_unref, packet_move_ref
  *   Codecs  (8)  codecctx_alloc, codecctx_free, codecctx_open, codecctx_from_par,
  *                codecctx_set_audio, codecctx_set_opt, codecpar_from_context,
  *                codecpar_copy_for_mux
  *   Demux   (4)  fmt_open_input, fmt_close_input, fmt_find_stream_info, fmt_read_frame
- *   Mux    (10)  fmt_alloc_output, fmt_alloc_output2, fmt_set_opt, fmt_set_metadata,
- *                fmt_new_stream, fmt_io_open, fmt_write_header, fmt_write_frame,
- *                fmt_write_trailer, fmt_free_output
+ *   Mux     (9)  fmt_alloc_output2, fmt_set_opt, fmt_set_metadata, fmt_new_stream, fmt_io_open,
+ *                fmt_write_header, fmt_write_frame, fmt_write_trailer, fmt_free_output
  *   Graphs  (7)  graph_build_video, graph_build_audio, graph_build_video_multi,
  *                graph_build_audio_multi, graph_free, graph_send, graph_receive
  *
@@ -276,66 +279,6 @@ static void case_frame_get_buffer_and_unref(int measure)
     ffkmp_frame_free(f);
 }
 
-static void case_frame_ref_shares_one_buffer(int measure)
-{
-    AVFrame *src = video_frame(64, 64, AV_PIX_FMT_YUV420P);
-    AVFrame *dst = ffkmp_frame_alloc();
-    kc_alloc_counts before;
-    KC_NOT_NULL(dst);
-    kc_alloc_snapshot(&before);
-    KC_EQ_INT(ffkmp_frame_ref(dst, src), 0);
-    /* A reference, not a copy: both frames point at the same pixels. If this ever starts
-     * copying, the pointers diverge and every plane view in Kotlin silently doubles its cost. */
-    KC_EQ_PTR(ffkmp_frame_plane(dst, 0), ffkmp_frame_plane(src, 0));
-    KC_EQ_INT(ffkmp_frame_width(dst), 64);
-    ffkmp_frame_unref(dst);
-    /* The source keeps its pixels: dropping one reference must not free a buffer another
-     * reference still holds. */
-    KC_NOT_NULL(ffkmp_frame_plane(src, 0));
-    OWN_LIVE_EXACTLY(measure, &before, 0, "net");
-    ffkmp_frame_free(dst);
-    ffkmp_frame_free(src);
-}
-
-static void case_frame_make_writable_unshares(int measure)
-{
-    kc_alloc_counts before;
-    kc_alloc_counts at_write;
-    AVFrame *src;
-    AVFrame *dst;
-    const uint8_t *shared;
-    kc_alloc_snapshot(&before);
-    src = video_frame(64, 64, AV_PIX_FMT_YUV420P);
-    dst = ffkmp_frame_alloc();
-    KC_NOT_NULL(dst);
-    KC_EQ_INT(ffkmp_frame_ref(dst, src), 0);
-    shared = ffkmp_frame_plane(dst, 0);
-    kc_alloc_snapshot(&at_write);
-    KC_EQ_INT(ffkmp_frame_make_writable(dst), 0);
-    /* Two references existed, so make_writable owes a private copy. Same pointer would mean a
-     * writer is about to corrupt the other holder's pixels. */
-    KC_CHECKF(ffkmp_frame_plane(dst, 0) != shared,
-              "make_writable kept the shared buffer at %p", (const void *)shared);
-    OWN_LIVE_POSITIVE(measure, &at_write, "private_copy");
-    ffkmp_frame_free(dst);
-    ffkmp_frame_free(src);
-    OWN_LIVE_EXACTLY(measure, &before, 0, "net");
-}
-
-static void case_frame_make_writable_keeps_a_sole_owner(int measure)
-{
-    AVFrame *f = video_frame(64, 64, AV_PIX_FMT_YUV420P);
-    kc_alloc_counts before;
-    const uint8_t *sole = ffkmp_frame_plane(f, 0);
-    kc_alloc_snapshot(&before);
-    KC_EQ_INT(ffkmp_frame_make_writable(f), 0);
-    /* One reference, so nothing to unshare and nothing to allocate. A copy here would be a
-     * per-frame allocation on the decode path. */
-    KC_EQ_PTR(ffkmp_frame_plane(f, 0), sole);
-    OWN_LIVE_EXACTLY(measure, &before, 0, "no_copy");
-    ffkmp_frame_free(f);
-}
-
 static void case_frame_clone(int measure)
 {
     AVFrame *src = video_frame(48, 32, AV_PIX_FMT_YUV420P);
@@ -463,23 +406,6 @@ static void case_packet_unref_releases_payload(int measure)
     KC_NULL(ffkmp_packet_data(p));
     OWN_LIVE_EXACTLY(measure, &before, 1, "packet_only");
     ffkmp_packet_free(p);
-}
-
-static void case_packet_ref_shares_payload(int measure)
-{
-    AVPacket *src = filled_packet(2048);
-    AVPacket *dst = ffkmp_packet_alloc();
-    kc_alloc_counts before;
-    KC_NOT_NULL(dst);
-    kc_alloc_snapshot(&before);
-    KC_EQ_INT(ffkmp_packet_ref(dst, src), 0);
-    KC_EQ_PTR(ffkmp_packet_data(dst), ffkmp_packet_data(src));
-    KC_EQ_INT(ffkmp_packet_size(dst), 2048);
-    ffkmp_packet_unref(dst);
-    KC_EQ_INT(ffkmp_packet_size(src), 2048);
-    OWN_LIVE_EXACTLY(measure, &before, 0, "net");
-    ffkmp_packet_free(dst);
-    ffkmp_packet_free(src);
 }
 
 static void case_packet_move_ref_transfers_payload(int measure)
@@ -708,12 +634,17 @@ static void case_fmt_close_input_tolerates_nothing_to_close(int measure)
     OWN_LIVE_EXACTLY(measure, &before, 0, "net");
 }
 
-static void case_fmt_alloc_output_infers_the_container(int measure)
+/* Container inference from the path extension. This case used to drive ffkmp_fmt_alloc_output,
+ * which B1.4 deleted as dead exported surface (register item B1-08). The inference path itself is
+ * not dead: ffkmp_fmt_alloc_output2 takes it whenever its format argument is NULL or empty, which
+ * is exactly what the deleted helper did with no argument at all. So the case keeps its coverage
+ * and moves to the surviving helper rather than being dropped with it. */
+static void case_fmt_alloc_output2_infers_the_container(int measure)
 {
     kc_alloc_counts before;
     AVFormatContext *ctx = NULL;
     kc_alloc_snapshot(&before);
-    KC_EQ_INT(ffkmp_fmt_alloc_output(&ctx, out_path), 0);
+    KC_EQ_INT(ffkmp_fmt_alloc_output2(&ctx, out_path, NULL), 0);
     KC_NOT_NULL(ctx);
     OWN_LIVE_POSITIVE(measure, &before, "context");
     /* Nothing was opened, so free_output must take the branch that does not touch pb. */
@@ -1087,9 +1018,6 @@ static const own_case cases[] = {
     { "harness reporting allocates nothing",              case_harness_does_not_allocate },
     { "frame_alloc then frame_free",                      case_frame_alloc_free },
     { "frame_get_buffer then frame_unref",                case_frame_get_buffer_and_unref },
-    { "frame_ref shares one buffer",                      case_frame_ref_shares_one_buffer },
-    { "frame_make_writable unshares a shared buffer",     case_frame_make_writable_unshares },
-    { "frame_make_writable keeps a sole owner",           case_frame_make_writable_keeps_a_sole_owner },
     { "frame_clone is caller owned and shares pixels",    case_frame_clone },
     { "frame_clone refuses NULL",                         case_frame_clone_refuses_null },
     { "frame_convert_pixfmt returns a caller owned frame", case_frame_convert_pixfmt_is_caller_owned },
@@ -1098,7 +1026,6 @@ static const own_case cases[] = {
     { "frame_set_ch_layout_default over an existing layout", case_frame_set_ch_layout_default },
     { "packet_alloc then packet_free",                    case_packet_alloc_free },
     { "packet_unref releases the payload only",           case_packet_unref_releases_payload },
-    { "packet_ref shares the payload",                    case_packet_ref_shares_payload },
     { "packet_move_ref transfers the payload",            case_packet_move_ref_transfers_payload },
     { "codecctx_alloc then codecctx_free",                case_codecctx_alloc_free },
     { "codecctx_open then codecctx_free",                 case_codecctx_open_then_free },
@@ -1110,7 +1037,7 @@ static const own_case cases[] = {
     { "fmt_find_stream_info then fmt_close_input",        case_fmt_find_stream_info },
     { "fmt_open_input refuses a missing file",            case_fmt_open_input_refuses_a_missing_file },
     { "fmt_close_input tolerates nothing to close",       case_fmt_close_input_tolerates_nothing_to_close },
-    { "fmt_alloc_output infers the container",            case_fmt_alloc_output_infers_the_container },
+    { "fmt_alloc_output2 infers the container",           case_fmt_alloc_output2_infers_the_container },
     { "fmt_alloc_output2 with an explicit container",     case_fmt_alloc_output2_with_an_explicit_container },
     { "fmt_free_output without an open pb",               case_fmt_free_output_without_an_open_pb },
     { "fmt_free_output closes an open pb",                case_fmt_free_output_closes_an_open_pb },

@@ -7,8 +7,7 @@
  * helpers, not ten. The count is recorded on the suite's first case so a reader sees it without
  * reading this comment:
  *
- *   4 macro crossings          ffkmp_averror_eagain, ffkmp_averror_eof, ffkmp_averror_einval,
- *                              ffkmp_nopts_value
+ *   2 macro crossings          ffkmp_averror_eagain, ffkmp_averror_eof
  *   4 with 128 bit intermediates
  *                              ffkmp_rescale_q, ffkmp_packet_rescale_ts,
  *                              ffkmp_stream_duration_micros, ffkmp_fmt_seek_micros
@@ -25,7 +24,13 @@
  * spelling `int *n, int *d` finds five of the six and misses
  * ffkmp_codecpar_sample_aspect_ratio, which spells its parameters `int *num, int *den`. Anyone
  * re-deriving this set should search for `int \*[a-z]+` instead. That miss is the reason the count
- * here is 15 and not the 14 a narrower search reports.
+ * here is 13 and not the 12 a narrower search reports.
+ *
+ * The count was 15 until B1.4 deleted ffkmp_averror_einval and ffkmp_nopts_value as dead exported
+ * surface, along with 13 other helpers no Kotlin file imported (register item B1-08). The two
+ * cases that asserted their values went with them; every other use of them in this file was
+ * incidental, a convenient source of an error code or of a timestamp sentinel, and those uses now
+ * spell the libav macro the deleted helper wrapped.
  *
  * Where a value below is a number rather than a formula it was measured on this machine against
  * Apple clang 17.0.0 and the pkg-config FFmpeg (libavcodec 62.11.100, libavutil 60.8.100), and the
@@ -48,7 +53,7 @@
 
 #include "kitecodec_helpers.h"
 
-/* ---- The four macro crossings ---- */
+/* ---- The two macro crossings ---- */
 
 /* FFmpeg spells its own error tags FFERRTAG(a,b,c,d) == -(int)MKTAG(a,b,c,d), and MKTAG packs the
  * four bytes little end first with the last byte taken as unsigned. Recomputing that here is the
@@ -73,7 +78,6 @@ static void case_macro_crossings(void)
     };
     struct row rows[] = {
         { "ffkmp_averror_eagain", ffkmp_averror_eagain(), -EAGAIN },
-        { "ffkmp_averror_einval", ffkmp_averror_einval(), -EINVAL },
         { "ffkmp_averror_eof",    ffkmp_averror_eof(),    recomputed_errtag('E', 'O', 'F', ' ') },
     };
     size_t i;
@@ -86,17 +90,9 @@ static void case_macro_crossings(void)
         kc_detail("value=%d", rows[i].actual);
     }
 
-    kc_case("the three error codes are distinct");
+    kc_case("the two error codes are distinct");
     KC_CHECK(ffkmp_averror_eagain() != ffkmp_averror_eof());
-    KC_CHECK(ffkmp_averror_eagain() != ffkmp_averror_einval());
-    KC_CHECK(ffkmp_averror_eof() != ffkmp_averror_einval());
-    kc_detail("eagain=%d einval=%d eof=%d", ffkmp_averror_eagain(), ffkmp_averror_einval(),
-              ffkmp_averror_eof());
-
-    kc_case("ffkmp_nopts_value is INT64_MIN, so a Kotlin Long can hold it");
-    KC_EQ_I64(ffkmp_nopts_value(), INT64_MIN);
-    KC_EQ_I64(ffkmp_nopts_value(), AV_NOPTS_VALUE);
-    kc_detail("nopts=%lld", (long long)ffkmp_nopts_value());
+    kc_detail("eagain=%d eof=%d", ffkmp_averror_eagain(), ffkmp_averror_eof());
 }
 
 /* ---- ffkmp_rescale_q, the helper D9's whole fix rests on ---- */
@@ -190,9 +186,9 @@ static void case_rescale_q_beats_the_naive_multiply(void)
     kc_detail("exact=%lld naive=%lld", (long long)got, (long long)naive);
 
     kc_case("rescale_q does not recognise AV_NOPTS_VALUE, it converts it");
-    got = ffkmp_rescale_q(ffkmp_nopts_value(), 1, 1000000000, 1, 1000000);
+    got = ffkmp_rescale_q(AV_NOPTS_VALUE, 1, 1000000000, 1, 1000000);
     KC_EQ_I64(got, -9223372036854776LL);
-    KC_CHECKF(got != ffkmp_nopts_value(),
+    KC_CHECKF(got != AV_NOPTS_VALUE,
               "AV_NOPTS_VALUE survived the rescale as itself, which would make the guard optional");
     kc_note("a caller that forgets to test for AV_NOPTS_VALUE gets a plausible timestamp, not an");
     kc_note("error, which is why the D9 fix returns null on NOPTS before calling this helper");
@@ -219,12 +215,12 @@ static void case_packet_rescale_ts(void)
               (long long)ffkmp_packet_dts(p), (long long)ffkmp_packet_duration(p));
 
     kc_case("packet_rescale_ts leaves AV_NOPTS_VALUE alone");
-    ffkmp_packet_set_pts(p, ffkmp_nopts_value());
-    ffkmp_packet_set_dts(p, ffkmp_nopts_value());
+    ffkmp_packet_set_pts(p, AV_NOPTS_VALUE);
+    ffkmp_packet_set_dts(p, AV_NOPTS_VALUE);
     p->duration = 0;
     ffkmp_packet_rescale_ts(p, 1, 1000000000, 1, 1000000);
-    KC_EQ_I64(ffkmp_packet_pts(p), ffkmp_nopts_value());
-    KC_EQ_I64(ffkmp_packet_dts(p), ffkmp_nopts_value());
+    KC_EQ_I64(ffkmp_packet_pts(p), AV_NOPTS_VALUE);
+    KC_EQ_I64(ffkmp_packet_dts(p), AV_NOPTS_VALUE);
     KC_EQ_I64(ffkmp_packet_duration(p), 0);
     kc_note("this is the difference from ffkmp_rescale_q, which converts NOPTS into a number");
 
@@ -471,7 +467,7 @@ static void case_stream_helpers(void)
 static void case_fmt_seek_micros_guard(void)
 {
     kc_case("fmt_seek_micros refuses a NULL context with AVERROR(EINVAL)");
-    KC_EQ_INT(ffkmp_fmt_seek_micros(NULL, 0, 1000000), ffkmp_averror_einval());
+    KC_EQ_INT(ffkmp_fmt_seek_micros(NULL, 0, 1000000), AVERROR(EINVAL));
     kc_detail("rc=%d", ffkmp_fmt_seek_micros(NULL, 0, 1000000));
     kc_note("its 128 bit rescale of micros into the stream time base is not observable from here:");
     kc_note("the value feeds av_seek_frame, so proving it needs a demuxable container, which");
@@ -645,8 +641,8 @@ int main(void)
 {
     kc_suite_begin("test_rescale");
 
-    kc_case("the helper set was enumerated here: 15 helpers, not the plan's ten");
-    kc_detail("4 macro, 4 with 128 bit intermediates, 6 AVRational out params, 1 AV_CEIL_RSHIFT");
+    kc_case("the helper set was enumerated here: 13 helpers, not the plan's ten");
+    kc_detail("2 macro, 4 with 128 bit intermediates, 6 AVRational out params, 1 AV_CEIL_RSHIFT");
 
     case_macro_crossings();
     case_rescale_q_vectors();

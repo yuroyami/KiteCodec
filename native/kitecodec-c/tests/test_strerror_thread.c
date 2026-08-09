@@ -241,11 +241,11 @@ static void case_single_thread_invalidation(void)
     /* av_strerror into the caller's own buffer is the oracle. It is the same FFmpeg function
      * ffkmp_strerror wraps, so this compares the wrapper's storage discipline rather than
      * FFmpeg's message text. */
-    KC_EQ_INT(av_strerror(ffkmp_averror_einval(), oracle_einval, sizeof(oracle_einval)), 0);
+    KC_EQ_INT(av_strerror(AVERROR(EINVAL), oracle_einval, sizeof(oracle_einval)), 0);
     KC_EQ_INT(av_strerror(ffkmp_averror_eof(), oracle_eof, sizeof(oracle_eof)), 0);
 
     kc_case("ffkmp_strerror answers with the message FFmpeg itself would write");
-    first = ffkmp_strerror(ffkmp_averror_einval());
+    first = ffkmp_strerror(AVERROR(EINVAL));
     KC_NOT_NULL(first);
     KC_EQ_STR(first, oracle_einval);
     kc_detail("\"%s\"", first);
@@ -268,8 +268,8 @@ static void case_single_thread_invalidation(void)
     kc_note("header says it must never be stored");
 
     kc_case("repeated calls with the same code keep answering from the same address");
-    KC_EQ_PTR(ffkmp_strerror(ffkmp_averror_einval()), first);
-    KC_EQ_PTR(ffkmp_strerror(ffkmp_averror_einval()), first);
+    KC_EQ_PTR(ffkmp_strerror(AVERROR(EINVAL)), first);
+    KC_EQ_PTR(ffkmp_strerror(AVERROR(EINVAL)), first);
     KC_EQ_STR(first, oracle_einval);
 }
 
@@ -394,7 +394,7 @@ static void case_threaded_isolation(void)
                       "per thread", i, j, (const void *)workers[i].buffer_first);
         }
     }
-    KC_CHECKF(workers[0].buffer_first != ffkmp_strerror(ffkmp_averror_einval()),
+    KC_CHECKF(workers[0].buffer_first != ffkmp_strerror(AVERROR(EINVAL)),
               "a worker and the main thread shared an address");
     kc_detail("addresses %p %p %p %p", (const void *)workers[0].buffer_first,
               (const void *)workers[1].buffer_first, (const void *)workers[2].buffer_first,

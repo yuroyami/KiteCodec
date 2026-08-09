@@ -4,7 +4,7 @@
  * What B1-10 asks for, and what is actually here.
  *
  * The item names "nine fixed stack buffers" and lists twelve def line numbers: 37, 506, 558,
- * 663, 708, 553, 704, 623, 669, 712, 578, 723. Measured in src/kitecodec_helpers.c, those are
+ * 663, 708, 553, 704, 623, 669, 712, 578, 723. Measured in the def body, those are
  * twelve buffer declarations across ten declaration lines, because two lines declare two
  * buffers each. Nine is the count you get by treating the four args[512] sites as one; twelve
  * is the count of declarations. This suite covers all twelve, so it closes the item on either
