@@ -5591,6 +5591,8 @@ library {
     // class name: ffmpeg/SwsVector.Companion
     // class name: ffmpeg/SwsFilter
     // class name: ffmpeg/SwsFilter.Companion
+    // class name: ffmpeg/kc_ffmpeg_report
+    // class name: ffmpeg/kc_ffmpeg_report.Companion
     // class name: ffmpeg/AVChannelOrder
     // class name: ffmpeg/AVChannelOrder.Var
     // class name: ffmpeg/AVChannelOrder.Var.Companion
@@ -6226,6 +6228,116 @@ library {
     @kotlinx/cinterop/internal/CStruct.VarType(size = 32L, align = 8)
     @kotlin/Deprecated(message = "Use sizeOf<T>() or alignOf<T>() instead.", replaceWith = kotlin/ReplaceWith(imports = [], expression = ""), level = kotlin/DeprecationLevel.WARNING)
     public final companion object ffmpeg/SwsFilter.Companion : kotlinx/cinterop/CStructVar.Type {
+
+      private constructor()
+    }
+
+    @kotlinx/cinterop/internal/CStruct(spelling = "struct  { int status; int bypassed; int abi_major; int abi_minor; int header_major[6]; int header_minor[6]; int header_micro[6]; int runtime_major[6]; int runtime_minor[6]; int runtime_micro[6]; int verdict[6]; int configuration_agrees; int configuration_disagreed_count; char configuration_disagreed[128]; char build_ffmpeg_ref[32]; char build_license_flavour[32]; char build_provisioning_dir[512]; char runtime_version_info[64]; char runtime_license[64]; char provisioning[1024]; }")
+    @kotlinx/cinterop/ExperimentalForeignApi
+    public final class ffmpeg/kc_ffmpeg_report : kotlinx/cinterop/CStructVar {
+
+      public constructor(rawPtr: kotlin/native/internal/NativePtr /* = kotlinx/cinterop/NativePtr^ */)
+
+      public final var status: kotlin/Int /* = platform/posix/int32_t^ */
+        @kotlinx/cinterop/internal/CStruct.MemberAt(offset = 0L)
+        public final /* non-default */ external get
+        @kotlinx/cinterop/internal/CStruct.MemberAt(offset = 0L)
+        public final /* non-default */ external set(value: kotlin/Int /* = platform/posix/int32_t^ */)
+
+      public final var bypassed: kotlin/Int /* = platform/posix/int32_t^ */
+        @kotlinx/cinterop/internal/CStruct.MemberAt(offset = 4L)
+        public final /* non-default */ external get
+        @kotlinx/cinterop/internal/CStruct.MemberAt(offset = 4L)
+        public final /* non-default */ external set(value: kotlin/Int /* = platform/posix/int32_t^ */)
+
+      public final var abi_major: kotlin/Int /* = platform/posix/int32_t^ */
+        @kotlinx/cinterop/internal/CStruct.MemberAt(offset = 8L)
+        public final /* non-default */ external get
+        @kotlinx/cinterop/internal/CStruct.MemberAt(offset = 8L)
+        public final /* non-default */ external set(value: kotlin/Int /* = platform/posix/int32_t^ */)
+
+      public final var abi_minor: kotlin/Int /* = platform/posix/int32_t^ */
+        @kotlinx/cinterop/internal/CStruct.MemberAt(offset = 12L)
+        public final /* non-default */ external get
+        @kotlinx/cinterop/internal/CStruct.MemberAt(offset = 12L)
+        public final /* non-default */ external set(value: kotlin/Int /* = platform/posix/int32_t^ */)
+
+      public final val header_major: kotlinx/cinterop/CPointer<kotlinx/cinterop/IntVarOf<kotlin/Int> /* = platform/posix/int32_tVar^ */> /* = kotlinx/cinterop/CArrayPointer^<kotlinx/cinterop/IntVarOf<kotlin/Int> /* = platform/posix/int32_tVar^ */> */
+        @kotlinx/cinterop/internal/CStruct.ArrayMemberAt(offset = 16L)
+        public final /* non-default */ external get
+
+      public final val header_minor: kotlinx/cinterop/CPointer<kotlinx/cinterop/IntVarOf<kotlin/Int> /* = platform/posix/int32_tVar^ */> /* = kotlinx/cinterop/CArrayPointer^<kotlinx/cinterop/IntVarOf<kotlin/Int> /* = platform/posix/int32_tVar^ */> */
+        @kotlinx/cinterop/internal/CStruct.ArrayMemberAt(offset = 40L)
+        public final /* non-default */ external get
+
+      public final val header_micro: kotlinx/cinterop/CPointer<kotlinx/cinterop/IntVarOf<kotlin/Int> /* = platform/posix/int32_tVar^ */> /* = kotlinx/cinterop/CArrayPointer^<kotlinx/cinterop/IntVarOf<kotlin/Int> /* = platform/posix/int32_tVar^ */> */
+        @kotlinx/cinterop/internal/CStruct.ArrayMemberAt(offset = 64L)
+        public final /* non-default */ external get
+
+      public final val runtime_major: kotlinx/cinterop/CPointer<kotlinx/cinterop/IntVarOf<kotlin/Int> /* = platform/posix/int32_tVar^ */> /* = kotlinx/cinterop/CArrayPointer^<kotlinx/cinterop/IntVarOf<kotlin/Int> /* = platform/posix/int32_tVar^ */> */
+        @kotlinx/cinterop/internal/CStruct.ArrayMemberAt(offset = 88L)
+        public final /* non-default */ external get
+
+      public final val runtime_minor: kotlinx/cinterop/CPointer<kotlinx/cinterop/IntVarOf<kotlin/Int> /* = platform/posix/int32_tVar^ */> /* = kotlinx/cinterop/CArrayPointer^<kotlinx/cinterop/IntVarOf<kotlin/Int> /* = platform/posix/int32_tVar^ */> */
+        @kotlinx/cinterop/internal/CStruct.ArrayMemberAt(offset = 112L)
+        public final /* non-default */ external get
+
+      public final val runtime_micro: kotlinx/cinterop/CPointer<kotlinx/cinterop/IntVarOf<kotlin/Int> /* = platform/posix/int32_tVar^ */> /* = kotlinx/cinterop/CArrayPointer^<kotlinx/cinterop/IntVarOf<kotlin/Int> /* = platform/posix/int32_tVar^ */> */
+        @kotlinx/cinterop/internal/CStruct.ArrayMemberAt(offset = 136L)
+        public final /* non-default */ external get
+
+      public final val verdict: kotlinx/cinterop/CPointer<kotlinx/cinterop/IntVarOf<kotlin/Int> /* = platform/posix/int32_tVar^ */> /* = kotlinx/cinterop/CArrayPointer^<kotlinx/cinterop/IntVarOf<kotlin/Int> /* = platform/posix/int32_tVar^ */> */
+        @kotlinx/cinterop/internal/CStruct.ArrayMemberAt(offset = 160L)
+        public final /* non-default */ external get
+
+      public final var configuration_agrees: kotlin/Int /* = platform/posix/int32_t^ */
+        @kotlinx/cinterop/internal/CStruct.MemberAt(offset = 184L)
+        public final /* non-default */ external get
+        @kotlinx/cinterop/internal/CStruct.MemberAt(offset = 184L)
+        public final /* non-default */ external set(value: kotlin/Int /* = platform/posix/int32_t^ */)
+
+      public final var configuration_disagreed_count: kotlin/Int /* = platform/posix/int32_t^ */
+        @kotlinx/cinterop/internal/CStruct.MemberAt(offset = 188L)
+        public final /* non-default */ external get
+        @kotlinx/cinterop/internal/CStruct.MemberAt(offset = 188L)
+        public final /* non-default */ external set(value: kotlin/Int /* = platform/posix/int32_t^ */)
+
+      public final val configuration_disagreed: kotlinx/cinterop/CPointer<kotlinx/cinterop/ByteVarOf<kotlin/Byte> /* = kotlinx/cinterop/ByteVar^ */> /* = kotlinx/cinterop/CArrayPointer^<kotlinx/cinterop/ByteVarOf<kotlin/Byte> /* = kotlinx/cinterop/ByteVar^ */> */
+        @kotlinx/cinterop/internal/CStruct.ArrayMemberAt(offset = 192L)
+        public final /* non-default */ external get
+
+      public final val build_ffmpeg_ref: kotlinx/cinterop/CPointer<kotlinx/cinterop/ByteVarOf<kotlin/Byte> /* = kotlinx/cinterop/ByteVar^ */> /* = kotlinx/cinterop/CArrayPointer^<kotlinx/cinterop/ByteVarOf<kotlin/Byte> /* = kotlinx/cinterop/ByteVar^ */> */
+        @kotlinx/cinterop/internal/CStruct.ArrayMemberAt(offset = 320L)
+        public final /* non-default */ external get
+
+      public final val build_license_flavour: kotlinx/cinterop/CPointer<kotlinx/cinterop/ByteVarOf<kotlin/Byte> /* = kotlinx/cinterop/ByteVar^ */> /* = kotlinx/cinterop/CArrayPointer^<kotlinx/cinterop/ByteVarOf<kotlin/Byte> /* = kotlinx/cinterop/ByteVar^ */> */
+        @kotlinx/cinterop/internal/CStruct.ArrayMemberAt(offset = 352L)
+        public final /* non-default */ external get
+
+      public final val build_provisioning_dir: kotlinx/cinterop/CPointer<kotlinx/cinterop/ByteVarOf<kotlin/Byte> /* = kotlinx/cinterop/ByteVar^ */> /* = kotlinx/cinterop/CArrayPointer^<kotlinx/cinterop/ByteVarOf<kotlin/Byte> /* = kotlinx/cinterop/ByteVar^ */> */
+        @kotlinx/cinterop/internal/CStruct.ArrayMemberAt(offset = 384L)
+        public final /* non-default */ external get
+
+      public final val runtime_version_info: kotlinx/cinterop/CPointer<kotlinx/cinterop/ByteVarOf<kotlin/Byte> /* = kotlinx/cinterop/ByteVar^ */> /* = kotlinx/cinterop/CArrayPointer^<kotlinx/cinterop/ByteVarOf<kotlin/Byte> /* = kotlinx/cinterop/ByteVar^ */> */
+        @kotlinx/cinterop/internal/CStruct.ArrayMemberAt(offset = 896L)
+        public final /* non-default */ external get
+
+      public final val runtime_license: kotlinx/cinterop/CPointer<kotlinx/cinterop/ByteVarOf<kotlin/Byte> /* = kotlinx/cinterop/ByteVar^ */> /* = kotlinx/cinterop/CArrayPointer^<kotlinx/cinterop/ByteVarOf<kotlin/Byte> /* = kotlinx/cinterop/ByteVar^ */> */
+        @kotlinx/cinterop/internal/CStruct.ArrayMemberAt(offset = 960L)
+        public final /* non-default */ external get
+
+      public final val provisioning: kotlinx/cinterop/CPointer<kotlinx/cinterop/ByteVarOf<kotlin/Byte> /* = kotlinx/cinterop/ByteVar^ */> /* = kotlinx/cinterop/CArrayPointer^<kotlinx/cinterop/ByteVarOf<kotlin/Byte> /* = kotlinx/cinterop/ByteVar^ */> */
+        @kotlinx/cinterop/internal/CStruct.ArrayMemberAt(offset = 1024L)
+        public final /* non-default */ external get
+
+      // companion object: Companion
+
+      // nested class: Companion
+    }
+
+    @kotlinx/cinterop/internal/CStruct.VarType(size = 2048L, align = 4)
+    @kotlin/Deprecated(message = "Use sizeOf<T>() or alignOf<T>() instead.", replaceWith = kotlin/ReplaceWith(imports = [], expression = ""), level = kotlin/DeprecationLevel.WARNING)
+    public final companion object ffmpeg/kc_ffmpeg_report.Companion : kotlinx/cinterop/CStructVar.Type {
 
       private constructor()
     }
@@ -7590,12 +7702,6 @@ library {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public typealias AVDiscard = kotlin/Int /* = kotlin/Int */
-
-      @kotlinx/cinterop/ExperimentalForeignApi
-      public typealias AVAudioServiceTypeVar = kotlinx/cinterop/UIntVarOf<ffmpeg/AVAudioServiceType^> /* = kotlinx/cinterop/UIntVarOf<kotlin/UInt /* = ffmpeg/AVAudioServiceType^ */> */
-
-      @kotlinx/cinterop/ExperimentalForeignApi
-      public typealias AVAudioServiceType = kotlin/UInt /* = kotlin/UInt */
     }
   }
 
@@ -7603,6 +7709,12 @@ library {
     // package name: ffmpeg
 
     package {
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public typealias AVAudioServiceTypeVar = kotlinx/cinterop/UIntVarOf<ffmpeg/AVAudioServiceType^> /* = kotlinx/cinterop/UIntVarOf<kotlin/UInt /* = ffmpeg/AVAudioServiceType^ */> */
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public typealias AVAudioServiceType = kotlin/UInt /* = kotlin/UInt */
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public typealias AVSideDataParamChangeFlagsVar = kotlinx/cinterop/UIntVarOf<ffmpeg/AVSideDataParamChangeFlags^> /* = kotlinx/cinterop/UIntVarOf<kotlin/UInt /* = ffmpeg/AVSideDataParamChangeFlags^ */> */
@@ -7657,6 +7769,18 @@ library {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public typealias SwrDitherType = kotlin/UInt /* = kotlin/UInt */
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public typealias kc_statusVar = kotlinx/cinterop/IntVarOf<ffmpeg/kc_status^> /* = kotlinx/cinterop/IntVarOf<kotlin/Int /* = ffmpeg/kc_status^ */> */
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public typealias kc_status = kotlin/Int /* = kotlin/Int */
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public typealias kc_verdictVar = kotlinx/cinterop/UIntVarOf<ffmpeg/kc_verdict^> /* = kotlinx/cinterop/UIntVarOf<kotlin/UInt /* = ffmpeg/kc_verdict^ */> */
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public typealias kc_verdict = kotlin/UInt /* = kotlin/UInt */
     }
   }
 
@@ -10440,14 +10564,6 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final external fun ffkmp_averror_eof(): kotlin/Int
 
-      @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_averror_einval")
-      @kotlinx/cinterop/ExperimentalForeignApi
-      public final external fun ffkmp_averror_einval(): kotlin/Int
-
-      @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_nopts_value")
-      @kotlinx/cinterop/ExperimentalForeignApi
-      public final external fun ffkmp_nopts_value(): kotlin/Long /* = platform/posix/int64_t^ */
-
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_rescale_q")
       @kotlinx/cinterop/ExperimentalForeignApi
       public final external fun ffkmp_rescale_q(v: kotlin/Long /* = platform/posix/int64_t^ */, sn: kotlin/Int, sd: kotlin/Int, dn: kotlin/Int, dd: kotlin/Int): kotlin/Long /* = platform/posix/int64_t^ */
@@ -10463,10 +10579,6 @@ library {
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_frame_unref")
       @kotlinx/cinterop/ExperimentalForeignApi
       public final external fun ffkmp_frame_unref(f: kotlinx/cinterop/CValuesRef<ffmpeg/AVFrame>?): kotlin/Unit
-
-      @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_frame_ref")
-      @kotlinx/cinterop/ExperimentalForeignApi
-      public final external fun ffkmp_frame_ref(dst: kotlinx/cinterop/CValuesRef<ffmpeg/AVFrame>?, src: kotlinx/cinterop/CValuesRef<ffmpeg/AVFrame>?): kotlin/Int
 
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_frame_pts")
       @kotlinx/cinterop/ExperimentalForeignApi
@@ -10531,10 +10643,6 @@ library {
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_frame_get_buffer")
       @kotlinx/cinterop/ExperimentalForeignApi
       public final external fun ffkmp_frame_get_buffer(f: kotlinx/cinterop/CValuesRef<ffmpeg/AVFrame>?, align: kotlin/Int): kotlin/Int
-
-      @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_frame_make_writable")
-      @kotlinx/cinterop/ExperimentalForeignApi
-      public final external fun ffkmp_frame_make_writable(f: kotlinx/cinterop/CValuesRef<ffmpeg/AVFrame>?): kotlin/Int
 
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_frame_set_ch_layout_default")
       @kotlinx/cinterop/ExperimentalForeignApi
@@ -10616,10 +10724,6 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final external fun ffkmp_packet_unref(p: kotlinx/cinterop/CValuesRef<ffmpeg/AVPacket>?): kotlin/Unit
 
-      @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_packet_ref")
-      @kotlinx/cinterop/ExperimentalForeignApi
-      public final external fun ffkmp_packet_ref(d: kotlinx/cinterop/CValuesRef<ffmpeg/AVPacket>?, s: kotlinx/cinterop/CValuesRef<ffmpeg/AVPacket>?): kotlin/Int
-
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_packet_pts")
       @kotlinx/cinterop/ExperimentalForeignApi
       public final external fun ffkmp_packet_pts(p: kotlinx/cinterop/CValuesRef<ffmpeg/AVPacket>?): kotlin/Long /* = platform/posix/int64_t^ */
@@ -10631,10 +10735,6 @@ library {
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_packet_stream_index")
       @kotlinx/cinterop/ExperimentalForeignApi
       public final external fun ffkmp_packet_stream_index(p: kotlinx/cinterop/CValuesRef<ffmpeg/AVPacket>?): kotlin/Int
-
-      @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_packet_flags")
-      @kotlinx/cinterop/ExperimentalForeignApi
-      public final external fun ffkmp_packet_flags(p: kotlinx/cinterop/CValuesRef<ffmpeg/AVPacket>?): kotlin/Int
 
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_packet_size")
       @kotlinx/cinterop/ExperimentalForeignApi
@@ -10700,10 +10800,6 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final external fun ffkmp_codecpar_channels(p: kotlinx/cinterop/CValuesRef<ffmpeg/AVCodecParameters>?): kotlin/Int
 
-      @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_codecpar_video_delay")
-      @kotlinx/cinterop/ExperimentalForeignApi
-      public final external fun ffkmp_codecpar_video_delay(p: kotlinx/cinterop/CValuesRef<ffmpeg/AVCodecParameters>?): kotlin/Int
-
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_codecpar_sample_aspect_ratio")
       @kotlinx/cinterop/ExperimentalForeignApi
       public final external fun ffkmp_codecpar_sample_aspect_ratio(p: kotlinx/cinterop/CValuesRef<ffmpeg/AVCodecParameters>?, num: kotlinx/cinterop/CValuesRef<kotlinx/cinterop/IntVarOf<kotlin/Int> /* = kotlinx/cinterop/IntVar^ */>?, den: kotlinx/cinterop/CValuesRef<kotlinx/cinterop/IntVarOf<kotlin/Int> /* = kotlinx/cinterop/IntVar^ */>?): kotlin/Unit
@@ -10735,13 +10831,6 @@ library {
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_codecctx_set_video")
       @kotlinx/cinterop/ExperimentalForeignApi
       public final external fun ffkmp_codecctx_set_video(c: kotlinx/cinterop/CValuesRef<ffmpeg/AVCodecContext>?, width: kotlin/Int, height: kotlin/Int, pix_fmt: kotlin/Int, fr_num: kotlin/Int, fr_den: kotlin/Int, tb_num: kotlin/Int, tb_den: kotlin/Int, bit_rate: kotlin/Long /* = platform/posix/int64_t^ */, gop_size: kotlin/Int): kotlin/Unit
-    }
-  }
-
-  library fragment {
-    // package name: ffmpeg
-
-    package {
 
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_codecctx_set_audio")
       @kotlinx/cinterop/ExperimentalForeignApi
@@ -10767,13 +10856,16 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final external fun ffkmp_codecctx_sample_rate(c: kotlinx/cinterop/CValuesRef<ffmpeg/AVCodecContext>?): kotlin/Int
 
-      @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_codecctx_sample_fmt")
-      @kotlinx/cinterop/ExperimentalForeignApi
-      public final external fun ffkmp_codecctx_sample_fmt(c: kotlinx/cinterop/CValuesRef<ffmpeg/AVCodecContext>?): kotlin/Int
-
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_codecctx_channels")
       @kotlinx/cinterop/ExperimentalForeignApi
       public final external fun ffkmp_codecctx_channels(c: kotlinx/cinterop/CValuesRef<ffmpeg/AVCodecContext>?): kotlin/Int
+    }
+  }
+
+  library fragment {
+    // package name: ffmpeg
+
+    package {
 
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_codecctx_time_base")
       @kotlinx/cinterop/ExperimentalForeignApi
@@ -10790,10 +10882,6 @@ library {
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_codecctx_set_full_range")
       @kotlinx/cinterop/ExperimentalForeignApi
       public final external fun ffkmp_codecctx_set_full_range(c: kotlinx/cinterop/CValuesRef<ffmpeg/AVCodecContext>?): kotlin/Unit
-
-      @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_codec_name")
-      @kotlinx/cinterop/ExperimentalForeignApi
-      public final external fun ffkmp_codec_name(c: kotlinx/cinterop/CValuesRef<ffmpeg/AVCodec>?): kotlinx/cinterop/CPointer<kotlinx/cinterop/ByteVarOf<kotlin/Byte> /* = kotlinx/cinterop/ByteVar^ */>?
 
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_find_decoder_by_id")
       @kotlinx/cinterop/ExperimentalForeignApi
@@ -10843,10 +10931,6 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final external fun ffkmp_fmt_start_time(c: kotlinx/cinterop/CValuesRef<ffmpeg/AVFormatContext>?): kotlin/Long /* = platform/posix/int64_t^ */
 
-      @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_fmt_bit_rate")
-      @kotlinx/cinterop/ExperimentalForeignApi
-      public final external fun ffkmp_fmt_bit_rate(c: kotlinx/cinterop/CValuesRef<ffmpeg/AVFormatContext>?): kotlin/Long /* = platform/posix/int64_t^ */
-
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_fmt_nb_streams")
       @kotlinx/cinterop/ExperimentalForeignApi
       public final external fun ffkmp_fmt_nb_streams(c: kotlinx/cinterop/CValuesRef<ffmpeg/AVFormatContext>?): kotlin/UInt
@@ -10862,10 +10946,6 @@ library {
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_fmt_metadata")
       @kotlinx/cinterop/ExperimentalForeignApi
       public final external fun ffkmp_fmt_metadata(c: kotlinx/cinterop/CValuesRef<ffmpeg/AVFormatContext>?): kotlinx/cinterop/CPointer<cnames/structs/AVDictionary>?
-
-      @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_fmt_alloc_output")
-      @kotlinx/cinterop/ExperimentalForeignApi
-      public final external fun ffkmp_fmt_alloc_output(out: kotlinx/cinterop/CValuesRef<kotlinx/cinterop/CPointerVarOf<kotlinx/cinterop/CPointer<ffmpeg/AVFormatContext>> /* = kotlinx/cinterop/CPointerVar^<ffmpeg/AVFormatContext> */>?, @kotlinx/cinterop/internal/CCall.CString path: kotlin/String?): kotlin/Int
 
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_fmt_alloc_output2")
       @kotlinx/cinterop/ExperimentalForeignApi
@@ -10919,10 +10999,6 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final external fun ffkmp_stream_codecpar(s: kotlinx/cinterop/CValuesRef<ffmpeg/AVStream>?): kotlinx/cinterop/CPointer<ffmpeg/AVCodecParameters>?
 
-      @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_stream_duration")
-      @kotlinx/cinterop/ExperimentalForeignApi
-      public final external fun ffkmp_stream_duration(s: kotlinx/cinterop/CValuesRef<ffmpeg/AVStream>?): kotlin/Long /* = platform/posix/int64_t^ */
-
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_stream_duration_micros")
       @kotlinx/cinterop/ExperimentalForeignApi
       public final external fun ffkmp_stream_duration_micros(s: kotlinx/cinterop/CValuesRef<ffmpeg/AVStream>?): kotlin/Long /* = platform/posix/int64_t^ */
@@ -10930,10 +11006,6 @@ library {
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_stream_start_time")
       @kotlinx/cinterop/ExperimentalForeignApi
       public final external fun ffkmp_stream_start_time(s: kotlinx/cinterop/CValuesRef<ffmpeg/AVStream>?): kotlin/Long /* = platform/posix/int64_t^ */
-
-      @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_stream_nb_frames")
-      @kotlinx/cinterop/ExperimentalForeignApi
-      public final external fun ffkmp_stream_nb_frames(s: kotlinx/cinterop/CValuesRef<ffmpeg/AVStream>?): kotlin/Long /* = platform/posix/int64_t^ */
 
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_stream_metadata")
       @kotlinx/cinterop/ExperimentalForeignApi
@@ -11006,14 +11078,6 @@ library {
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_avseek_flag_any")
       @kotlinx/cinterop/ExperimentalForeignApi
       public final external fun ffkmp_avseek_flag_any(): kotlin/Int
-
-      @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_avseek_flag_byte")
-      @kotlinx/cinterop/ExperimentalForeignApi
-      public final external fun ffkmp_avseek_flag_byte(): kotlin/Int
-
-      @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_avseek_flag_frame")
-      @kotlinx/cinterop/ExperimentalForeignApi
-      public final external fun ffkmp_avseek_flag_frame(): kotlin/Int
 
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_fmt_seek_file")
       @kotlinx/cinterop/ExperimentalForeignApi
@@ -11122,6 +11186,30 @@ library {
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_frame_is_hardware")
       @kotlinx/cinterop/ExperimentalForeignApi
       public final external fun ffkmp_frame_is_hardware(f: kotlinx/cinterop/CValuesRef<ffmpeg/AVFrame>?): kotlin/Int
+
+      @kotlinx/cinterop/internal/CCall.Direct(name = "_kc_init")
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final external fun kc_init(): kotlin/Int
+
+      @kotlinx/cinterop/internal/CCall.Direct(name = "_kc_ffmpeg_report_get")
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final external fun kc_ffmpeg_report_get(out: kotlinx/cinterop/CValuesRef<ffmpeg/kc_ffmpeg_report>?): kotlin/Unit
+
+      @kotlinx/cinterop/internal/CCall.Direct(name = "_kc_abi_version")
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final external fun kc_abi_version(): kotlin/UInt /* = platform/posix/uint32_t^ */
+
+      @kotlinx/cinterop/internal/CCall.Direct(name = "_kc_ffmpeg_library_name")
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final external fun kc_ffmpeg_library_name(index: kotlin/Int): kotlinx/cinterop/CPointer<kotlinx/cinterop/ByteVarOf<kotlin/Byte> /* = kotlinx/cinterop/ByteVar^ */>?
+
+      @kotlinx/cinterop/internal/CCall.Direct(name = "_kc_verdict_name")
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final external fun kc_verdict_name(verdict: kotlin/Int): kotlinx/cinterop/CPointer<kotlinx/cinterop/ByteVarOf<kotlin/Byte> /* = kotlinx/cinterop/ByteVar^ */>?
+
+      @kotlinx/cinterop/internal/CCall.Direct(name = "_kc_ffmpeg_configuration")
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final external fun kc_ffmpeg_configuration(): kotlinx/cinterop/CPointer<kotlinx/cinterop/ByteVarOf<kotlin/Byte> /* = kotlinx/cinterop/ByteVar^ */>?
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val FF_LAMBDA_SHIFT: kotlin/Int /* = 7 */
@@ -11254,13 +11342,6 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AVERROR_HTTP_FORBIDDEN: kotlin/Int /* = -858797304 */
         public final get
-    }
-  }
-
-  library fragment {
-    // package name: ffmpeg
-
-    package {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AVERROR_HTTP_NOT_FOUND: kotlin/Int /* = -875574520 */
@@ -11297,6 +11378,13 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val LIBAVUTIL_VERSION_INT: kotlin/Int /* = 3934308 */
         public final get
+    }
+  }
+
+  library fragment {
+    // package name: ffmpeg
+
+    package {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val LIBAVUTIL_BUILD: kotlin/Int /* = 3934308 */
@@ -11773,13 +11861,6 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_PIX_FMT_AYUV64: kotlin/Int /* = 155 */
         public final get
-    }
-  }
-
-  library fragment {
-    // package name: ffmpeg
-
-    package {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_PIX_FMT_P010: kotlin/Int /* = 158 */
@@ -11816,6 +11897,13 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_PIX_FMT_XV48: kotlin/Int /* = 242 */
         public final get
+    }
+  }
+
+  library fragment {
+    // package name: ffmpeg
+
+    package {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_PIX_FMT_V30X: kotlin/Int /* = 232 */
@@ -12292,13 +12380,6 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val FF_COMPLIANCE_NORMAL: kotlin/Int /* = 0 */
         public final get
-    }
-  }
-
-  library fragment {
-    // package name: ffmpeg
-
-    package {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val FF_COMPLIANCE_UNOFFICIAL: kotlin/Int /* = -1 */
@@ -12335,6 +12416,13 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_PROFILE_AAC_HE: kotlin/Int /* = 4 */
         public final get
+    }
+  }
+
+  library fragment {
+    // package name: ffmpeg
+
+    package {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_PROFILE_AAC_HE_V2: kotlin/Int /* = 28 */
@@ -12811,13 +12899,6 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_DICT_DONT_OVERWRITE: kotlin/Int /* = 16 */
         public final get
-    }
-  }
-
-  library fragment {
-    // package name: ffmpeg
-
-    package {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_DICT_APPEND: kotlin/Int /* = 32 */
@@ -12854,6 +12935,13 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val LIBAVFORMAT_VERSION_MAJOR: kotlin/Int /* = 62 */
         public final get
+    }
+  }
+
+  library fragment {
+    // package name: ffmpeg
+
+    package {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val FF_API_COMPUTE_PKT_FIELDS2: kotlin/Int /* = 1 */
@@ -13330,13 +13418,6 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AVFMT_AVOID_NEG_TS_DISABLED: kotlin/Int /* = 0 */
         public final get
-    }
-  }
-
-  library fragment {
-    // package name: ffmpeg
-
-    package {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AVFMT_AVOID_NEG_TS_MAKE_NON_NEGATIVE: kotlin/Int /* = 1 */
@@ -13373,6 +13454,13 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_FRAME_FILENAME_FLAGS_MULTIPLE: kotlin/Int /* = 1 */
         public final get
+    }
+  }
+
+  library fragment {
+    // package name: ffmpeg
+
+    package {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val LIBAVCODEC_VERSION_MINOR: kotlin/Int /* = 11 */
@@ -13849,13 +13937,6 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val FF_IDCT_ALTIVEC: kotlin/Int /* = 8 */
         public final get
-    }
-  }
-
-  library fragment {
-    // package name: ffmpeg
-
-    package {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val FF_IDCT_SIMPLEARM: kotlin/Int /* = 10 */
@@ -13892,6 +13973,13 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val FF_THREAD_SLICE: kotlin/Int /* = 2 */
         public final get
+    }
+  }
+
+  library fragment {
+    // package name: ffmpeg
+
+    package {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val FF_CODEC_PROPERTY_LOSSLESS: kotlin/Int /* = 1 */
@@ -14302,6 +14390,62 @@ library {
         public final get
 
       @kotlinx/cinterop/ExperimentalForeignApi
+      public final const val KITECODEC_C_ABI_MAJOR: kotlin/Int /* = 1 */
+        public final get
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final const val KITECODEC_C_ABI_MINOR: kotlin/Int /* = 0 */
+        public final get
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final const val KC_FFMPEG_LIBRARY_COUNT: kotlin/Int /* = 6 */
+        public final get
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final const val KC_LIB_AVUTIL: kotlin/Int /* = 0 */
+        public final get
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final const val KC_LIB_AVCODEC: kotlin/Int /* = 1 */
+        public final get
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final const val KC_LIB_AVFORMAT: kotlin/Int /* = 2 */
+        public final get
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final const val KC_LIB_AVFILTER: kotlin/Int /* = 3 */
+        public final get
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final const val KC_LIB_SWSCALE: kotlin/Int /* = 4 */
+        public final get
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final const val KC_LIB_SWRESAMPLE: kotlin/Int /* = 5 */
+        public final get
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final const val KC_TEXT_REF: kotlin/Int /* = 32 */
+        public final get
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final const val KC_TEXT_NAME: kotlin/Int /* = 64 */
+        public final get
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final const val KC_TEXT_LIST: kotlin/Int /* = 128 */
+        public final get
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final const val KC_TEXT_PATH: kotlin/Int /* = 512 */
+        public final get
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final const val KC_TEXT_SENTENCE: kotlin/Int /* = 1024 */
+        public final get
+
+      @kotlinx/cinterop/ExperimentalForeignApi
       public final val av_ceil_log2: kotlinx/cinterop/CPointer<kotlinx/cinterop/CFunction<kotlin/Function1<kotlin/Int, kotlin/Int>>>?
         public final /* non-default */ external get
 
@@ -14348,6 +14492,13 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final val av_sat_dadd32: kotlinx/cinterop/CPointer<kotlinx/cinterop/CFunction<kotlin/Function2<kotlin/Int, kotlin/Int, kotlin/Int>>>?
         public final /* non-default */ external get
+    }
+  }
+
+  library fragment {
+    // package name: ffmpeg
+
+    package {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final val av_sat_sub32: kotlinx/cinterop/CPointer<kotlinx/cinterop/CFunction<kotlin/Function2<kotlin/Int, kotlin/Int, kotlin/Int>>>?
@@ -14368,13 +14519,6 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final val av_clipf: kotlinx/cinterop/CPointer<kotlinx/cinterop/CFunction<kotlin/Function3<kotlin/Float, kotlin/Float, kotlin/Float, kotlin/Float>>>?
         public final /* non-default */ external get
-    }
-  }
-
-  library fragment {
-    // package name: ffmpeg
-
-    package {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final val av_clipd: kotlinx/cinterop/CPointer<kotlinx/cinterop/CFunction<kotlin/Function3<kotlin/Double, kotlin/Double, kotlin/Double, kotlin/Double>>>?
@@ -14867,6 +15011,13 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_PIX_FMT_RGB444BE: kotlin/Int /* = ffmpeg/AVPixelFormat^ */ /* = 53 */
         public final get
+    }
+  }
+
+  library fragment {
+    // package name: ffmpeg
+
+    package {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_PIX_FMT_BGR444LE: kotlin/Int /* = ffmpeg/AVPixelFormat^ */ /* = 54 */
@@ -14887,13 +15038,6 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_PIX_FMT_GRAY8A: kotlin/Int /* = ffmpeg/AVPixelFormat^ */ /* = 56 */
         public final get
-    }
-  }
-
-  library fragment {
-    // package name: ffmpeg
-
-    package {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_PIX_FMT_BGR48BE: kotlin/Int /* = ffmpeg/AVPixelFormat^ */ /* = 57 */
@@ -15386,6 +15530,13 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_PIX_FMT_DRM_PRIME: kotlin/Int /* = ffmpeg/AVPixelFormat^ */ /* = 178 */
         public final get
+    }
+  }
+
+  library fragment {
+    // package name: ffmpeg
+
+    package {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_PIX_FMT_OPENCL: kotlin/Int /* = ffmpeg/AVPixelFormat^ */ /* = 179 */
@@ -15406,13 +15557,6 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_PIX_FMT_GRAYF32LE: kotlin/Int /* = ffmpeg/AVPixelFormat^ */ /* = 183 */
         public final get
-    }
-  }
-
-  library fragment {
-    // package name: ffmpeg
-
-    package {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_PIX_FMT_YUVA422P12BE: kotlin/Int /* = ffmpeg/AVPixelFormat^ */ /* = 184 */
@@ -15905,6 +16049,13 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AVCOL_TRC_NB: kotlin/UInt /* = ffmpeg/AVColorTransferCharacteristic^ */ /* = 19u */
         public final get
+    }
+  }
+
+  library fragment {
+    // package name: ffmpeg
+
+    package {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AVCOL_SPC_RGB: kotlin/UInt /* = ffmpeg/AVColorSpace^ */ /* = 0u */
@@ -15925,13 +16076,6 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AVCOL_SPC_FCC: kotlin/UInt /* = ffmpeg/AVColorSpace^ */ /* = 4u */
         public final get
-    }
-  }
-
-  library fragment {
-    // package name: ffmpeg
-
-    package {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AVCOL_SPC_BT470BG: kotlin/UInt /* = ffmpeg/AVColorSpace^ */ /* = 5u */
@@ -16424,6 +16568,13 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_CODEC_ID_XAN_WC3: kotlin/UInt /* = ffmpeg/AVCodecID^ */ /* = 40u */
         public final get
+    }
+  }
+
+  library fragment {
+    // package name: ffmpeg
+
+    package {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_CODEC_ID_XAN_WC4: kotlin/UInt /* = ffmpeg/AVCodecID^ */ /* = 41u */
@@ -16444,13 +16595,6 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_CODEC_ID_MSRLE: kotlin/UInt /* = ffmpeg/AVCodecID^ */ /* = 45u */
         public final get
-    }
-  }
-
-  library fragment {
-    // package name: ffmpeg
-
-    package {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_CODEC_ID_MSVIDEO1: kotlin/UInt /* = ffmpeg/AVCodecID^ */ /* = 46u */
@@ -16943,6 +17087,13 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_CODEC_ID_AIC: kotlin/UInt /* = ffmpeg/AVCodecID^ */ /* = 168u */
         public final get
+    }
+  }
+
+  library fragment {
+    // package name: ffmpeg
+
+    package {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_CODEC_ID_ESCAPE130: kotlin/UInt /* = ffmpeg/AVCodecID^ */ /* = 169u */
@@ -16963,13 +17114,6 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_CODEC_ID_HEVC: kotlin/UInt /* = ffmpeg/AVCodecID^ */ /* = 173u */
         public final get
-    }
-  }
-
-  library fragment {
-    // package name: ffmpeg
-
-    package {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_CODEC_ID_FIC: kotlin/UInt /* = ffmpeg/AVCodecID^ */ /* = 174u */
@@ -17462,6 +17606,13 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_CODEC_ID_PCM_F32BE: kotlin/UInt /* = ffmpeg/AVCodecID^ */ /* = 65556u */
         public final get
+    }
+  }
+
+  library fragment {
+    // package name: ffmpeg
+
+    package {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_CODEC_ID_PCM_F32LE: kotlin/UInt /* = ffmpeg/AVCodecID^ */ /* = 65557u */
@@ -17482,13 +17633,6 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_CODEC_ID_PCM_LXF: kotlin/UInt /* = ffmpeg/AVCodecID^ */ /* = 65561u */
         public final get
-    }
-  }
-
-  library fragment {
-    // package name: ffmpeg
-
-    package {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_CODEC_ID_S302M: kotlin/UInt /* = ffmpeg/AVCodecID^ */ /* = 65562u */
@@ -17981,6 +18125,13 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_CODEC_ID_TRUEHD: kotlin/UInt /* = ffmpeg/AVCodecID^ */ /* = 86060u */
         public final get
+    }
+  }
+
+  library fragment {
+    // package name: ffmpeg
+
+    package {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_CODEC_ID_MP4ALS: kotlin/UInt /* = ffmpeg/AVCodecID^ */ /* = 86061u */
@@ -18001,13 +18152,6 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_CODEC_ID_AAC_LATM: kotlin/UInt /* = ffmpeg/AVCodecID^ */ /* = 86065u */
         public final get
-    }
-  }
-
-  library fragment {
-    // package name: ffmpeg
-
-    package {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_CODEC_ID_QDMC: kotlin/UInt /* = ffmpeg/AVCodecID^ */ /* = 86066u */
@@ -18500,6 +18644,13 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_AUDIO_SERVICE_TYPE_VOICE_OVER: kotlin/UInt /* = ffmpeg/AVAudioServiceType^ */ /* = 7u */
         public final get
+    }
+  }
+
+  library fragment {
+    // package name: ffmpeg
+
+    package {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_AUDIO_SERVICE_TYPE_KARAOKE: kotlin/UInt /* = ffmpeg/AVAudioServiceType^ */ /* = 8u */
@@ -18520,13 +18671,6 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_AFD_SAME: kotlin/UInt /* = ffmpeg/AVActiveFormatDescription^ */ /* = 8u */
         public final get
-    }
-  }
-
-  library fragment {
-    // package name: ffmpeg
-
-    package {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val AV_AFD_4_3: kotlin/UInt /* = ffmpeg/AVActiveFormatDescription^ */ /* = 9u */
@@ -18838,6 +18982,42 @@ library {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val SWR_DITHER_NB: kotlin/UInt /* = ffmpeg/SwrDitherType^ */ /* = 72u */
+        public final get
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final const val KC_STATUS_OK: kotlin/Int /* = ffmpeg/kc_status^ */ /* = 0 */
+        public final get
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final const val KC_STATUS_MAJOR_MISMATCH: kotlin/Int /* = ffmpeg/kc_status^ */ /* = -1 */
+        public final get
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final const val KC_STATUS_RUNTIME_OLDER: kotlin/Int /* = ffmpeg/kc_status^ */ /* = -2 */
+        public final get
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final const val KC_STATUS_CONFIGURATION_MISMATCH: kotlin/Int /* = ffmpeg/kc_status^ */ /* = -3 */
+        public final get
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final const val KC_VERDICT_OK: kotlin/UInt /* = ffmpeg/kc_verdict^ */ /* = 0u */
+        public final get
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final const val KC_VERDICT_MAJOR_MISMATCH: kotlin/UInt /* = ffmpeg/kc_verdict^ */ /* = 1u */
+        public final get
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final const val KC_VERDICT_RUNTIME_OLDER: kotlin/UInt /* = ffmpeg/kc_verdict^ */ /* = 2u */
+        public final get
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final const val KC_VERDICT_MICRO_OLDER: kotlin/UInt /* = ffmpeg/kc_verdict^ */ /* = 3u */
+        public final get
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final const val KC_VERDICT_CONFIGURATION_DISAGREES: kotlin/UInt /* = ffmpeg/kc_verdict^ */ /* = 4u */
         public final get
     }
   }

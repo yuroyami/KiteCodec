@@ -20,6 +20,8 @@ public actual object Transcoder {
         metadata: Map<String, String>,
         onProgress: ((TranscodeProgress) -> Unit)?,
     ) {
+        // The FFmpeg identity gate, register item B1-02. First statement of the entry point.
+        requireCompatibleFFmpeg()
         require(!(videoCopy && (spec != null || videoFilter != null))) {
             "videoCopy is mutually exclusive with spec/videoFilter: copied packets never touch a decoder, so they can't be filtered or re-encoded"
         }

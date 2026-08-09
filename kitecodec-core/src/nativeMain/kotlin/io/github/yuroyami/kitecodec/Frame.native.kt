@@ -289,6 +289,8 @@ public actual class Frame internal constructor(
             pixelFormat: PixelFormat,
             ptsMicros: Long,
         ): Frame {
+            // The FFmpeg identity gate, register item B1-02. Before the first allocation.
+            requireCompatibleFFmpeg()
             require(width > 0 && height > 0) { "Invalid dimensions ${width}x$height" }
             val fmt = pixelFormatToAv(pixelFormat)
             if (fmt < 0) throw FFmpegException(FFmpegError.Internal("Unknown pixel format '${pixelFormat.name}'"))
@@ -321,6 +323,8 @@ public actual class Frame internal constructor(
             sampleFormat: SampleFormat,
             ptsMicros: Long,
         ): Frame {
+            // The FFmpeg identity gate, register item B1-02. Before the first allocation.
+            requireCompatibleFFmpeg()
             require(sampleCount > 0) { "sampleCount must be positive" }
             require(sampleRate > 0) { "sampleRate must be positive" }
             require(channels in 1..8) { "channels must be 1..8 (got $channels)" }

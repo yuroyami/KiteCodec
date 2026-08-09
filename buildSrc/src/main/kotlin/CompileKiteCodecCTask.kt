@@ -4,6 +4,7 @@ import org.gradle.api.DefaultTask
 import org.gradle.api.GradleException
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.provider.ListProperty
+import org.gradle.api.provider.MapProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputDirectory
@@ -79,11 +80,29 @@ abstract class CompileKiteCodecCTask @Inject constructor(
 
     /**
      * The FFmpeg include directories for this target, the same ones the cinterop gets from
-     * [FFmpegPaths]. `kitecodec_helpers.c` includes 16 libav headers, so it cannot compile without
+     * [FFmpegPaths]. The helper units include 16 libav headers, so they cannot compile without
      * them, and they must be the target's own headers rather than the host's.
      */
     @get:Input
     abstract val ffmpegIncludeDirs: ListProperty<String>
+
+    /**
+     * Preprocessor defines describing what this archive was built for, passed as `-DNAME="value"`.
+     *
+     * Three of them today, all read by `src/kitecodec_abi.c` and reported by the FFmpeg identity gate
+     * of register item B1-02: `KC_BUILD_FFMPEG_REF`, `KC_BUILD_FFMPEG_LICENSE` and
+     * `KC_BUILD_FFMPEG_DIR`. They are reported and never compared, because the comparison the gate
+     * makes is between the header macros and the runtime; these describe the provisioning decision the
+     * build took, which is what turns a rejection into an actionable sentence and what makes register
+     * item B1-21's contradiction visible (the build declares a licence flavour, the linked runtime
+     * answers with another, and both strings ride in the report).
+     *
+     * An `@Input` and not a hardcoded string, so changing the FFmpeg ref or the licence flavour
+     * rebuilds every archive. Emitted in sorted key order so the command line is deterministic and the
+     * up-to-date check does not flap on map iteration order.
+     */
+    @get:Input
+    abstract val buildDefines: MapProperty<String, String>
 
     /**
      * The konan data directory, `~/.konan` unless `KONAN_DATA_DIR` says otherwise. Deliberately
@@ -179,6 +198,7 @@ abstract class CompileKiteCodecCTask @Inject constructor(
 
         val includeArgs = (listOf(includeDir.get().asFile.absolutePath) + ffmpegIncludeDirs.get())
             .map { "-I$it" }
+        val defineArgs = defineArguments(buildDefines.get())
 
         logger.lifecycle(
             "[KiteCodec] compiling ${sources.size} C source(s) for $target " +
@@ -188,7 +208,7 @@ abstract class CompileKiteCodecCTask @Inject constructor(
         val objects = sources.map { source ->
             val objectFile = objectDir.resolve("${source.nameWithoutExtension}.o")
             val command = listOf(clang.absolutePath, "-target", spec.triple) +
-                sysrootArgs + COMPILER_FLAGS + includeArgs +
+                sysrootArgs + COMPILER_FLAGS + defineArgs + includeArgs +
                 listOf("-c", source.absolutePath, "-o", objectFile.absolutePath)
             logger.info("[KiteCodec] " + command.joinToString(" "))
             execOperations.exec {
@@ -253,6 +273,27 @@ abstract class CompileKiteCodecCTask @Inject constructor(
 
         /** The archive name `ffmpeg.def`'s `staticLibraries` line asks cinterop for. */
         const val ARCHIVE_NAME: String = "libkitecodec.a"
+
+        /** The three defines of [buildDefines], named here so the build script cannot misspell one. */
+        const val DEFINE_FFMPEG_REF: String = "KC_BUILD_FFMPEG_REF"
+        const val DEFINE_FFMPEG_LICENSE: String = "KC_BUILD_FFMPEG_LICENSE"
+        const val DEFINE_FFMPEG_DIR: String = "KC_BUILD_FFMPEG_DIR"
+
+        /**
+         * Turns [defines] into `-DNAME="value"` arguments, sorted by name.
+         *
+         * The value is wrapped in C string quotes here rather than by the caller, because every one of
+         * these is read as a `const char *` in `src/kitecodec_abi.c` and a define whose value is not a
+         * string literal would compile to an identifier the unit has never heard of. No shell is
+         * involved: `ExecOperations.exec` passes argv straight through, so the quotes are literal
+         * characters clang sees and not something a shell would strip.
+         *
+         * Pure, so [CompileKiteCodecCTaskTest] can assert the shape without running a compile.
+         */
+        fun defineArguments(defines: Map<String, String>): List<String> =
+            defines.entries
+                .sortedBy { it.key }
+                .map { (name, value) -> "-D$name=\"$value\"" }
 
         /**
          * The compiler Kotlin/Native itself uses on an arm64 Mac, per konan.properties. Overridable

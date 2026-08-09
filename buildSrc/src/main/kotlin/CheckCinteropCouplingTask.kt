@@ -22,7 +22,9 @@ import java.io.File
  * can nothing but shrink, which is what this task enforces. It recomputes four counts over
  * [sourceDir] and fails when any of them is higher than the number recorded in [baselineFile]:
  *
- *  1. `cinterop_import_lines`: lines importing a symbol out of the `ffmpeg` cinterop package.
+ *  1. `cinterop_import_lines`: lines importing an FFMPEG symbol out of the `ffmpeg` cinterop package.
+ *     Imports of the opaque `kc_` surface are excluded; see [CINTEROP_IMPORT] for why that exclusion
+ *     is the difference between a ratchet and an obstacle.
  *  2. `ffkmp_call_sites`: mentions of an `ffkmp_` helper outside an import line.
  *  3. `direct_libav_call_sites`: calls straight into libav, behind no helper.
  *  4. `ffmpeg_struct_types_named_in_kotlin`: how many FFmpeg struct type names reach Kotlin text.
@@ -128,7 +130,28 @@ abstract class CheckCinteropCouplingTask : DefaultTask() {
          */
         private val SKIPPED_DIRECTORY_NAMES = setOf("build", ".claude")
 
-        private val CINTEROP_IMPORT = Regex("""^import ffmpeg\.""")
+        /**
+         * An import out of the `ffmpeg` cinterop package that is coupling to FFMPEG.
+         *
+         * The negative lookahead is the load-bearing part, and B1.6 is what forced it. The `ffmpeg`
+         * cinterop module holds two quite different surfaces now. One is FFmpeg itself: `AVFrame`,
+         * `avcodec_send_packet`, the 157 `ffkmp_` helpers, every one of them naming or handling an
+         * FFmpeg type. The other is the OPAQUE surface, spelled `kc_` and `KC_`, whose header
+         * (`native/kitecodec-c/include/kitecodec_abi.h`) includes no FFmpeg header and names no FFmpeg
+         * type at all.
+         *
+         * Counting the second as coupling would make this ratchet punish the very migration it exists
+         * to protect. Plan section 15.0 defers the opaque handle migration to B2 and B7 and installs
+         * this ratchet so the deferral cannot rot; the migration's whole shape is Kotlin call sites
+         * moving off FFmpeg-typed imports and onto `kc_` ones. Measured at B1.6: adding the identity
+         * gate took the FFmpeg imports from 253 to 246 and added 26 `kc_`/`KC_` imports, and a ratchet
+         * that read that as 272 would have failed a change whose net effect was to reduce the coupling.
+         *
+         * The opaque surface is deliberately not ratcheted at all, in either direction. It is expected
+         * to grow, so a ceiling on it would be a ceiling on progress, and `native/kitecodec-c/scripts/
+         * symbol-audit.sh` is what holds it to a decided set.
+         */
+        private val CINTEROP_IMPORT = Regex("""^import ffmpeg\.(?!kc_|KC_)""")
 
         private val HELPER_MENTION = Regex("""ffkmp_[A-Za-z0-9_]*""")
 

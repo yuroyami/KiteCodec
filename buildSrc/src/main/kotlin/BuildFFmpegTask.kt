@@ -498,12 +498,112 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
         check(code == 0) { "Command exited with $code: ${command.joinToString(" ")}" }
     }
 
+    /**
+     * One place where the expected FFmpeg release is written down, and where that is.
+     *
+     * Register item B1-04: the `n8.0` expectation lives in three files bound only by a comment in the
+     * third one asking the reader to keep them in sync. Nothing enforced it, and nothing checked any of
+     * them against the vendored checkout. [assertFFmpegRefsAgree] is the enforcement, and this is what
+     * it compares. Declared at class level and not inside the companion, because a class nested in a
+     * companion is spelled `BuildFFmpegTask.Companion.FFmpegRefSite` at the call site, which is not a
+     * name anyone should have to write.
+     */
+    data class FFmpegRefSite(val where: String, val ref: String)
+
     companion object {
         /** minSdk the native libs are built against: AMediaCodec needs 21+, 24 is a safe floor. */
         const val ANDROID_API = 24
 
         /** The FFmpeg tag `vendor/ffmpeg` is expected to be checked out at. */
         const val DEFAULT_SOURCE_REF = "n8.0"
+
+        /**
+         * Normalises an FFmpeg release reference so a git tag and a release file can be compared.
+         *
+         * FFmpeg's git tags are `n8.0`; the `RELEASE` file in a checkout of that tag says `8.0`. Both
+         * name the same release, so the leading `n` is dropped and the string is trimmed. Nothing else
+         * is normalised: `8.0` and `8.0.1` must stay different, because they are.
+         */
+        fun normaliseFFmpegRef(ref: String): String = ref.trim().removePrefix("n")
+
+        /**
+         * Fails when the places that record the expected FFmpeg release do not agree.
+         *
+         * Pure, so `BuildFFmpegRefsTest` can hand it agreeing and disagreeing inputs without a build.
+         * The message names every site and its value rather than only the mismatch, because the question
+         * a reader has at that moment is "which one is wrong", and that needs all of them.
+         *
+         * [vendorRelease] is the `RELEASE` file of `vendor/ffmpeg` when the checkout is present, and null
+         * when it is not. A missing checkout is not a failure: the vendored path is optional and most
+         * builds use a prebuilt or system FFmpeg. A PRESENT checkout at the wrong release is a failure,
+         * because that is the case where a build would compile against headers nobody declared.
+         */
+        fun assertFFmpegRefsAgree(sites: List<FFmpegRefSite>, vendorRelease: String?) {
+            require(sites.isNotEmpty()) { "assertFFmpegRefsAgree needs at least one site" }
+            val all = sites + listOfNotNull(
+                vendorRelease?.let { FFmpegRefSite("vendor/ffmpeg/RELEASE", it) },
+            )
+            val distinct = all.map { normaliseFFmpegRef(it.ref) }.distinct()
+            if (distinct.size == 1) return
+            throw GradleException(
+                buildString {
+                    appendLine(
+                        "The expected FFmpeg release is recorded in ${all.size} place(s) and they do " +
+                            "not agree (register item B1-04). Found ${distinct.size} distinct values:",
+                    )
+                    for (site in all) {
+                        appendLine("  ${site.where}: ${site.ref} (normalised ${normaliseFFmpegRef(site.ref)})")
+                    }
+                    appendLine()
+                    append(
+                        "A consumer that downloads one release and links it against a klib whose C was " +
+                            "compiled against another gets a successful static link and wrong struct " +
+                            "field offsets, which is register item B1-02. Make all of them name one " +
+                            "release, or check the vendored tree out at the release they name.",
+                    )
+                },
+            )
+        }
+
+        /**
+         * Reads `FFMPEG_VERSION: <ref>` out of a GitHub Actions workflow's `env:` block.
+         *
+         * Returns null when the key is absent, which the caller reports as its own failure: a workflow
+         * that stopped pinning the release is a drift this check exists to catch, and silently treating
+         * it as agreement would be the wrong answer.
+         */
+        fun readWorkflowFFmpegVersion(workflowText: String): String? =
+            workflowText.lineSequence()
+                .map { it.trim() }
+                .firstOrNull { it.startsWith("FFMPEG_VERSION:") }
+                ?.substringAfter(':')
+                ?.trim()
+                ?.trim('"', '\'')
+                ?.takeIf { it.isNotEmpty() }
+
+        /**
+         * Reads `DEFAULT_FFMPEG_VERSION = "<ref>"` out of `KiteCodecPlugin.kt`'s source text.
+         *
+         * Out of the TEXT, and not by referencing the constant, because it cannot be referenced from
+         * here: `kitecodec-gradle-plugin` is a separate Gradle project and its classes are not on the
+         * root build script's classpath, while `buildSrc`'s are. That asymmetry is the reason the value
+         * was duplicated in the first place, so reading the source is the check register item B1-04 needs
+         * rather than a workaround for one it does not.
+         */
+        fun readPluginDefaultFFmpegVersion(pluginSourceText: String): String? =
+            Regex("""DEFAULT_FFMPEG_VERSION\s*=\s*"([^"]+)"""")
+                .find(pluginSourceText)
+                ?.groupValues
+                ?.get(1)
+                ?.takeIf { it.isNotEmpty() }
+
+        /** Reads `LIBAVUTIL_VERSION_MAJOR` out of a vendored `libavutil/version.h`, or null. */
+        fun readVendoredAvutilMajor(versionHeaderText: String): Int? =
+            Regex("""^\s*#define\s+LIBAVUTIL_VERSION_MAJOR\s+(\d+)""", RegexOption.MULTILINE)
+                .find(versionHeaderText)
+                ?.groupValues
+                ?.get(1)
+                ?.toIntOrNull()
 
         /** Homebrew's prefix on Apple silicon; Intel Macs use /usr/local (override via the property). */
         const val DEFAULT_HOMEBREW_PREFIX = "/opt/homebrew"

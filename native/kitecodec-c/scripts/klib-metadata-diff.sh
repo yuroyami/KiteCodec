@@ -47,6 +47,32 @@
 # restore the def from the lift's parent commit, rebuild the cinterop, and run this script: it then
 # reports the mirror image of those numbers.
 #
+# What B1.4 measured against that baseline, recorded the same way. The pre-B1.4 dump was 18844
+# lines, sha256 a142ee53312e2700ec3fef8d431940daa9505f50646bf30afa2f8d114f748c27; the post-B1.4 dump
+# is 18784 lines, sha256 361e94272da47423678c58c78fb19d9aee6ee932c74ec4a779a9271629284517. The
+# differential was zero declarations added, 15 declarations removed, zero direct bindings added, 15
+# direct bindings removed, and zero other changed lines added. The 15 are the dead exported helpers
+# of register item B1-08, and the 30 removed "other" lines are those 15 declarations plus the
+# `@kotlinx/cinterop/ExperimentalForeignApi` line each one carried. Nothing else moved: the 80
+# structural lines realigned on each side are the per-fragment boilerplate this file already
+# explains, and they cancel.
+#
+# What B1.6 measured against that baseline, and the correction it forced on this script. The pre-B1.6
+# dump was 18784 lines, sha256 361e94272da47423678c58c78fb19d9aee6ee932c74ec4a779a9271629284517; the
+# post-B1.6 dump is 19024 lines, sha256 5e90ff81806aec7e3b9087a50316a78c5045c6bb8dccda081030d01c69a6986c.
+# The differential was 57 declarations added and 0 LOST, 6 direct bindings added (all six kc_ functions
+# of native/kitecodec-c/include/kitecodec_abi.h, none of them an ffkmp_ helper), zero direct bindings
+# removed, 177 other lines added and 4 removed. The 57 are kc_ffmpeg_report and its Companion, the six
+# kc_ functions, the four kc_status/kc_verdict typealiases, and the report's own fields and constants.
+#
+# The correction, which is the part worth keeping. The line diff also reported 2 DECLARATIONS REMOVED,
+# and reading that as a removal would have been wrong: they were `typealias AVAudioServiceType` and
+# `AVAudioServiceTypeVar`, which the inserted kc_ typealiases pushed from line 7595 to 7714, and both
+# appeared in the ADDED list as well. A line diff reports a moved block as a deletion plus an insertion.
+# Proved by set difference: not one line of the B1.4 baseline is absent from the B1.6 one. So this script
+# now reports DECLARATIONS LOST, GAINED and RELOCATED as set differences beside the diff-derived counts,
+# and LOST is the number an acceptance condition for a purely additive sub-phase should read. It was 0.
+#
 # Environment:
 #   KC_KLIB_TOOL   path to the Kotlin/Native `klib` tool, overriding the version-derived default
 #
@@ -197,6 +223,29 @@ report "DECLARATIONS REMOVED"    "$WORK/decl_removed.txt"
 report "DIRECT BINDINGS ADDED"   "$WORK/direct_added.txt"
 report "DIRECT BINDINGS REMOVED" "$WORK/direct_removed.txt"
 
+# The three sets above are derived from a LINE diff, and a line diff reports a block that MOVED as a
+# deletion in one place and an insertion in another. So a declaration can appear in both lists while
+# nothing about the surface changed, which measured at B1.6: inserting the kc_ typealiases pushed
+# `typealias AVAudioServiceType` and `AVAudioServiceTypeVar` from line 7595 to 7714, and both were
+# reported removed AND added. Reading "declarations removed 2" there would have been wrong.
+#
+# So the three sets below are the answer a compatibility question actually wants, and they are set
+# differences rather than diff hunks:
+#
+#   LOST       a name the baseline had and the current dump does not. This is the only one that can
+#              break a consumer, and the only one the acceptance condition of a purely additive
+#              sub-phase is allowed to see at zero.
+#   GAINED     a name the current dump has and the baseline did not.
+#   RELOCATED  a name in both, whose line the diff moved. Always benign.
+sort -u "$WORK/decl_added.txt"   > "$WORK/decl_added_set.txt"
+sort -u "$WORK/decl_removed.txt" > "$WORK/decl_removed_set.txt"
+comm -23 "$WORK/decl_removed_set.txt" "$WORK/decl_added_set.txt" > "$WORK/decl_lost.txt"
+comm -13 "$WORK/decl_removed_set.txt" "$WORK/decl_added_set.txt" > "$WORK/decl_gained.txt"
+comm -12 "$WORK/decl_removed_set.txt" "$WORK/decl_added_set.txt" > "$WORK/decl_relocated.txt"
+
+report "DECLARATIONS LOST, set difference"      "$WORK/decl_lost.txt"
+report "DECLARATIONS RELOCATED, in both lists"  "$WORK/decl_relocated.txt"
+
 # What is left after the four reports above, so nothing hides in a count nobody reads. Two kinds of
 # line are dropped from it:
 #
@@ -242,6 +291,9 @@ echo "  changed lines, added                   $(count "$WORK/added.txt")"
 echo "  changed lines, removed                 $(count "$WORK/removed.txt")"
 echo "  declarations added                     $(count "$WORK/decl_added.txt")"
 echo "  declarations removed                   $(count "$WORK/decl_removed.txt")"
+echo "  declarations LOST, set difference      $(count "$WORK/decl_lost.txt")"
+echo "  declarations gained, set difference    $(count "$WORK/decl_gained.txt")"
+echo "  declarations relocated, in both lists  $(count "$WORK/decl_relocated.txt")"
 echo "  direct bindings added                  $DIRECT_ADDED"
 echo "  direct bindings added, _ffkmp_ prefix  $DIRECT_ADDED_FFKMP"
 echo "  direct bindings removed                $(count "$WORK/direct_removed.txt")"

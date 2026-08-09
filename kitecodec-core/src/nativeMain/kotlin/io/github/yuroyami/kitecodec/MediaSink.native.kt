@@ -308,6 +308,8 @@ public actual class MediaSink internal constructor(
 
     public actual companion object {
         public actual fun open(path: String, format: String?, options: Map<String, String>): MediaSink {
+            // The FFmpeg identity gate, register item B1-02. Before the first allocation.
+            requireCompatibleFFmpeg()
             val arena = kotlinx.cinterop.Arena()
             val ctxVar = arena.allocPointerTo<AVFormatContext>()
             val rc = ffkmp_fmt_alloc_output2(ctxVar.ptr, path, format)

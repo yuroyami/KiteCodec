@@ -5,6 +5,7 @@ import org.gradle.testfixtures.ProjectBuilder
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertContains
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
@@ -133,6 +134,36 @@ class CompileKiteCodecCTaskTest {
             placeholder.deleteOnExit()
             placeholder
         }
+
+    /**
+     * The three defines of register item B1-02's identity gate, as clang sees them.
+     *
+     * The value has to arrive wrapped in C string quotes: `src/kitecodec_abi.c` reads each one as a
+     * `const char *`, so `-DKC_BUILD_FFMPEG_REF=n8.0` would expand to an identifier that unit has never
+     * heard of and the compile would fail. No shell is involved, because ExecOperations.exec passes argv
+     * straight through, so the quotes are characters clang receives rather than something a shell strips.
+     *
+     * Sorted by name so the command line is deterministic: an unordered map would make the compile
+     * arguments differ between runs, and Gradle's up-to-date check would flap on nothing.
+     */
+    @Test
+    fun buildDefinesBecomeQuotedMinusDArgumentsInNameOrder() {
+        assertEquals(
+            listOf(
+                """-DKC_BUILD_FFMPEG_DIR="/opt/homebrew/lib"""",
+                """-DKC_BUILD_FFMPEG_LICENSE="lgpl"""",
+                """-DKC_BUILD_FFMPEG_REF="n8.0"""",
+            ),
+            CompileKiteCodecCTask.defineArguments(
+                mapOf(
+                    CompileKiteCodecCTask.DEFINE_FFMPEG_REF to "n8.0",
+                    CompileKiteCodecCTask.DEFINE_FFMPEG_DIR to "/opt/homebrew/lib",
+                    CompileKiteCodecCTask.DEFINE_FFMPEG_LICENSE to "lgpl",
+                ),
+            ),
+        )
+        assertEquals(emptyList(), CompileKiteCodecCTask.defineArguments(emptyMap()))
+    }
 
     /**
      * Gradle wraps a task action failure, so the exception the caller sees is not always the

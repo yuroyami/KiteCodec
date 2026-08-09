@@ -1,0 +1,217 @@
+/* The KiteCodec C ABI: the FFmpeg header versus runtime identity gate.
+ *
+ * Register item B1-02, and plan section 15.2 sub-phase B1.6, which calls this the highest value
+ * clause in B1. What it prevents was demonstrated live rather than argued: older FFmpeg headers
+ * against a newer runtime link cleanly, every symbol resolves, and 38 measured struct field offsets
+ * are wrong. 48 of the helpers in kitecodec_helpers.h read or write through one of them, so the
+ * process reads wrong values and then dies inside av_frame_free, with AddressSanitizer naming a
+ * four byte read 36 bytes past a 416 byte region. In the nondeterministic case it is silent.
+ *
+ * OPAQUE FROM BIRTH. This header includes no FFmpeg header and names no FFmpeg type. That is a
+ * deliberate property and not an accident of what it happens to need: the opaque surface that B2
+ * grows starts from here, so it starts clean. The report is flat plain data with fixed char arrays
+ * and no pointers, because cinterop binds our own struct with real offsets and Kotlin reads it with
+ * one nativeHeap.alloc plus plain field reads.
+ *
+ * NO TWO-DIMENSIONAL ARRAYS ANYWHERE IN THE REPORT. cinterop flattens `char names[6][16]` into a
+ * single byte array, so `names[i]` would be byte i and not row i, which is a wrong reading that
+ * compiles. The per-library names therefore arrive through kc_ffmpeg_library_name(), one accessor
+ * returning a `const char *` per index, which is the form plan section 15.2 B1.6 step 1 decides on.
+ *
+ * WHY THIS NEEDS A REAL LIBRARY. kc_init is guarded by pthread_once. A function-local static inside
+ * a `static inline` function in a def file would give one flag per translation unit, so the gate
+ * would run once per consumer of the header rather than once per process, and the expectations it
+ * compares against could differ between those copies. The same argument settles where the frozen
+ * header numbers come from: kitecodec_abi.c is compiled in the same task, against the same include
+ * tree, as every helper unit, so if the compiler baked the struct offsets it also saw these macros.
+ * Nothing can recover the header version after the fact, which is why that construction is the only
+ * correct one.
+ */
+
+#ifndef KITECODEC_ABI_H
+#define KITECODEC_ABI_H
+
+#include <stdint.h>
+
+/* The version of THIS C surface, not of FFmpeg. Major changes when a declaration in this header
+ * changes shape; minor when something is added compatibly. Read at runtime by kc_abi_version(). */
+#define KITECODEC_C_ABI_MAJOR 1
+#define KITECODEC_C_ABI_MINOR 0
+
+/* The six libraries the gate covers, and their fixed order inside the report's arrays. Every array
+ * in kc_ffmpeg_report is indexed by these, and kc_ffmpeg_library_name() names them. */
+#define KC_FFMPEG_LIBRARY_COUNT 6
+#define KC_LIB_AVUTIL     0
+#define KC_LIB_AVCODEC    1
+#define KC_LIB_AVFORMAT   2
+#define KC_LIB_AVFILTER   3
+#define KC_LIB_SWSCALE    4
+#define KC_LIB_SWRESAMPLE 5
+
+/* Fixed text capacities. Sized from measurement on the proving machine rather than guessed:
+ * av_version_info() is "8.0", avutil_license() is "GPL version 3 or later" (22 bytes), and the
+ * longest provisioning directory seen is a Homebrew Cellar path of 46 bytes. Every write into these
+ * goes through one bounded copy helper, so a longer string truncates and never overruns. */
+#define KC_TEXT_REF   32
+#define KC_TEXT_NAME  64
+#define KC_TEXT_LIST 128
+#define KC_TEXT_PATH 512
+/* The provisioning sentence gets its own, larger capacity, and the reason is a measurement rather than
+ * caution. On the proving machine it comes out 483 bytes long against a 512 byte field: a provisioning
+ * directory thirty characters longer than this one would have truncated the actionable half of the
+ * sentence away, and the actionable half is the entire point of it. 1024 leaves the whole sentence room
+ * even with a 511 byte directory in the middle of it. tests/test_identity.c asserts it is not truncated,
+ * so this cannot go back to being tight without something failing. */
+#define KC_TEXT_SENTENCE 1024
+
+/* The overall outcome of the gate. Negative means reject; kc_init() returns exactly this value.
+ *
+ * Policy, decided in plan section 15.2 B1.6 step 3 and not to be reopened here:
+ *  - major must be EXACTLY equal, hard reject, no override, because 38 field offsets were measured
+ *    to move across a major and FFmpeg's own doc/developer.texi permits reordering struct contents
+ *    at a major bump;
+ *  - runtime minor must be AT OR ABOVE header minor, because FFmpeg guarantees backward
+ *    compatibility only, so a runtime older than the headers is the dangerous direction;
+ *  - micro is compared, reported, and never rejects;
+ *  - the six *_configuration() strings must agree with each other, and disagreement rejects,
+ *    because that is a mixed install and the version numbers alone cannot see it.
+ */
+enum kc_status {
+    KC_STATUS_OK = 0,
+    KC_STATUS_MAJOR_MISMATCH = -1,
+    KC_STATUS_RUNTIME_OLDER = -2,
+    KC_STATUS_CONFIGURATION_MISMATCH = -3
+};
+
+/* The per-library finding. KC_VERDICT_MICRO_OLDER is a finding and not a rejection: it is reported
+ * so a bug report carries it, and the status stays KC_STATUS_OK. */
+enum kc_verdict {
+    KC_VERDICT_OK = 0,
+    KC_VERDICT_MAJOR_MISMATCH = 1,
+    KC_VERDICT_RUNTIME_OLDER = 2,
+    KC_VERDICT_MICRO_OLDER = 3,
+    KC_VERDICT_CONFIGURATION_DISAGREES = 4
+};
+
+/* The identity report: everything a rejection message and a bug report need, in one flat struct.
+ *
+ * Every numeric array is indexed by the KC_LIB_* constants above. `header_*` is what the compiler
+ * saw when this library was built; `runtime_*` is what the linked FFmpeg answers today. Both columns
+ * are always populated, including on a reject, because a rejection that does not say what it found
+ * is a rejection nobody can act on.
+ */
+typedef struct kc_ffmpeg_report {
+    /* KC_STATUS_OK, or the negative kc_status the comparison produced. */
+    int32_t status;
+
+    /* 0 when the gate was not bypassed. Otherwise the ORIGINAL negative status, so the fact that a
+     * diagnostic bypass was used travels with every diagnostic dump a bug report carries. Plan
+     * section 15.6 question 3 makes that mandatory: no investigation may start from a silently
+     * bypassed gate. Note the shape: when the bypass fires, `status` becomes KC_STATUS_OK and this
+     * field holds what the verdict would have been, so a caller that only looks at `status`
+     * continues, and a caller that reports state sees the whole truth. */
+    int32_t bypassed;
+
+    /* KITECODEC_C_ABI_MAJOR and _MINOR of the compiled library, so a mismatch between a klib and an
+     * archive built at different times is visible too. */
+    int32_t abi_major;
+    int32_t abi_minor;
+
+    int32_t header_major[KC_FFMPEG_LIBRARY_COUNT];
+    int32_t header_minor[KC_FFMPEG_LIBRARY_COUNT];
+    int32_t header_micro[KC_FFMPEG_LIBRARY_COUNT];
+    int32_t runtime_major[KC_FFMPEG_LIBRARY_COUNT];
+    int32_t runtime_minor[KC_FFMPEG_LIBRARY_COUNT];
+    int32_t runtime_micro[KC_FFMPEG_LIBRARY_COUNT];
+
+    /* One kc_verdict per library. */
+    int32_t verdict[KC_FFMPEG_LIBRARY_COUNT];
+
+    /* 1 when all six *_configuration() strings are byte equal, 0 when they are not. A mixed install
+     * has agreeing version numbers and disagreeing configuration strings, which is why this is a
+     * separate question from the six comparisons above. */
+    int32_t configuration_agrees;
+
+    /* How many of the six disagreed with libavutil's string, and their names, comma separated. */
+    int32_t configuration_disagreed_count;
+    char configuration_disagreed[KC_TEXT_LIST];
+
+    /* What the artifact was BUILT for. Supplied by the build through -DKC_BUILD_FFMPEG_REF,
+     * -DKC_BUILD_FFMPEG_LICENSE and -DKC_BUILD_FFMPEG_DIR; each falls back to "unknown" when the
+     * build did not say, which is itself information worth reporting. */
+    char build_ffmpeg_ref[KC_TEXT_REF];
+    char build_license_flavour[KC_TEXT_REF];
+    char build_provisioning_dir[KC_TEXT_PATH];
+
+    /* What the runtime answers. `runtime_license` is register item B1-21: the build declares
+     * FFmpegLicense.LGPL while the linked Homebrew runtime returns "GPL version 3 or later", so both
+     * strings ride in every rejection and every diagnostic dump and the contradiction is visible
+     * instead of latent. Resolving it is B7's, not this gate's. */
+    char runtime_version_info[KC_TEXT_NAME];
+    char runtime_license[KC_TEXT_NAME];
+
+    /* One actionable sentence: what to link, or how to rebuild, plus the bypass and the warning that
+     * it is not a supported configuration. Never empty, and sized so it is never truncated either; see
+     * KC_TEXT_SENTENCE. */
+    char provisioning[KC_TEXT_SENTENCE];
+} kc_ffmpeg_report;
+
+/* KC_API marks a symbol as deliberately exported. Guarded because kitecodec_helpers.h defines the
+ * same macro with the same replacement text, and the two headers meet in one translation unit:
+ * kitecodec_abi.h is listed LAST in ffmpeg.def's `headers` line. An identical redefinition is
+ * benign in C, and the guard makes it impossible to depend on which order they arrive in. */
+#ifndef KC_API
+#if defined(_WIN32)
+#define KC_API __declspec(dllexport)
+#else
+#define KC_API __attribute__((visibility("default")))
+#endif
+#endif
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* Run the gate, once per process, and return its verdict: KC_STATUS_OK or a negative kc_status.
+ *
+ * Every KiteCodec entry point calls this FIRST, before anything allocates. Cheap after the first
+ * call: pthread_once plus a load of a cached int. Safe to call from any thread at any time.
+ *
+ * When the environment variable KITECODEC_FFMPEG_ABI_BYPASS is exactly "1", a rejection is
+ * downgraded to KC_STATUS_OK, a warning naming the exact mismatch with both identities is written to
+ * stderr exactly once, and kc_ffmpeg_report::bypassed records what the verdict would have been. The
+ * bypass is opt-in, never the default, and never quiet. It exists because an unbypassable gate turns
+ * one false rejection into an outage inside a consumer's product that the consumer cannot patch; see
+ * plan section 15.4 under B1.6 and section 15.6 question 3.
+ */
+KC_API int kc_init(void);
+
+/* Copy the identity report into the caller's storage. Runs kc_init() first, so the report is always
+ * populated. `out` may be NULL, in which case this only ensures the gate has run. */
+KC_API void kc_ffmpeg_report_get(kc_ffmpeg_report *out);
+
+/* (KITECODEC_C_ABI_MAJOR << 16) | (KITECODEC_C_ABI_MINOR << 8), the same packing FFmpeg uses for its
+ * own AV_VERSION_INT, so a caller that already unpacks one unpacks this the same way. */
+KC_API uint32_t kc_abi_version(void);
+
+/* The name of library `index`, one of the KC_LIB_* constants: "libavutil", "libavcodec",
+ * "libavformat", "libavfilter", "libswscale", "libswresample". Returns "" for an index out of
+ * range, never NULL. This is the accessor that exists so the report needs no `char names[6][16]`. */
+KC_API const char *kc_ffmpeg_library_name(int index);
+
+/* The name of a kc_verdict: "ok", "major mismatch", "runtime older than headers", "micro older than
+ * headers", "configuration disagrees". Returns "unknown" for an unrecognised value, never NULL.
+ * It exists so the Kotlin side prints the verdict without keeping a second copy of this table. */
+KC_API const char *kc_verdict_name(int verdict);
+
+/* The runtime's configure line, from avcodec_configuration(). Register item B1-22 moves this and the
+ * six *_version() queries behind the identity report, because that is where they belong: a caller
+ * asking what FFmpeg it has is asking an identity question. Runs kc_init() first. The returned
+ * pointer is into libavcodec's own static storage and lives for the life of the process. */
+KC_API const char *kc_ffmpeg_configuration(void);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* KITECODEC_ABI_H */

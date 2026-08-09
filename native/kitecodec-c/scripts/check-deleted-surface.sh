@@ -54,8 +54,14 @@ ffkmp_stream_nb_frames ffkmp_avseek_flag_byte ffkmp_avseek_flag_frame"
 # script, the one generated comment that outlived its subject (src/helpers_format.c still says
 # ffkmp_fmt_alloc_output2 is "Like ffkmp_fmt_alloc_output", because the units are the def body
 # verbatim and rewriting prose would make verify-lift.sh fuzzy), the two test files that record why
-# their cases went, and the tree's own README. Paths are relative to the KiteCodec repository root;
-# a path starting with ../ lives in KitePlayer.
+# their cases went, the tree's own README, and KPKMP.md, which is the project's Execution log and so
+# is the primary record of the deletion: its B1.4 entry names all 15 so a later reader can check the
+# list without re-deriving it. Paths are relative to the KiteCodec repository root; a path starting
+# with ../ lives in KitePlayer.
+#
+# KPKMP.md was added by the B1.4 to B1.6 gate run, which this check FAILED on the gate's own log
+# entry. That is the check working rather than the check being wrong: it refused a new prose mention
+# until someone gave a reason, and the reason is the line above.
 ALLOWED_PROSE="
 native/kitecodec-c/tools/extract_from_def.py
 native/kitecodec-c/scripts/verify-lift.sh
@@ -64,6 +70,7 @@ native/kitecodec-c/src/helpers_format.c
 native/kitecodec-c/tests/test_ownership.c
 native/kitecodec-c/tests/test_rescale.c
 native/kitecodec-c/README.md
+../KitePlayer/KPKMP.md
 "
 
 # Every excluded directory is gitignored in one repository or the other: build output, the Gradle

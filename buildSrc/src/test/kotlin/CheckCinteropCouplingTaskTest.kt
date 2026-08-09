@@ -3,8 +3,10 @@ package io.github.yuroyami.kitecodec.buildtools
 import org.gradle.api.GradleException
 import org.gradle.testfixtures.ProjectBuilder
 import java.io.File
+import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertContains
+import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
@@ -72,6 +74,45 @@ class CheckCinteropCouplingTaskTest {
                 "$name: baseline ${actual.getValue(name) - 1}, actual ${actual.getValue(name)}",
             )
         }
+    }
+
+    /**
+     * The opaque `kc_` surface is not FFmpeg coupling, and count 1 must not read it as such.
+     *
+     * This is the one case in this file that uses a fixture rather than the real sources, and it earns
+     * that: the question is what the regex does to two specific import shapes, and the real tree cannot
+     * be made to hold a counterexample on demand. It is also the behaviour B1.6 changed, so it needs a
+     * test that fails if someone widens the regex back.
+     *
+     * The point of the exclusion is in the numbers. B1.6 removed 7 FFmpeg imports and added 26 `kc_` and
+     * `KC_` ones; counted together that reads as 253 rising to 272, and the ratchet would have refused a
+     * change whose net effect was less coupling. Counted apart it reads as 253 falling to 246, which is
+     * what happened.
+     */
+    @Test
+    fun countOneSeesFFmpegImportsAndNotTheOpaqueSurface() {
+        val fixture = createTempDirectory("coupling-fixture").toFile()
+        fixture.deleteOnExit()
+        fixture.resolve("nativeInterop/cinterop").mkdirs()
+        fixture.resolve(CheckCinteropCouplingTask.DEF_PATH).writeText("package = ffmpeg\n")
+        fixture.resolve("Sample.kt").writeText(
+            """
+            |import ffmpeg.AVFrame
+            |import ffmpeg.ffkmp_frame_alloc
+            |import ffmpeg.avcodec_send_packet
+            |import ffmpeg.kc_init
+            |import ffmpeg.kc_ffmpeg_report_get
+            |import ffmpeg.KC_LIB_AVUTIL
+            |import kotlinx.cinterop.toKString
+            """.trimMargin(),
+        )
+
+        val counts = CheckCinteropCouplingTask.measure(fixture)
+        assertEquals(
+            3,
+            counts.getValue(CheckCinteropCouplingTask.CINTEROP_IMPORT_LINES),
+            "the three FFmpeg imports count; the three kc_/KC_ ones and the kotlinx one do not",
+        )
     }
 
     private fun newTask(baseline: File): CheckCinteropCouplingTask {

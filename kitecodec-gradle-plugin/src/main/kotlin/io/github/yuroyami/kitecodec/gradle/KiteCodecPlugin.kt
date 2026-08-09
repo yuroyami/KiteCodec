@@ -43,9 +43,104 @@ class KiteCodecPlugin : Plugin<Project> {
         }
 
         project.afterEvaluate {
+            // Register item B1-03, and it runs FIRST. A consumer who asked for the wrong FFmpeg release
+            // has a problem that makes every later message misleading: the licence and prebuilt-asset
+            // checks below would talk about assets for a release these artifacts cannot use.
+            validateFFmpegVersion(ext)
             validateLicenseChoice(project, ext, wiredTriples.filterNot { it.android }.toSet())
             validatePrebuiltAvailability(ext, wiredTriples)
+            validateSystemFFmpegMajors(project, ext)
         }
+    }
+
+    /**
+     * Refuses a `ffmpeg { version = ... }` that these KiteCodec artifacts were not compiled against.
+     *
+     * Register item B1-03. See [FFmpegExpectations] for why a successful link is the dangerous outcome
+     * here rather than the safe one, and why this check and the runtime identity gate are both needed.
+     */
+    private fun validateFFmpegVersion(ext: KiteCodecExtension) {
+        // Conventions make these .get() calls safe after evaluation.
+        val message = FFmpegExpectations.versionMismatchMessage(
+            ext.ffmpeg.version.get(),
+            ext.ffmpeg.source.get(),
+        ) ?: return
+        throw GradleException(message)
+    }
+
+    /**
+     * With `source = FFmpegSource.System`, compares the system FFmpeg's majors with what these artifacts
+     * were compiled against, and fails configuration when they differ.
+     *
+     * **It reads the system FFmpeg's own version headers, and not `pkg-config --modversion`.** The plan
+     * that specified this check named pkg-config, and pkg-config does answer correctly for all six
+     * libraries on the proving machine, but running it here is not possible: measured on this repository,
+     * a KitePlayer build fails with "Starting an external process 'pkg-config --modversion libavutil'
+     * during configuration time is unsupported" and the configuration cache entry is discarded with 12
+     * problems. `afterEvaluate` is still configuration time, and how the process is started makes no
+     * difference to that rule.
+     *
+     * Reading the version headers under the resolved include directory is better anyway, for a reason
+     * that has nothing to do with the cache. Those headers are the ones the consumer's cinterop would
+     * compile against, so they
+     * are the thing this check is actually about; pkg-config reports metadata beside them, which is one
+     * indirection further from the question. The read goes through `providers.fileContents`, so it is a
+     * tracked configuration input: a consumer who upgrades their system FFmpeg gets the check re-run
+     * rather than a stale cached pass.
+     *
+     * A prefix this plugin cannot resolve, or headers it cannot read, means no opinion and no failure;
+     * see [FFmpegExpectations.systemMajorMismatchMessage] for why silence there is deliberate.
+     */
+    private fun validateSystemFFmpegMajors(project: Project, ext: KiteCodecExtension) {
+        if (ext.ffmpeg.source.get() != FFmpegSource.System) return
+        val homebrewPrefix = project.providers
+            .gradleProperty("kitecodec.macos.homebrew.prefix").orNull
+        val includeDir = hostTriple()
+            ?.let { systemLibDir(homebrewPrefix, it) }
+            ?.parentFile
+            ?.resolve("include")
+            ?: return
+        val versions = FFmpegExpectations.EXPECTED_MAJORS.keys
+            .mapNotNull { library ->
+                readHeaderVersion(project, includeDir, library)?.let { library to it }
+            }
+            .toMap()
+        if (versions.isEmpty()) {
+            project.logger.info(
+                "kitecodec: no libav* version headers under $includeDir, so the system FFmpeg's major " +
+                    "version was not checked here. The runtime identity gate still checks it, at first " +
+                    "playback.",
+            )
+            return
+        }
+        val message = FFmpegExpectations.systemMajorMismatchMessage(versions) ?: return
+        throw GradleException(message)
+    }
+
+    /**
+     * `MAJOR.MINOR.MICRO` from `<includeDir>/<library>/version.h` plus `version_major.h`, or null.
+     *
+     * Both files, for the reason [FFmpegExpectations.readVersionFromHeaders] records: FFmpeg keeps the
+     * MAJOR of every library except libavutil in its own `version_major.h`.
+     *
+     * `layout.file(provider { ... })` and not `layout.projectDirectory.file(path)`: these are absolute
+     * paths outside the project, and the second form is documented as resolving its argument relative to
+     * the directory. Going through a `Provider<RegularFile>` is the API for a `java.io.File` that is
+     * already absolute, and it keeps the read a tracked configuration input.
+     */
+    private fun readHeaderVersion(project: Project, includeDir: File, library: String): String? {
+        val text = listOf("version.h", "version_major.h")
+            .mapNotNull { name ->
+                val file = includeDir.resolve("$library/$name")
+                project.providers
+                    .fileContents(project.layout.file(project.provider { file }))
+                    .asText
+                    .orNull
+            }
+            .takeIf { it.isNotEmpty() }
+            ?.joinToString("\n")
+            ?: return null
+        return FFmpegExpectations.readVersionFromHeaders(text, library)
     }
 
     /**

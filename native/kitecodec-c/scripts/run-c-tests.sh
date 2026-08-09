@@ -4,7 +4,7 @@
 #
 # Usage:  ./scripts/run-c-tests.sh <variant> [suite ...]
 #         variant is one of: plain asan tsan
-#         suite names are the file stems, for example test_buffers. With none given, all five
+#         suite names are the file stems, for example test_buffers. With none given, all six
 #         run, which is what a gate does.
 #
 # Build first: ./scripts/build-host.sh <variant>. This script never builds, so a gate cannot
@@ -29,8 +29,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 BIN="$ROOT/build/$VARIANT/bin"
 
-# The five suites of plan section 15.3. Keep this list and build-host.sh in agreement.
-ALL_SUITES="test_ownership test_buffers test_rescale test_strerror_thread test_convert"
+# The six suites of plan section 15.3. Keep this list and build-host.sh in agreement.
+ALL_SUITES="test_ownership test_buffers test_rescale test_strerror_thread test_convert test_identity"
 SUITES="${*:-$ALL_SUITES}"
 
 [ -d "$BIN" ] || {

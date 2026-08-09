@@ -76,6 +76,24 @@ public sealed class FFmpegError(public val code: Int, public val message: String
     /** Library-internal invariant failure, not an FFmpeg return code. */
     public class Internal(message: String) : FFmpegError(0, message)
 
+    /**
+     * The linked FFmpeg runtime does not match the headers KiteCodec's C layer was compiled against,
+     * so KiteCodec refused to use it.
+     *
+     * Deliberately its own class and not an [Internal]: nothing about it is a bug in KiteCodec, it is
+     * never a property of the media, and a caller that wants to tell "your FFmpeg is wrong" apart from
+     * "this file is broken" must be able to catch exactly this. [identity] carries both version
+     * columns for all six libraries, both licence strings, and one actionable sentence.
+     *
+     * [code] is 0, like [Internal]'s, on purpose. The verdict is a KiteCodec status and not an
+     * `AVERROR_*` value, and the two number spaces overlap: `AVERROR(EPERM)` is also -1, so putting a
+     * verdict in [code] would make it indistinguishable from a permission error. Read
+     * [FFmpegIdentity.status] instead.
+     */
+    public class IncompatibleFFmpegRuntime(
+        public val identity: FFmpegIdentity,
+    ) : FFmpegError(0, identity.describe())
+
     override fun toString(): String = "${this::class.simpleName}(code=$code, message=$message)"
 
     public companion object {

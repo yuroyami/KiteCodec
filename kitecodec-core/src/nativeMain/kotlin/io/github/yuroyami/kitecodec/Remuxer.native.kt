@@ -14,6 +14,8 @@ public actual object Remuxer {
         metadata: Map<String, String>,
         onProgress: ((packetsWritten: Long) -> Unit)?,
     ) {
+        // The FFmpeg identity gate, register item B1-02. First statement of the entry point.
+        requireCompatibleFFmpeg()
         require(startMicros >= 0 && endMicros > startMicros) { "Invalid trim window [$startMicros, $endMicros]" }
 
         MediaSource.open(input).use { source ->

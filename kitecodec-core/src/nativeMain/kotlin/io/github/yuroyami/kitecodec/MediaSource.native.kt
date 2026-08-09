@@ -461,7 +461,13 @@ public actual class MediaSource internal constructor(
     }
 
     public actual companion object {
-        public actual fun open(path: String): MediaSource = openMediaSource(path)
+        public actual fun open(path: String): MediaSource {
+            // The FFmpeg identity gate, register item B1-02. First statement, before anything
+            // allocates: an incompatible runtime is rejected here rather than corrupting memory
+            // through a struct field offset that moved.
+            requireCompatibleFFmpeg()
+            return openMediaSource(path)
+        }
 
         /**
          * How far before the requested time [seekForDecode] aims. Must comfortably exceed one GOP:

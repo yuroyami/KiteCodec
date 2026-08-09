@@ -174,7 +174,7 @@ kotlin {
         /*
          * The FFmpeg helper layer, compiled for THIS target into its own directory and embedded in
          * the cinterop klib by ffmpeg.def's `staticLibraries = libkitecodec.a`. It sits after the
-         * FFmpeg path resolution above on purpose: kitecodec_helpers.c includes 16 libav headers, so
+         * FFmpeg path resolution above on purpose: the helper units include 16 libav headers, so
          * a target with no FFmpeg tree cannot compile it and is skipped here exactly as it is
          * skipped for the cinterop.
          *
@@ -187,6 +187,25 @@ kotlin {
             sourceDir.set(rootDir.resolve("native/kitecodec-c/src"))
             includeDir.set(rootDir.resolve("native/kitecodec-c/include"))
             ffmpegIncludeDirs.set(listOf(paths.includeDir))
+            /*
+             * What this archive was built for, read by the FFmpeg identity gate in
+             * native/kitecodec-c/src/kitecodec_abi.c and reported in every rejection and every
+             * diagnostic dump (register items B1-02 and B1-21). They are reported, never compared:
+             * the comparison is between the six LIB*_VERSION_INT macros the same compile froze and
+             * the six *_version() functions the linked runtime answers with. What these three add is
+             * the other half of an actionable sentence, which is what the build decided to provision.
+             *
+             * The licence one is the one that matters most today. This build declares a flavour here
+             * while the linked Homebrew runtime's avutil_license() returns "GPL version 3 or later",
+             * so both strings ride in the report and the contradiction is visible instead of latent.
+             */
+            buildDefines.set(
+                mapOf(
+                    CompileKiteCodecCTask.DEFINE_FFMPEG_REF to BuildFFmpegTask.DEFAULT_SOURCE_REF,
+                    CompileKiteCodecCTask.DEFINE_FFMPEG_LICENSE to license.dirName,
+                    CompileKiteCodecCTask.DEFINE_FFMPEG_DIR to paths.libDir,
+                ),
+            )
             // java.io.File and not project.file(...): the latter captures a reference to this
             // script inside the provider, which the configuration cache refuses to serialize with
             // "cannot serialize Gradle script object references".
@@ -226,7 +245,7 @@ kotlin {
          *
          * The dependency alone is not enough, and the plan's section 15.0 said otherwise on the
          * strength of a different prototype. Measured here at B1.3, in a checkout with no copied
-         * Gradle state: editing only `kitecodec_helpers.c` re-executes the C compile and writes a
+         * Gradle state: editing only a helper source re-executes the C compile and writes a
          * new archive, and `cinteropFfmpegMacosArm64` then reports UP-TO-DATE and keeps the STALE
          * archive inside the klib, with or without the configuration cache. Gradle says why under
          * `--info`: "Caching disabled for task ':kitecodec-core:cinteropFfmpegMacosArm64' because:

@@ -243,6 +243,8 @@ public actual class FilterGraph internal constructor(
             frameRate: Rational,
             sampleAspectRatio: Rational,
         ): FilterGraph {
+            // The FFmpeg identity gate, register item B1-02. Before the first allocation.
+            requireCompatibleFFmpeg()
             val arena = Arena()
             val graphVar = arena.allocPointerTo<AVFilterGraph>()
             val srcVar = arena.allocPointerTo<AVFilterContext>()
@@ -275,6 +277,8 @@ public actual class FilterGraph internal constructor(
             outputSampleFormat: SampleFormat,
             outputChannels: Int,
         ): FilterGraph {
+            // The FFmpeg identity gate, register item B1-02. Before the first allocation.
+            requireCompatibleFFmpeg()
             val arena = Arena()
             val graphVar = arena.allocPointerTo<AVFilterGraph>()
             val srcVar = arena.allocPointerTo<AVFilterContext>()
@@ -298,6 +302,8 @@ public actual class FilterGraph internal constructor(
         }
 
         public actual fun buildVideoMulti(description: String, inputs: List<VideoInput>): FilterGraph {
+            // The FFmpeg identity gate, register item B1-02. Before the first allocation.
+            requireCompatibleFFmpeg()
             require(inputs.isNotEmpty()) { "Need at least one input" }
             memScoped {
                 val n = inputs.size
@@ -336,6 +342,8 @@ public actual class FilterGraph internal constructor(
             outputSampleFormat: SampleFormat,
             outputChannels: Int,
         ): FilterGraph {
+            // The FFmpeg identity gate, register item B1-02. Before the first allocation.
+            requireCompatibleFFmpeg()
             require(inputs.isNotEmpty()) { "Need at least one input" }
             memScoped {
                 val n = inputs.size

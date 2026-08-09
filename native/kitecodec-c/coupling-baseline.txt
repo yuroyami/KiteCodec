@@ -15,18 +15,47 @@
 # directory named `build` or `.claude`, because both hold gitignored scratch checkouts of these
 # same files and counting those would double every number.
 #
-# Measured on 2026-08-09 at KiteCodec cdb8ad2 with a clean tree, over 10 Kotlin files.
+# Measured on 2026-08-09 at KiteCodec cdb8ad2 with a clean tree, over 10 Kotlin files. Three of the
+# four numbers were LOWERED at B1.6, which is a normal commit: the identity gate of register item
+# B1-02 moved the six *_version queries and the configuration query behind one report, and the
+# measurement is recorded beside each number below.
 
-# grep -rn '^import ffmpeg\.' --include='*.kt' . | wc -l
-cinterop_import_lines 253
+# grep -rn '^import ffmpeg\.' --include='*.kt' . | grep -v '^[^:]*:[0-9]*:import ffmpeg\.\(kc_\|KC_\)' | wc -l
+#
+# 253 at B1.1, 246 at B1.6. Seven imports left FFmpeg.native.kt when the six *_version functions and
+# avcodec_configuration moved behind the identity report (register item B1-22).
+#
+# The grep excludes `import ffmpeg.kc_` and `import ffmpeg.KC_`, and CheckCinteropCouplingTask's regex
+# does the same with a negative lookahead. Those names are the OPAQUE surface: the header they come
+# from, native/kitecodec-c/include/kitecodec_abi.h, includes no FFmpeg header and names no FFmpeg type,
+# so importing one is not coupling to FFmpeg. Counting them here would make this ratchet punish the
+# migration it exists to protect, which was measured at B1.6: the FFmpeg imports fell from 253 to 246
+# and 26 kc_/KC_ imports arrived, and reading that as a rise from 253 to 272 would have failed a change
+# whose net effect was less coupling. The opaque surface is not ratcheted in either direction, because
+# it is meant to grow; symbol-audit.sh is what keeps it to a decided set.
+cinterop_import_lines 246
 
 # grep -rn 'ffkmp_' --include='*.kt' . | grep -v ':import ' \
 #   | grep -o 'ffkmp_[A-Za-z0-9_]*' | wc -l
+#
+# Unchanged by B1.6, which adds a kc_ surface beside the helpers and moves no helper call site.
 ffkmp_call_sites 273
 
 # grep -rnoE '\b(av|avcodec|avdevice|avfilter|avformat|avutil|postproc|sws|swscale|swr|swresample)_[A-Za-z0-9_]*\(' \
 #   --include='*.kt' . | grep -v ':import ' | wc -l
-direct_libav_call_sites 21
+#
+# 21 at B1.1, 14 at B1.6. The seven that went are avcodec_configuration and the six *_version
+# functions, all of them in FFmpeg.native.kt, now answered from the identity report (register item
+# B1-22). The 14 left are the four hot decode and encode calls at 7 sites, the three find_*_by_name
+# queries at 4 sites, and 3 more send/receive sites; every one of them is B2's, because wrapping them
+# without B2's typed send and receive outcomes would change their signatures twice.
+#
+# The grep counts a name followed by an opening bracket in any non-import line, COMMENTS INCLUDED.
+# That bit is worth knowing rather than rediscovering: at B1.6 three KDoc mentions written as
+# `av_version_info()`, `avutil_license()` and `avcodec_configuration()` counted as call sites and held
+# the number at 17 after the real calls were gone. They were rewritten without their brackets, and the
+# comment above FFmpeg.native.kt's object body records why so the next reader does not put them back.
+direct_libav_call_sites 14
 
 # The FFmpeg struct type names are derived from the C rather than hand listed: they are the
 # (AV|Sws|Swr)[A-Z][a-z]... tokens that appear at least once without the `enum` keyword in front of
