@@ -1,11 +1,16 @@
 import com.vanniktech.maven.publish.JavadocJar
 import com.vanniktech.maven.publish.KotlinMultiplatform
 import io.github.yuroyami.kitecodec.buildtools.BuildFFmpegTask
+import io.github.yuroyami.kitecodec.buildtools.CompileKiteCodecCTask
 import io.github.yuroyami.kitecodec.buildtools.FFmpegLicense
 import io.github.yuroyami.kitecodec.buildtools.FFmpegPaths
 import io.github.yuroyami.kitecodec.buildtools.StaticLinkFlags
 import io.github.yuroyami.kitecodec.buildtools.TargetTriple
+import org.gradle.api.tasks.PathSensitivity
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
+// Named explicitly because inside a Gradle Kotlin script `java` resolves to the java extension,
+// so `java.io.File(...)` does not compile.
+import java.io.File
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -165,6 +170,34 @@ kotlin {
             )
             null
         } ?: return@forEach
+
+        /*
+         * The FFmpeg helper layer, compiled for THIS target into its own directory and embedded in
+         * the cinterop klib by ffmpeg.def's `staticLibraries = libkitecodec.a`. It sits after the
+         * FFmpeg path resolution above on purpose: kitecodec_helpers.c includes 16 libav headers, so
+         * a target with no FFmpeg tree cannot compile it and is skipped here exactly as it is
+         * skipped for the cinterop.
+         *
+         * The output directory is keyed by the konan target name and shared with nothing, which is
+         * register item B1-11: a wrong-architecture archive is embedded without complaint and fails
+         * only at the consumer's final link.
+         */
+        val compileC = tasks.register<CompileKiteCodecCTask>("compileKiteCodecCFor${triple.gradleSuffix}") {
+            konanTargetName.set(target.konanTarget.name)
+            sourceDir.set(rootDir.resolve("native/kitecodec-c/src"))
+            includeDir.set(rootDir.resolve("native/kitecodec-c/include"))
+            ffmpegIncludeDirs.set(listOf(paths.includeDir))
+            // java.io.File and not project.file(...): the latter captures a reference to this
+            // script inside the provider, which the configuration cache refuses to serialize with
+            // "cannot serialize Gradle script object references".
+            konanDataDir.fileProvider(
+                providers.environmentVariable("KONAN_DATA_DIR")
+                    .orElse(providers.systemProperty("user.home").map { home -> "$home/.konan" })
+                    .map { path -> File(path) },
+            )
+            outputDir.set(layout.buildDirectory.dir("kitecodec-c/${target.konanTarget.name}"))
+        }
+
         target.compilations.getByName("main").cinterops {
             // One cinterop module for all six libav* libraries, which keeps AVCodec, AVFrame,
             // AVPacket etc. as a SINGLE Kotlin type across every binding (each cinterop module
@@ -174,7 +207,49 @@ kotlin {
                 includeDirs.allHeaders(paths.includeDir)
                 extraOpts("-libraryPath", paths.libDir)
                 compilerOpts("-I${paths.includeDir}")
+                // The helper layer: its header for the `headers` entry, and its archive directory as
+                // a SECOND -libraryPath beside FFmpeg's. Two independent -libraryPath entries
+                // coexist. This is not a libraryPaths line in the def because a def-relative path
+                // resolves against the Gradle project directory rather than against the def, and
+                // because there is one archive directory per konan target.
+                val cIncludeDir = rootDir.resolve("native/kitecodec-c/include")
+                val cArchiveDir = layout.buildDirectory.dir("kitecodec-c/${target.konanTarget.name}")
+                    .get().asFile
+                includeDirs.allHeaders(cIncludeDir)
+                compilerOpts("-I${cIncludeDir.absolutePath}")
+                extraOpts("-libraryPath", cArchiveDir.absolutePath)
             }
+        }
+        /*
+         * cinterop embeds the archive, so it has to exist first, AND the archive has to be a
+         * declared input of the cinterop task.
+         *
+         * The dependency alone is not enough, and the plan's section 15.0 said otherwise on the
+         * strength of a different prototype. Measured here at B1.3, in a checkout with no copied
+         * Gradle state: editing only `kitecodec_helpers.c` re-executes the C compile and writes a
+         * new archive, and `cinteropFfmpegMacosArm64` then reports UP-TO-DATE and keeps the STALE
+         * archive inside the klib, with or without the configuration cache. Gradle says why under
+         * `--info`: "Caching disabled for task ':kitecodec-core:cinteropFfmpegMacosArm64' because:
+         * CInterop task uses custom Up-To-Date check for content of headers instead of Gradle
+         * mechanisms." That check covers the def file and the headers, not a library the def merely
+         * names. A clean build and CI were always correct; local incremental development was not,
+         * and every sub-phase from B1.4 onward edits C bodies.
+         *
+         * `inputs.files` on the archive fixes it: an input change makes a task out of date no
+         * matter what its own predicate says. The missing-archive direction never needed this,
+         * because cinterop fails loudly with a non-zero exit when `staticLibraries` cannot be
+         * found.
+         *
+         * `matching { }.configureEach { }` rather than `named(...)`: the cinterop task is registered
+         * by the Kotlin plugin after this block runs, and a filtered live collection covers tasks
+         * added later while `named` would fail on a task that does not exist yet.
+         */
+        val cinteropTaskName = "cinteropFfmpeg${target.name.replaceFirstChar { it.uppercaseChar() }}"
+        tasks.matching { it.name == cinteropTaskName }.configureEach {
+            dependsOn(compileC)
+            inputs.files(compileC.map { c -> c.outputDir.file(CompileKiteCodecCTask.ARCHIVE_NAME) })
+                .withPropertyName("kiteCodecCArchive")
+                .withPathSensitivity(PathSensitivity.NAME_ONLY)
         }
         target.binaries.all {
             linkerOpts("-L${paths.libDir}")

@@ -2,10 +2,12 @@ package io.github.yuroyami.kitecodec.buildtools
 
 import org.gradle.api.DefaultTask
 import org.gradle.api.GradleException
+import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
@@ -25,10 +27,17 @@ import java.io.File
  *  3. `direct_libav_call_sites`: calls straight into libav, behind no helper.
  *  4. `ffmpeg_struct_types_named_in_kotlin`: how many FFmpeg struct type names reach Kotlin text.
  *
- * The fourth name set is derived from the def instead of hand written, so it cannot go stale: a
- * `(AV|Sws|Swr)[A-Z][a-z]...` token of `ffmpeg.def` is a struct type when at least one of its
- * occurrences is not preceded by the `enum` keyword. That rule separates the 18 struct types from
- * `AVCodecID`, `AVPixelFormat` and `AVSampleFormat`, which only ever appear as `enum X`.
+ * The fourth name set is derived from the C instead of hand written, so it cannot go stale: a
+ * `(AV|Sws|Swr)[A-Z][a-z]...` token is a struct type when at least one of its occurrences is not
+ * preceded by the `enum` keyword. That rule separates the 18 struct types from `AVCodecID`,
+ * `AVPixelFormat` and `AVSampleFormat`, which only ever appear as `enum X`.
+ *
+ * The C it reads is `ffmpeg.def` plus [cDeclarationFiles]. Both, because B1.3 moved the C: until the
+ * lift the 949 line body lived in the def, and afterwards it lives in `native/kitecodec-c`. The two
+ * are the same text (`scripts/verify-lift.sh` proves it byte for byte), so reading both keeps the
+ * candidate set identical across the move. Measured either side of the lift: 18 struct type names,
+ * 11 of them named in Kotlin. Reading only the def after the lift would have silently reported 0 of
+ * 0, which is a ratchet that has stopped measuring anything while still passing.
  *
  * Lowering a baseline number is a normal commit. Raising one needs an Execution log entry.
  *
@@ -51,13 +60,22 @@ abstract class CheckCinteropCouplingTask : DefaultTask() {
     @get:PathSensitive(PathSensitivity.RELATIVE)
     abstract val baselineFile: RegularFileProperty
 
+    /**
+     * The extracted C of the FFmpeg helper layer: the headers under `native/kitecodec-c/include` and
+     * the sources under `native/kitecodec-c/src`. It supplies the FFmpeg struct type names that the
+     * def body used to supply; see the class note on where count four comes from.
+     */
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val cDeclarationFiles: ConfigurableFileCollection
+
     @TaskAction
     fun check() {
         val root = sourceDir.get().asFile
         val baseline = baselineFile.get().asFile
 
         val recorded = parseBaseline(baseline)
-        val actual = measure(root)
+        val actual = measure(root, cDeclarationFiles.files)
 
         val risen = COUNT_NAMES.filter { name -> actual.getValue(name) > recorded.getValue(name) }
         if (risen.isNotEmpty()) {
@@ -124,13 +142,16 @@ abstract class CheckCinteropCouplingTask : DefaultTask() {
         )
 
         /**
-         * An FFmpeg CamelCase type token in the def, with the `enum` keyword in front of it when it
-         * is there. Group 1 empty means this occurrence proves the token is a struct type.
+         * An FFmpeg CamelCase type token in C, with the `enum` keyword in front of it when it is
+         * there. Group 1 empty means this occurrence proves the token is a struct type.
          */
         private val DEF_TYPE_TOKEN = Regex("""(enum\s+)?\b((?:AV|Sws|Swr)[A-Z][a-z][A-Za-z0-9]*)\b""")
 
-        /** Recomputes the four counts over [sourceDir]. */
-        fun measure(sourceDir: File): Map<String, Int> {
+        /**
+         * Recomputes the four counts over [sourceDir]. [cDeclarationFiles] are the extracted C
+         * headers and sources, which together with the def supply the candidate struct type names.
+         */
+        fun measure(sourceDir: File, cDeclarationFiles: Collection<File> = emptyList()): Map<String, Int> {
             if (!sourceDir.isDirectory) {
                 throw GradleException("Cannot measure the FFmpeg coupling: ${sourceDir.path} is not a directory.")
             }
@@ -161,7 +182,7 @@ abstract class CheckCinteropCouplingTask : DefaultTask() {
                 }
             }
 
-            val structTypes = ffmpegStructTypeNames(def)
+            val structTypes = ffmpegStructTypeNames(listOf(def) + cDeclarationFiles.filter { it.isFile })
             val namedStructTypes = structTypes.count { name ->
                 val wholeWord = Regex("""\b""" + Regex.escape(name) + """\b""")
                 kotlinTexts.any { wholeWord.containsMatchIn(it) }
@@ -176,13 +197,15 @@ abstract class CheckCinteropCouplingTask : DefaultTask() {
         }
 
         /**
-         * The FFmpeg struct type names named in [defFile]: every CamelCase `AV`, `Sws` or `Swr`
+         * The FFmpeg struct type names named across [files]: every CamelCase `AV`, `Sws` or `Swr`
          * token that occurs at least once without `enum` in front of it.
          */
-        fun ffmpegStructTypeNames(defFile: File): Set<String> {
+        fun ffmpegStructTypeNames(files: Collection<File>): Set<String> {
             val names = linkedSetOf<String>()
-            for (match in DEF_TYPE_TOKEN.findAll(defFile.readText())) {
-                if (match.groupValues[1].isEmpty()) names += match.groupValues[2]
+            for (file in files) {
+                for (match in DEF_TYPE_TOKEN.findAll(file.readText())) {
+                    if (match.groupValues[1].isEmpty()) names += match.groupValues[2]
+                }
             }
             return names
         }

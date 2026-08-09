@@ -26,10 +26,20 @@ class CheckCinteropCouplingTaskTest {
 
     private val committedBaseline: File get() = repoRoot.resolve("native/kitecodec-c/coupling-baseline.txt")
 
+    /**
+     * The extracted C of the helper layer. From B1.3 onward this is where the FFmpeg struct type
+     * names live, because the lift deleted the 949 line body out of `ffmpeg.def`.
+     */
+    private val cDeclarationFiles: List<File>
+        get() = listOf("include", "src")
+            .map { repoRoot.resolve("native/kitecodec-c/$it") }
+            .flatMap { dir -> dir.walkTopDown().filter { it.isFile && it.extension in setOf("h", "c") } }
+            .sortedBy { it.path }
+
     @Test
     fun theCommittedBaselineMatchesTheMeasuredCoupling() {
         val recorded = CheckCinteropCouplingTask.parseBaseline(committedBaseline)
-        val actual = CheckCinteropCouplingTask.measure(sourceDir)
+        val actual = CheckCinteropCouplingTask.measure(sourceDir, cDeclarationFiles)
         for (name in CheckCinteropCouplingTask.COUNT_NAMES) {
             assertTrue(
                 actual.getValue(name) == recorded.getValue(name),
@@ -44,7 +54,7 @@ class CheckCinteropCouplingTaskTest {
 
     @Test
     fun aBaselineLoweredByOneFailsAndNamesEveryCount() {
-        val actual = CheckCinteropCouplingTask.measure(sourceDir)
+        val actual = CheckCinteropCouplingTask.measure(sourceDir, cDeclarationFiles)
         val lowered = File.createTempFile("coupling-baseline-lowered", ".txt")
         lowered.deleteOnExit()
         lowered.writeText(
@@ -71,6 +81,7 @@ class CheckCinteropCouplingTaskTest {
             .get()
         task.sourceDir.set(sourceDir)
         task.baselineFile.set(baseline)
+        task.cDeclarationFiles.from(cDeclarationFiles)
         return task
     }
 }

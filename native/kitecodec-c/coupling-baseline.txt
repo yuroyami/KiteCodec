@@ -28,9 +28,14 @@ ffkmp_call_sites 273
 #   --include='*.kt' . | grep -v ':import ' | wc -l
 direct_libav_call_sites 21
 
-# The FFmpeg struct type names are derived from the def rather than hand listed: they are the
-# (AV|Sws|Swr)[A-Z][a-z]... tokens of nativeInterop/cinterop/ffmpeg.def that appear at least once
-# without the `enum` keyword in front of them, which is 18 names today. This count is how many of
-# those 18 are named as whole words anywhere in the Kotlin sources, comments included:
+# The FFmpeg struct type names are derived from the C rather than hand listed: they are the
+# (AV|Sws|Swr)[A-Z][a-z]... tokens that appear at least once without the `enum` keyword in front of
+# them, which is 18 names today. The C read is nativeInterop/cinterop/ffmpeg.def PLUS
+# native/kitecodec-c/include/*.h and native/kitecodec-c/src/*.c. Both, because B1.3 moved the C out
+# of the def and into that tree; the two are the same text, proved byte for byte by
+# scripts/verify-lift.sh, so reading both keeps the candidate set identical across the move. Reading
+# only the def after the lift reports 0 of 0, which passes the ratchet while measuring nothing.
+# This count is how many of the 18 are named as whole words anywhere in the Kotlin sources, comments
+# included:
 #   for t in $(...the 18 names...); do grep -rqE "\b${t}\b" --include='*.kt' . && echo "$t"; done | wc -l
 ffmpeg_struct_types_named_in_kotlin 11

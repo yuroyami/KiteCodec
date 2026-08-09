@@ -65,8 +65,32 @@ jobs:
         run: |
           ./gradlew :kitecodec-core:apiCheck -Pkitecodec.hostTargetsOnly=true --stacktrace
           ./gradlew checkCinteropCoupling --stacktrace
+      # The third ratchet, and the only guard on the cinterop klib: apiCheck covers kitecodec-core's
+      # own klib, and the cinterop klib is a separate artifact holding every FFmpeg binding and every
+      # ffkmp_ helper. klib-metadata-diff.sh --check dumps its metadata and fails when it differs
+      # from the committed baseline. Deliberate changes re-baseline with --update in the same commit.
+      #
+      # The archive listing is the producer-side half of register item B1-11. The C compile task
+      # asserts each object's architecture before archiving, which is what actually prevents a
+      # wrong-architecture library reaching a consumer; this prints what was built, per target
+      # directory, so the log says which targets got one. `file` on an ar archive names the format
+      # and not the architecture, so the objects are listed too, where it does.
+      - name: Cinterop metadata baseline + the C archives that were built
+        run: |
+          ./gradlew :kitecodec-core:cinteropFfmpegMacosArm64 -Pkitecodec.hostTargetsOnly=true --stacktrace
+          ./native/kitecodec-c/scripts/klib-metadata-diff.sh --check
+          for archive in kitecodec-core/build/kitecodec-c/*/libkitecodec.a; do
+            echo "$archive: $(file -b "$archive")"
+          done
+          for object in kitecodec-core/build/kitecodec-c/*/obj/*.o; do
+            echo "$object: $(file -b "$object")"
+          done
       - name: Unit + native tests
         run: ./gradlew :kitecodec-core:macosArm64Test --stacktrace
+      # buildSrc's tests are not in the main build's task graph, so they need naming. They cover the
+      # coupling ratchet and the C compile task, including its wrong-architecture refusal.
+      - name: Build-logic tests
+        run: ./gradlew :buildSrc:test --stacktrace
       - name: Link sample
         run: ./gradlew :kitecodec-sample:linkDebugExecutableMacosArm64
       - name: End-to-end transcode

@@ -1,0 +1,264 @@
+#!/usr/bin/env bash
+#
+# The compatibility instrument for the `ffmpeg` cinterop surface.
+#
+# `apiCheck` guards kitecodec-core's own klib. It says nothing about the cinterop klib, which is
+# a separate artifact and is where every FFmpeg binding and every ffkmp_ helper lives. This script
+# is that missing guard: it dumps the cinterop klib's metadata, filters it, compares it against a
+# committed baseline, and reports which declarations were added and which were removed.
+#
+# Why the filter. Every declaration carries a `@kotlinx/cinterop/internal/CCall(id =
+# "knifunptr_ffmpeg<N>_<name>")` annotation whose N is a sequence number over the whole module.
+# Adding or removing one binding renumbers every later one, which would bury a real change under
+# hundreds of meaningless lines. The numbers have no Kotlin meaning, so every line mentioning
+# `knifunptr_` is dropped before the comparison.
+#
+# What a real change looks like. A helper that cinterop sees as `static inline` gets a bridge stub
+# and carries only the `CCall(id = ...)` annotation. A helper that cinterop sees as an ordinary
+# external function additionally carries
+# `@kotlinx/cinterop/internal/CCall.Direct(name = "_<symbol>")`, which is the mechanical proof that
+# the call now goes straight to a real symbol instead of through a generated stub. So the B1.3 lift
+# shows up here as one added `CCall.Direct` line per lifted helper, with no declaration removed and
+# no signature touched.
+#
+# Usage:
+#   ./scripts/klib-metadata-diff.sh                    compare the current klib with the baseline
+#   ./scripts/klib-metadata-diff.sh --baseline FILE     compare against FILE instead
+#   ./scripts/klib-metadata-diff.sh --check             as above, and exit non-zero on any difference
+#   ./scripts/klib-metadata-diff.sh --update            rewrite the baseline from the current klib
+#   ./scripts/klib-metadata-diff.sh --target macosArm64 pick another Kotlin/Native target directory
+#
+# `--update` is how a sub-phase that deliberately changes the cinterop surface re-baselines after
+# its own differential has been read and accepted. It is a normal commit, exactly like lowering a
+# coupling-ratchet number, and the Execution log entry says which declarations moved.
+#
+# Exit status: 0 when the comparison ran, 2 on a usage error, 1 when the klib or the tooling is
+# missing, and 1 under `--check` when anything differs. Without `--check` a non-empty differential is
+# not a failure; it is the output, because "added" is correct in the sub-phase that adds and wrong in
+# every sub-phase after it. CI uses `--check`, where the committed baseline is meant to match.
+#
+# What B1.3 measured with this script, recorded so the numbers can be checked later. The pre-lift
+# dump, taken at the parent of the lift commit, was 18684 filtered lines,
+# sha256 0995efd057266fdbc133556a76c0d461028b89dbbbe04a14068a6109c1c9245c. Against it the post-lift
+# dump (18844 lines) showed 172 added direct bindings, every one of them an ffkmp_ helper, zero
+# added declarations, zero removed direct bindings, and 4 removed declarations: ffkmp_graph_finish_,
+# ffkmp_graph_finish_multi_, ffkmp_codec_pix_fmts_ and ffkmp_ch_layout_mask_, the four internal
+# helpers that stayed `static` and were never declared in the extracted header. To reproduce it,
+# restore the def from the lift's parent commit, rebuild the cinterop, and run this script: it then
+# reports the mirror image of those numbers.
+#
+# Environment:
+#   KC_KLIB_TOOL   path to the Kotlin/Native `klib` tool, overriding the version-derived default
+#
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$HERE/.." && pwd)"
+REPO="$(cd "$ROOT/../.." && pwd)"
+
+TARGET="macosArm64"
+BASELINE="$ROOT/klib-metadata-baseline.txt"
+UPDATE=0
+CHECK=0
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --update)   UPDATE=1; shift ;;
+        --check)    CHECK=1; shift ;;
+        --baseline) [ $# -ge 2 ] || { echo "klib-metadata-diff.sh: --baseline needs a path" >&2; exit 2; }
+                    BASELINE="$2"; shift 2 ;;
+        --target)   [ $# -ge 2 ] || { echo "klib-metadata-diff.sh: --target needs a name" >&2; exit 2; }
+                    TARGET="$2"; shift 2 ;;
+        -h|--help)  sed -n '2,40p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        *)          echo "klib-metadata-diff.sh: unknown argument '$1'" >&2; exit 2 ;;
+    esac
+done
+
+KLIB_DIR="$REPO/kitecodec-core/build/classes/kotlin/$TARGET/main/cinterop/kitecodec-core-cinterop-ffmpeg"
+if [ ! -d "$KLIB_DIR" ]; then
+    echo "klib-metadata-diff.sh: no cinterop klib at $KLIB_DIR" >&2
+    echo "  build it first:  ./gradlew :kitecodec-core:cinteropFfmpeg$TARGET" >&2
+    exit 1
+fi
+
+# The `klib` tool ships inside the Kotlin/Native distribution, so the one that matches the Kotlin
+# version this repository builds with is the only correct choice: an older tool cannot read a newer
+# klib's metadata format.
+if [ -n "${KC_KLIB_TOOL:-}" ]; then
+    KLIB_TOOL="$KC_KLIB_TOOL"
+else
+    KOTLIN_VERSION="$(sed -n 's/^kotlin *= *"\(.*\)".*/\1/p' "$REPO/gradle/libs.versions.toml" | head -1)"
+    [ -n "$KOTLIN_VERSION" ] || {
+        echo "klib-metadata-diff.sh: cannot read the kotlin version from gradle/libs.versions.toml" >&2
+        exit 1
+    }
+    case "$(uname -s)/$(uname -m)" in
+        Darwin/arm64)  KONAN_HOST="macos-aarch64" ;;
+        Darwin/x86_64) KONAN_HOST="macos-x86_64" ;;
+        Linux/aarch64) KONAN_HOST="linux-aarch64" ;;
+        Linux/x86_64)  KONAN_HOST="linux-x86_64" ;;
+        *) echo "klib-metadata-diff.sh: unsupported host $(uname -s)/$(uname -m)" >&2; exit 1 ;;
+    esac
+    KLIB_TOOL="$HOME/.konan/kotlin-native-prebuilt-$KONAN_HOST-$KOTLIN_VERSION/bin/klib"
+fi
+[ -x "$KLIB_TOOL" ] || {
+    echo "klib-metadata-diff.sh: no klib tool at $KLIB_TOOL" >&2
+    echo "  it appears once Gradle has downloaded the Kotlin/Native distribution, or set" >&2
+    echo "  KC_KLIB_TOOL to another one." >&2
+    exit 1
+}
+
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+
+# Every line mentioning a knifunptr id is dropped, per the note at the top of this file.
+"$KLIB_TOOL" dump-metadata "$KLIB_DIR" | grep -v 'knifunptr_' > "$WORK/current.txt"
+
+digest() {
+    if command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" | cut -d' ' -f1
+    else
+        sha256sum "$1" | cut -d' ' -f1
+    fi
+}
+
+if [ "$UPDATE" = 1 ]; then
+    cp "$WORK/current.txt" "$BASELINE"
+    echo "klib-metadata-diff.sh: baseline rewritten"
+    echo "  target    $TARGET"
+    echo "  baseline  $BASELINE"
+    echo "  lines     $(wc -l < "$BASELINE" | tr -d ' ')"
+    echo "  sha256    $(digest "$BASELINE")"
+    exit 0
+fi
+
+[ -f "$BASELINE" ] || {
+    echo "klib-metadata-diff.sh: no baseline at $BASELINE" >&2
+    echo "  create it with:  $0 --update" >&2
+    exit 1
+}
+
+echo "klib-metadata-diff.sh: cinterop metadata differential"
+echo "  target    $TARGET"
+echo "  klib      $KLIB_DIR"
+echo "  tool      $KLIB_TOOL"
+echo "  baseline  $BASELINE"
+echo "            $(wc -l < "$BASELINE" | tr -d ' ') lines, sha256 $(digest "$BASELINE")"
+echo "  current   $(wc -l < "$WORK/current.txt" | tr -d ' ') lines, sha256 $(digest "$WORK/current.txt")"
+echo
+
+# diff exits 1 when the files differ, which is information rather than failure here.
+diff -u "$BASELINE" "$WORK/current.txt" > "$WORK/diff.txt" || true
+
+grep '^+' "$WORK/diff.txt" | grep -v '^+++' | sed 's/^+//' > "$WORK/added.txt" || true
+grep '^-' "$WORK/diff.txt" | grep -v '^---' | sed 's/^-//' > "$WORK/removed.txt" || true
+
+# A declaration line is what carries a name onto the surface: a function, a property, a typealias,
+# a class, or cinterop's own `// class name:` marker. Everything else in the dump is an annotation,
+# a brace or a blank line.
+declaration_names() {
+    sed -n \
+        -e 's/^[[:space:]]*\/\/ class name: \(.*\)$/class \1/p' \
+        -e 's/^.*[[:space:]]fun \([A-Za-z0-9_]*\)(.*$/fun \1/p' \
+        -e 's/^.*[[:space:]]val \([A-Za-z0-9_]*\):.*$/val \1/p' \
+        -e 's/^.*[[:space:]]var \([A-Za-z0-9_]*\):.*$/var \1/p' \
+        -e 's/^.*[[:space:]]typealias \([A-Za-z0-9_]*\).*$/typealias \1/p' \
+        "$1" | sort
+}
+
+# The direct-binding annotation, which is the substance of the B1.3 lift.
+direct_names() {
+    sed -n 's/^.*CCall\.Direct(name = "\([^"]*\)").*$/\1/p' "$1" | sort
+}
+
+declaration_names "$WORK/added.txt"   > "$WORK/decl_added.txt"
+declaration_names "$WORK/removed.txt" > "$WORK/decl_removed.txt"
+direct_names "$WORK/added.txt"        > "$WORK/direct_added.txt"
+direct_names "$WORK/removed.txt"      > "$WORK/direct_removed.txt"
+
+count() { wc -l < "$1" | tr -d ' '; }
+
+report() {
+    # report <title> <file>
+    local title="$1" file="$2"
+    local n
+    n="$(count "$file")"
+    echo "$title ($n)"
+    if [ "$n" = 0 ]; then
+        echo "  none"
+    else
+        sed 's/^/  /' "$file"
+    fi
+    echo
+}
+
+report "DECLARATIONS ADDED"      "$WORK/decl_added.txt"
+report "DECLARATIONS REMOVED"    "$WORK/decl_removed.txt"
+report "DIRECT BINDINGS ADDED"   "$WORK/direct_added.txt"
+report "DIRECT BINDINGS REMOVED" "$WORK/direct_removed.txt"
+
+# What is left after the four reports above, so nothing hides in a count nobody reads. Two kinds of
+# line are dropped from it:
+#
+#   - blank lines, and
+#   - the structural boilerplate of the dump (`library fragment {`, `package {`,
+#     `// package name: ...` and a bare closing brace). The dump repeats that block once per
+#     source-set fragment, 25 times for this module, and it is identical every time, so `diff` is
+#     free to realign it and report the same number of those lines added and removed. Net zero and
+#     no meaning, which is why they are counted separately below instead of read.
+#
+# Everything else stays, including the declaration and annotation lines the reports above already
+# named. Read this block against those reports: every line in it must belong to a declaration that
+# was reported added or removed. A line here that does not is the case this script exists to catch,
+# for instance a `@kotlinx/cinterop/internal/CCall.CString` that quietly left a signature.
+other_lines() {
+    grep -v -e '^[[:space:]]*$' \
+            -e 'CCall\.Direct' \
+            -e '^[[:space:]]*library fragment {[[:space:]]*$' \
+            -e '^[[:space:]]*package {[[:space:]]*$' \
+            -e '^[[:space:]]*// package name: ' \
+            -e '^[[:space:]]*}[[:space:]]*$' \
+            "$1" || true
+}
+structural() {
+    grep -c -e '^[[:space:]]*library fragment {[[:space:]]*$' \
+            -e '^[[:space:]]*package {[[:space:]]*$' \
+            -e '^[[:space:]]*// package name: ' \
+            -e '^[[:space:]]*}[[:space:]]*$' \
+            "$1" || true
+}
+
+other_lines "$WORK/added.txt"   > "$WORK/other_added.txt"
+other_lines "$WORK/removed.txt" > "$WORK/other_removed.txt"
+
+report "OTHER CHANGED LINES, ADDED"   "$WORK/other_added.txt"
+report "OTHER CHANGED LINES, REMOVED" "$WORK/other_removed.txt"
+
+DIRECT_ADDED="$(count "$WORK/direct_added.txt")"
+DIRECT_ADDED_FFKMP="$(grep -c '^_ffkmp_' "$WORK/direct_added.txt" || true)"
+
+echo "SUMMARY"
+echo "  changed lines, added                   $(count "$WORK/added.txt")"
+echo "  changed lines, removed                 $(count "$WORK/removed.txt")"
+echo "  declarations added                     $(count "$WORK/decl_added.txt")"
+echo "  declarations removed                   $(count "$WORK/decl_removed.txt")"
+echo "  direct bindings added                  $DIRECT_ADDED"
+echo "  direct bindings added, _ffkmp_ prefix  $DIRECT_ADDED_FFKMP"
+echo "  direct bindings removed                $(count "$WORK/direct_removed.txt")"
+echo "  structural lines realigned, added      $(structural "$WORK/added.txt")"
+echo "  structural lines realigned, removed    $(structural "$WORK/removed.txt")"
+echo "  other changed lines, added             $(count "$WORK/other_added.txt")"
+echo "  other changed lines, removed           $(count "$WORK/other_removed.txt")"
+
+if [ "$DIRECT_ADDED" != "$DIRECT_ADDED_FFKMP" ]; then
+    echo
+    echo "note: $((DIRECT_ADDED - DIRECT_ADDED_FFKMP)) added direct binding(s) are not ffkmp_ helpers."
+fi
+
+if [ "$CHECK" = 1 ] && [ -s "$WORK/diff.txt" ]; then
+    echo
+    echo "klib-metadata-diff.sh: the cinterop metadata does not match $BASELINE." >&2
+    echo "  Read the report above. If the change is deliberate, re-baseline with --update in the" >&2
+    echo "  same commit and name the moved declarations in the KPKMP.md Execution log." >&2
+    exit 1
+fi

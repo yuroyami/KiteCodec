@@ -12,7 +12,7 @@
 #   - LICENSE.md from the FFmpeg source tree,
 #   - a generated BUILD-INFO.txt (tag, commit, configure line, build date, target,
 #     license profile, source-code URL).
-# The FFmpeg source tree defaults to vendor/ffmpeg — where the release workflow clones it.
+# The FFmpeg source tree defaults to vendor/ffmpeg, where the release workflow clones it.
 set -euo pipefail
 
 version="${1:?ffmpeg version, e.g. n8.0}"
@@ -72,7 +72,7 @@ commit="$(git -C "${ffmpeg_src}" rev-parse HEAD 2>/dev/null || echo "unknown")"
 # configures out-of-tree under <src>/build/<license>/<triple>, so look there first, then fall
 # back to an in-tree configure. (<prefix>/share/ffmpeg does not exist for these static builds,
 # so config.log is the reliable source.)
-configure_line="(unavailable — no ffbuild/config.log found)"
+configure_line="(unavailable: no ffbuild/config.log found)"
 for log in "${ffmpeg_src}/build/${license}/${triple}/ffbuild/config.log" "${ffmpeg_src}/ffbuild/config.log"; do
   if [ -f "${log}" ]; then
     configure_line="$(head -n 1 "${log}" | sed 's/^# *//')"
@@ -175,7 +175,7 @@ case "${triple}" in
     done
     if [ "${#missing[@]}" -gt 0 ]; then
       echo "::error::static third-party libs missing on this runner for ${triple}/${license}: ${missing[*]}" >&2
-      echo "::error::the zip would NOT be link-anywhere — build/install the static variants before packaging (see release-binaries.yml)" >&2
+      echo "::error::the zip would NOT be link-anywhere: build/install the static variants before packaging (see release-binaries.yml)" >&2
       exit 1
     fi
 

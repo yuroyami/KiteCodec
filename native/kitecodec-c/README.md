@@ -23,6 +23,8 @@ after their tests already pass.
 | `scripts/build-host.sh` | Builds the host test binaries for one variant. |
 | `scripts/verify-lift.sh` | Proves the two generated files are exactly what the def produces. |
 | `scripts/run-c-tests.sh` | Runs the five suites for one variant. |
+| `scripts/klib-metadata-diff.sh` | The compatibility instrument for the `ffmpeg` cinterop klib, added by B1.3. |
+| `klib-metadata-baseline.txt` | Its baseline: the filtered metadata dump of that klib. |
 | `tests/harness.h`, `tests/harness.c` | The assertion and reporting API every suite uses. |
 | `tests/interpose_alloc.c` | The allocation interposer, the local leak instrument. |
 | `tests/test_*.c` | The five suites of plan section 15.3. |
@@ -110,6 +112,26 @@ available and safe under this path.
 ./scripts/build-host.sh asan  && ./scripts/run-c-tests.sh asan
 ./scripts/build-host.sh tsan  && ./scripts/run-c-tests.sh tsan
 ```
+
+`verify-lift.sh` needs a revision whose def still carries the body. B1.3 deleted it, so from the
+lift onward the revision to pass is the lift's parent, not `HEAD`.
+
+The cinterop surface has its own instrument, which is not part of the C build and needs a klib
+rather than a host binary:
+
+```bash
+../../gradlew :kitecodec-core:cinteropFfmpegMacosArm64
+./scripts/klib-metadata-diff.sh          # reports added and removed declarations by name
+./scripts/klib-metadata-diff.sh --check  # the same, and exits non-zero on any difference
+./scripts/klib-metadata-diff.sh --update # re-baseline after reading and accepting a change
+```
+
+Editing a `.c` body here does reach the klib, but only because `kitecodec-core/build.gradle.kts`
+declares the archive an input of the cinterop task. The cinterop task runs its own up-to-date
+check over the def and the headers and would otherwise report UP-TO-DATE and keep the previous
+archive, which was measured at B1.3 and is written up in that build file and in the plan's
+Execution log. If a local change to a helper body ever appears to have no effect, check that
+declaration before suspecting the compiler.
 
 `run-c-tests.sh` never builds, so a gate cannot pass on a stale binary. It accepts suite names
 after the variant, which is the fast loop while writing a suite:
@@ -227,8 +249,12 @@ type 'char[2048]'`. Weakening any of the four copy bounds by one byte gives an A
 
 ## What is not here yet
 
-Not here, by sub-phase: the Gradle compile task and the def edit that make this library the
-one cinterop consumes (B1.3), the deletion of the 15 dead helpers and the split per subsystem
-(B1.4), the fuzz targets and their corpus (B1.5), and the FFmpeg header versus runtime identity
-gate (B1.6). Nothing in this directory claims to work on a target whose archive was never built:
-plan section 15.3 grades that claim as level 8 and bans it.
+Not here, by sub-phase: the deletion of the 15 dead helpers and the split per subsystem (B1.4),
+the fuzz targets and their corpus (B1.5), and the FFmpeg header versus runtime identity gate
+(B1.6). Nothing in this directory claims to work on a target whose archive was never built: plan
+section 15.3 grades that claim as level 8 and bans it. On this machine B1.3 built exactly one
+archive, for `macos_arm64`, and the other ten registered targets were skipped for want of an
+FFmpeg tree.
+
+Done in B1.3: the Gradle compile task (`buildSrc/CompileKiteCodecCTask.kt`) and the def edit that
+make this library the one cinterop consumes.
