@@ -21,10 +21,10 @@ public actual object Transcoder {
         onProgress: ((TranscodeProgress) -> Unit)?,
     ) {
         require(!(videoCopy && (spec != null || videoFilter != null))) {
-            "videoCopy is mutually exclusive with spec/videoFilter — copied packets never touch a decoder, so they can't be filtered or re-encoded"
+            "videoCopy is mutually exclusive with spec/videoFilter: copied packets never touch a decoder, so they can't be filtered or re-encoded"
         }
         require(!(audioCopy && (audioSpec != null || audioFilter != null))) {
-            "audioCopy is mutually exclusive with audioSpec/audioFilter — copied packets never touch a decoder, so they can't be filtered or re-encoded"
+            "audioCopy is mutually exclusive with audioSpec/audioFilter: copied packets never touch a decoder, so they can't be filtered or re-encoded"
         }
         require(spec != null || videoFilter == null) { "videoFilter requires a video encoder spec" }
         require(spec != null || videoCopy || audioSpec != null || audioCopy) { "Nothing to output: no video spec/copy, no audio" }

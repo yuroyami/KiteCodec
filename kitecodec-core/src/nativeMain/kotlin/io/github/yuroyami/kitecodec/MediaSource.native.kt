@@ -412,7 +412,7 @@ public actual class MediaSource internal constructor(
                     "freeing the demuxer under it would leave a dangling cursor."
             }
             check(!demuxing) {
-                "Cannot close MediaSource while a decode flow is collecting — cancel/finish " +
+                "Cannot close MediaSource while a decode flow is collecting. Cancel or finish " +
                     "collection first (freeing the demuxer under an active decode would crash)."
             }
             closed = true

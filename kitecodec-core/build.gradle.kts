@@ -30,9 +30,9 @@ kotlin {
     /*
      * v0.1 target tiers.
      *
-     * STABLE — the targets with prebuilt FFmpeg Release assets and CI coverage; the ONLY targets
+     * STABLE: the targets with prebuilt FFmpeg Release assets and CI coverage; the ONLY targets
      * published in v0.1: macosArm64, linuxX64, androidNativeArm64/Arm32/X64.
-     * EXPERIMENTAL — builds locally (given an FFmpeg tree) but is NOT part of the published set:
+     * EXPERIMENTAL: builds locally (given an FFmpeg tree) but is NOT part of the published set:
      * ios*, macosX64, linuxArm64, mingwX64.
      *
      *   -Pkitecodec.stableTargetsOnly=true  Register only the stable targets, so publications
@@ -54,19 +54,19 @@ kotlin {
      * Publish guard. Publishing kitecodec-core (anything whose task name starts with "publish",
      * except tasks addressed to :kitecodec-gradle-plugin, which publishes independently via
      * publishPlugins) requires BOTH:
-     *   (a) -Pkitecodec.stableTargetsOnly=true — experimental targets must not leak into
+     *   (a) -Pkitecodec.stableTargetsOnly=true, because experimental targets must not leak into
      *       publications, and
-     *   (b) an FFmpeg tree for EVERY configured target — enforced below by treating a publish
+     *   (b) an FFmpeg tree for EVERY configured target, enforced below by treating a publish
      *       run as if kitecodec.requireAllTargets=true, so a publication can never silently
      *       drop a target.
      * Exception: publishToMavenLocal also accepts -Pkitecodec.hostTargetsOnly=true (the CI
      * consumer-e2e smoke path); remote publishes never do.
-     * Checked against gradle.startParameter.taskNames — simple and configuration-cache safe.
+     * Checked against gradle.startParameter.taskNames, which is simple and configuration-cache safe.
      */
     val corePublishTaskNames = gradle.startParameter.taskNames.filter { name ->
         val simpleName = name.substringAfterLast(':')
         simpleName.startsWith("publish") &&
-            // Plugin Portal upload — exists only in :kitecodec-gradle-plugin, never touches core.
+            // Plugin Portal upload, which exists only in :kitecodec-gradle-plugin, never touches core.
             simpleName != "publishPlugins" &&
             !name.startsWith(":kitecodec-gradle-plugin:")
     }
@@ -88,7 +88,7 @@ kotlin {
             |     can never silently drop a target.
             |
             |Note: `./gradlew publishToMavenLocal` from the root hits this guard too because it
-            |includes kitecodec-core's publications. Satisfy it the same way — pass
+            |includes kitecodec-core's publications. Satisfy it the same way: pass
             |-Pkitecodec.stableTargetsOnly=true with all five stable FFmpeg trees present under
             |native-libs/lgpl/ (or system installs for the desktop ones). For a host-only local
             |smoke publish, -Pkitecodec.hostTargetsOnly=true is accepted for publishToMavenLocal.
@@ -97,7 +97,7 @@ kotlin {
     }
 
     // Every Kotlin/Native target gets the same single consolidated cinterop. Each resolves its
-    // own FFmpeg install via FFmpegPaths.resolve(...) — vendored static if available, else system.
+    // own FFmpeg install via FFmpegPaths.resolve(...): vendored static if available, else system.
     val knTargetMap: Map<KotlinNativeTarget, TargetTriple> = if (hostTargetsOnly) {
         // Consumer-e2e smoke scope: just the host's own desktop target.
         val osName = System.getProperty("os.name").lowercase()
@@ -116,7 +116,7 @@ kotlin {
             // v0.1 STABLE targets.
             put(macosArm64(), TargetTriple.MacosArm64)
             put(linuxX64(), TargetTriple.LinuxX64)
-            // Android NDK targets (LGPL FFmpeg profile w/ MediaCodec — see BuildFFmpegTask).
+            // Android NDK targets (LGPL FFmpeg profile w/ MediaCodec, see BuildFFmpegTask).
             // Vendored-only: run :kitecodec-core:buildFFmpegForAndroid<Abi> first.
             put(androidNativeArm64(), TargetTriple.AndroidArm64)
             put(androidNativeArm32(), TargetTriple.AndroidArm32)
@@ -160,13 +160,13 @@ kotlin {
             if (requireAllTargets) throw e
             logger.lifecycle(
                 "warning: [KiteCodec] SKIPPING FFmpeg cinterop/link setup for target '${triple.dirName}' " +
-                    "(${license.dirName}) — no FFmpeg build found. ${e.message} " +
+                    "(${license.dirName}) because no FFmpeg build found. ${e.message} " +
                     "Set -Pkitecodec.requireAllTargets=true to fail the build instead.",
             )
             null
         } ?: return@forEach
         target.compilations.getByName("main").cinterops {
-            // One cinterop module for all six libav* libraries — this keeps AVCodec, AVFrame,
+            // One cinterop module for all six libav* libraries, which keeps AVCodec, AVFrame,
             // AVPacket etc. as a SINGLE Kotlin type across every binding (each cinterop module
             // otherwise generates its own duplicate copy of identical C types).
             create("ffmpeg") {
@@ -179,7 +179,7 @@ kotlin {
         target.binaries.all {
             linkerOpts("-L${paths.libDir}")
             // ffmpeg.def names only the six libav* archives. That is enough for a shared/system
-            // FFmpeg, whose dylibs resolve their own dependencies — but a STATIC libavcodec.a
+            // FFmpeg, whose dylibs resolve their own dependencies, but a STATIC libavcodec.a
             // resolves nothing, so every third-party archive it draws symbols from must be named
             // here too or the final link fails on svt_av1_*, vpx_*, ass_* and friends.
             linkerOpts(StaticLinkFlags.forTarget(triple, license, paths.isStaticVendored))
@@ -187,7 +187,7 @@ kotlin {
             // catches dependencies the host package manager ships shared-only (see StaticLinkFlags).
             linkerOpts(StaticLinkFlags.hostFallbackSearchFlags(triple, homebrewPrefix, paths.isStaticVendored))
             if (!paths.isStaticVendored && triple in setOf(TargetTriple.MacosArm64, TargetTriple.MacosX64)) {
-                // Embed Homebrew rpath for dev convenience — release builds use static vendored libs.
+                // Embed Homebrew rpath for dev convenience; release builds use static vendored libs.
                 linkerOpts("-rpath", paths.libDir)
             }
         }
@@ -240,7 +240,7 @@ fun registerBuildFFmpeg(triple: TargetTriple, flavour: FFmpegLicense) =
 TargetTriple.entries.forEach { triple ->
     // LGPL flavour for every target (the default).
     registerBuildFFmpeg(triple, FFmpegLicense.LGPL)
-    // GPL flavour (libx264 / libx265) for desktop targets only — Android has no GPL build.
+    // GPL flavour (libx264 / libx265) for desktop targets only, since Android has no GPL build.
     if (!triple.isAndroid) {
         registerBuildFFmpeg(triple, FFmpegLicense.GPL)
     }
@@ -259,7 +259,7 @@ tasks.register("buildFFmpegForAllGpl") {
 }
 
 /*
- * Publishing — Maven Central (Central Portal). Signing only activates when in-memory GPG keys are
+ * Publishing to Maven Central (Central Portal). Signing only activates when in-memory GPG keys are
  * present in the environment (ORG_GRADLE_PROJECT_signingInMemoryKey /
  * ORG_GRADLE_PROJECT_signingInMemoryKeyPassword), the vanniktech plugin's default, so local builds
  * without keys are unaffected.
@@ -270,8 +270,8 @@ mavenPublishing {
 
     // Coordinates come from the project defaults: GROUP / VERSION in gradle.properties (applied to
     // allprojects at the root) + this module's name -> io.github.yuroyami:kitecodec-core:<VERSION>.
-    // (An explicit coordinates() call is not possible here: another applied plugin already reads —
-    // and thereby finalises — them during configuration.)
+    // (An explicit coordinates() call is not possible here: another applied plugin already reads them,
+    // and thereby finalises them, during configuration.)
 
     pom {
         name = "KiteCodec"

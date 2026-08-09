@@ -11,7 +11,7 @@ kotlin {
     jvmToolchain(21)
 
     // Same flavour selection as :kitecodec-core. Without this the sample always resolved the LGPL
-    // tree while the library it links was built against the GPL one — the Windows CI job passes
+    // tree while the library it links was built against the GPL one, and the Windows CI job passes
     // -Pkitecodec.ffmpeg.license=gpl and got away with it only because the DLLs were on PATH.
     val selectedLicense =
         if (providers.gradleProperty("kitecodec.ffmpeg.license").orNull?.equals("gpl", ignoreCase = true) == true) {
@@ -43,7 +43,7 @@ kotlin {
             if (requireAllTargets) throw e
             logger.lifecycle(
                 "warning: [KiteCodec] SKIPPING FFmpeg link setup for sample target '${triple.dirName}' " +
-                    "— no FFmpeg build found. ${e.message} " +
+                    "because no FFmpeg build found. ${e.message} " +
                     "Set -Pkitecodec.requireAllTargets=true to fail the build instead.",
             )
             null
@@ -54,7 +54,7 @@ kotlin {
                 if (paths != null) {
                     linkerOpts("-L${paths.libDir}")
                     // A static vendored FFmpeg needs its third-party archives named explicitly at
-                    // the final link — see StaticLinkFlags.
+                    // the final link, see StaticLinkFlags.
                     linkerOpts(StaticLinkFlags.forTarget(triple, selectedLicense, paths.isStaticVendored))
                     linkerOpts(
                         StaticLinkFlags.hostFallbackSearchFlags(triple, homebrewPrefix, paths.isStaticVendored),

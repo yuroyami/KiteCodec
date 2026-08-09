@@ -100,6 +100,10 @@ public expect class FilterGraph : AutoCloseable {
          * `aformat` stage is appended so emitted frames arrive encoder-ready (resampled /
          * reformatted / remixed inside the graph).
          *
+         * The composed chain (the description plus any appended `aformat` stage) must fit in
+         * 2048 bytes. A description that does not leave room is refused with
+         * [FFmpegError.InvalidArgument]; it is never silently truncated.
+         *
          * @param description filter chain, e.g. `volume=0.5,atempo=1.25`. Empty or `anull`
          *                    means passthrough.
          * @param sampleRate input sample rate
@@ -133,6 +137,9 @@ public expect class FilterGraph : AutoCloseable {
          * The `output*` parameters append an `aformat` stage exactly as [buildAudio] does, but
          * only when [description] does not carry an explicit `[out]` label. A description that
          * labels its own output controls its own formats, so nothing is appended.
+         *
+         * The same 2048 byte bound as [buildAudio] applies to the composed chain, with the same
+         * refusal rather than truncation.
          */
         @Throws(FFmpegException::class)
         public fun buildAudioMulti(

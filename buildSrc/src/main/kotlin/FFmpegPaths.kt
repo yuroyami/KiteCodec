@@ -52,7 +52,7 @@ data class FFmpegPaths(
                         } else {
                             append(". A system FFmpeg cannot be used here: this host is ")
                             append("${host ?: "an unrecognised platform"}, so its libraries are built for ")
-                            append("the wrong architecture — only a vendored cross-build is valid for $target.")
+                            append("the wrong architecture. Only a vendored cross-build is valid for $target.")
                         }
                     },
                 )

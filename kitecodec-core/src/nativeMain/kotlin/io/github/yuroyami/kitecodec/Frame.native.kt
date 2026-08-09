@@ -65,7 +65,7 @@ import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.usePinned
 
 /**
- * AVFrame-backed [Frame] implementation. The native pointer ([nativeFrame]) is `internal` —
+ * AVFrame-backed [Frame] implementation. The native pointer ([nativeFrame]) is `internal`:
  * users go through [info] / [copyPlanesToByteArray]; the filter graph & encoder modules in
  * this package read the pointer directly for zero-copy hand-offs.
  *
@@ -82,7 +82,7 @@ public actual class Frame internal constructor(
 
     private var closed = false
 
-    private fun checkOpen() = check(!closed) { "Frame is closed — its native buffers are gone" }
+    private fun checkOpen() = check(!closed) { "Frame is closed, its native buffers are gone" }
 
     public actual val info: FrameInfo by lazy {
         checkOpen()
@@ -184,7 +184,7 @@ public actual class Frame internal constructor(
         val encoder = avcodec_find_encoder_by_name(codec.name)
             ?: throw FFmpegException(FFmpegError.Internal("No encoder named '${codec.name}'"))
 
-        // Image codecs are picky about input pixel format (png: rgb*, mjpeg: yuvj*) —
+        // Image codecs are picky about input pixel format (png: rgb*, mjpeg: yuvj*), so
         // convert when the frame's own format isn't accepted.
         val needsConvert = ffkmp_codec_supports_pix_fmt(encoder, format) == 0
         val sendFrame: CPointer<AVFrame>
@@ -206,7 +206,7 @@ public actual class Frame internal constructor(
                 ffkmp_codecctx_set_video(
                     ctx, width, height,
                     ffkmp_frame_format(sendFrame),
-                    25, 1, 1, 25,  // dummy frame rate / time base — single image, irrelevant
+                    25, 1, 1, 25,  // dummy frame rate / time base, single image, irrelevant
                     8_000_000, 1,  // bitrate steers mjpeg quality; png ignores it
                 )
                 ffkmp_codecctx_set_full_range(ctx)  // mjpeg refuses limited-range yuv since FFmpeg 7
@@ -214,7 +214,7 @@ public actual class Frame internal constructor(
                 val packet = ffkmp_packet_alloc()
                     ?: throw FFmpegException(FFmpegError.Internal("av_packet_alloc returned NULL"))
                 // A single image needs pts 0, but when no conversion happened sendFrame IS the
-                // caller's frame — stamping it would silently destroy the timestamp of a frame
+                // caller's frame, and stamping it would silently destroy the timestamp of a frame
                 // the caller may still want to encode into a video. Restore it below.
                 val originalPts = ffkmp_frame_pts(sendFrame)
                 try {
@@ -222,8 +222,8 @@ public actual class Frame internal constructor(
                     val eagain = FFErrors.EAGAIN
                     val eof = FFErrors.EOF
                     var bytes: ByteArray? = null
-                    // EAGAIN-correct send/drain, same shape as the codec loops elsewhere —
-                    // image codecs emit one packet, but nothing in the API guarantees it.
+                    // EAGAIN-correct send/drain, same shape as the codec loops elsewhere.
+                    // Image codecs emit one packet, but nothing in the API guarantees it.
                     fun drainAll() {
                         while (true) {
                             val rc = avcodec_receive_packet(ctx, packet)

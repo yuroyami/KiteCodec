@@ -43,7 +43,7 @@ static inline int ffkmp_averror_eof(void)    { return AVERROR_EOF; }
 static inline int ffkmp_averror_einval(void) { return AVERROR(EINVAL); }
 static inline int64_t ffkmp_nopts_value(void) { return AV_NOPTS_VALUE; }
 
-/* av_rescale_q uses a 128-bit intermediate — the only overflow-safe way to convert a
+/* av_rescale_q uses a 128-bit intermediate, the only overflow-safe way to convert a
    timestamp between two time-bases. Exposed because Kotlin Long*Long would overflow. */
 static inline int64_t ffkmp_rescale_q(int64_t v, int sn, int sd, int dn, int dd) {
     AVRational s = { sn, sd ? sd : 1 };
@@ -84,7 +84,7 @@ static inline void     ffkmp_frame_set_ch_layout_default(AVFrame *f, int ch) {
 static inline void     ffkmp_frame_use_best_effort_ts(AVFrame *f) {
     if (f) f->pts = f->best_effort_timestamp;
 }
-/* Deep-copy via new references to the same (refcounted) buffers — O(1), no pixel copy.
+/* Deep-copy via new references to the same (refcounted) buffers, so O(1), no pixel copy.
    The clone owns its references: safe to hold after the source frame is reused/unref'd. */
 static inline AVFrame* ffkmp_frame_clone(const AVFrame *f) { return f ? av_frame_clone(f) : NULL; }
 
@@ -235,7 +235,7 @@ static inline int ffkmp_codecpar_from_context(AVCodecParameters *par, AVCodecCon
     return avcodec_parameters_from_context(par, ctx);
 }
 /* Stream-copy parameter clone. codec_tag is container-specific (mp4 'avc1' means nothing
-   to mkv) — zeroing it lets the destination muxer pick its own tag; ffmpeg.c does the same. */
+   to mkv), and zeroing it lets the destination muxer pick its own tag; ffmpeg.c does the same. */
 static inline int ffkmp_codecpar_copy_for_mux(AVCodecParameters *dst, const AVCodecParameters *src) {
     int rc = avcodec_parameters_copy(dst, src);
     if (rc >= 0) dst->codec_tag = 0;
@@ -270,7 +270,7 @@ static inline void  ffkmp_codecctx_set_audio(
     c->time_base.num = 1; c->time_base.den = sample_rate ? sample_rate : 1;
     c->bit_rate = bit_rate;
 }
-/* First sample format the encoder supports — used to pick a sane default (e.g. aac → fltp).
+/* First sample format the encoder supports, used to pick a sane default (e.g. aac → fltp).
    avcodec_get_supported_config landed in FFmpeg 7.1 (lavc 61.13); distro FFmpeg 6.x still
    exposes the deprecated AVCodec.sample_fmts array, so version-gate to support both. */
 static inline int   ffkmp_codec_first_sample_fmt(const AVCodec *codec) {
@@ -335,7 +335,7 @@ static inline void  ffkmp_codecctx_set_full_range(AVCodecContext *c) {
 static inline const char* ffkmp_codec_name(const AVCodec *c) { return c ? c->name : NULL; }
 static inline const AVCodec* ffkmp_find_decoder_by_id(int id) { return avcodec_find_decoder((enum AVCodecID)id); }
 /* The CODEC's canonical name ("av1", "opus", "mov_text"), independent of which decoder
-   implementation this build happens to register for it — avcodec_find_decoder would answer
+   implementation this build happens to register for it; avcodec_find_decoder would answer
    "libdav1d"/"libopus" and would answer NOTHING at all for streams with no decoder compiled
    in (subtitles, attachments, data). Never returns NULL; unknown ids yield "none". */
 static inline const char* ffkmp_codec_id_name(int id) { return avcodec_get_name((enum AVCodecID)id); }
@@ -365,8 +365,8 @@ static inline int  ffkmp_fmt_read_frame(AVFormatContext *c, AVPacket *p) { retur
 static inline int64_t       ffkmp_fmt_duration(AVFormatContext *c)   { return c ? c->duration : 0; }
 /* Where the media's timeline BEGINS, in microseconds (AV_TIME_BASE units), i.e. the earliest
    start_time across streams. MPEG-TS commonly reports ~1.4s; mp4 usually 0. Every timestamp the
-   demuxer hands out is absolute (includes this), while KiteCodec's public API — seeks, trim
-   bounds, extractFrame — is media-RELATIVE, so this is the offset between the two. Returns 0
+   demuxer hands out is absolute (includes this), while KiteCodec's public API, meaning seeks, trim
+   bounds and extractFrame, is media-RELATIVE, so this is the offset between the two. Returns 0
    when the container doesn't declare one. */
 static inline int64_t       ffkmp_fmt_start_time(AVFormatContext *c) {
     if (!c || c->start_time == AV_NOPTS_VALUE || c->start_time <= 0) return 0;
@@ -395,7 +395,7 @@ static inline int  ffkmp_fmt_alloc_output2(AVFormatContext **out, const char *pa
     if (rc < 0 || !c) { *out = NULL; return rc < 0 ? rc : AVERROR_UNKNOWN; }
     *out = c; return 0;
 }
-/* Muxer private options (movflags, …) — AV_OPT_SEARCH_CHILDREN reaches oformat priv_data. */
+/* Muxer private options (movflags, …): AV_OPT_SEARCH_CHILDREN reaches oformat priv_data. */
 static inline int  ffkmp_fmt_set_opt(AVFormatContext *c, const char *k, const char *v) {
     if (!c) return AVERROR(EINVAL);
     return av_opt_set(c, k, v, AV_OPT_SEARCH_CHILDREN);
@@ -421,7 +421,7 @@ static inline int ffkmp_fmt_io_open(AVFormatContext *ctx, const char *path) {
    (MediaSink.claimBaseMicros), which keeps the relative A/V offset intact but lets a stream that
    starts earlier than the claiming one go negative (AAC priming samples are the common case).
    Pin the policy instead of inheriting each muxer's default: MAKE_ZERO shifts the whole output
-   up so nothing is negative, applying the SAME shift to every stream — so the offset survives. */
+   up so nothing is negative, applying the SAME shift to every stream, so the offset survives. */
 static inline void ffkmp_fmt_avoid_negative_ts(AVFormatContext *ctx) {
     if (ctx) ctx->avoid_negative_ts = AVFMT_AVOID_NEG_TS_MAKE_ZERO;
 }
@@ -516,7 +516,7 @@ static inline int ffkmp_graph_build_video(
     rc = avfilter_graph_create_filter(&sink_ctx, sink, "out", NULL, NULL, graph);
     if (rc < 0) { avfilter_graph_free(&graph); return rc; }
 
-    /* Don't constrain the buffersink output format — let the graph auto-negotiate. Converting
+    /* Don't constrain the buffersink output format, let the graph auto-negotiate. Converting
        whatever it emits into the encoder's pixel format is EncoderCore's job (see conversionFor
        in MediaSink.native.kt), which is what makes an unpinned graph safe here. Pinning is still
        cheaper: put `format=yuv420p` last in the description and the conversion becomes a no-op. */
@@ -534,7 +534,7 @@ static inline int ffkmp_graph_build_audio(
     int sample_rate, int sample_fmt, int channels,
     int tb_num, int tb_den,
     /* Pin the graph's output so frames arrive encoder-ready. Pass -1/-1/0 to leave free.
-       Implemented by appending an `aformat` filter rather than buffersink options — the
+       Implemented by appending an `aformat` filter rather than buffersink options, because the
        option names were renamed across FFmpeg 7→8, the filter-string syntax never changes. */
     int out_sample_fmt, int out_sample_rate, int out_channels
 ) {
@@ -567,28 +567,38 @@ static inline int ffkmp_graph_build_audio(
     if (rc < 0) { avfilter_graph_free(&graph); return rc; }
 
     /* Compose `<description>,aformat=…` with only the requested pins. `Nc` is the
-       layout-from-channel-count syntax — avoids names like "5.1(side)" whose parens
-       would fight the filter-string parser. */
+       layout-from-channel-count syntax, which avoids names like "5.1(side)" whose parens
+       would fight the filter-string parser.
+
+       The description is public API input of any length, and snprintf returns the length it
+       WOULD have written, not what it wrote. So the running total must be checked against the
+       buffer after EVERY append and before the next one computes `full_desc + n`: past the end
+       that pointer leaves the array and `sizeof(full_desc) - n` wraps to a huge size_t. A
+       description that does not leave room for the pins is refused, never truncated. */
     char full_desc[2048];
     int n = snprintf(full_desc, sizeof(full_desc), "%s",
                      (description && description[0]) ? description : "anull");
+    if (n < 0 || n >= (int)sizeof(full_desc)) { avfilter_graph_free(&graph); return AVERROR(EINVAL); }
     if (out_sample_fmt >= 0 || out_sample_rate > 0 || out_channels > 0) {
         n += snprintf(full_desc + n, sizeof(full_desc) - n, ",aformat=");
+        if (n < 0 || n >= (int)sizeof(full_desc)) { avfilter_graph_free(&graph); return AVERROR(EINVAL); }
         int first = 1;
         if (out_sample_fmt >= 0) {
             const char *ofmt = av_get_sample_fmt_name((enum AVSampleFormat)out_sample_fmt);
             if (!ofmt) { avfilter_graph_free(&graph); return AVERROR(EINVAL); }
             n += snprintf(full_desc + n, sizeof(full_desc) - n, "sample_fmts=%s", ofmt);
+            if (n < 0 || n >= (int)sizeof(full_desc)) { avfilter_graph_free(&graph); return AVERROR(EINVAL); }
             first = 0;
         }
         if (out_sample_rate > 0) {
             n += snprintf(full_desc + n, sizeof(full_desc) - n, "%ssample_rates=%d", first ? "" : ":", out_sample_rate);
+            if (n < 0 || n >= (int)sizeof(full_desc)) { avfilter_graph_free(&graph); return AVERROR(EINVAL); }
             first = 0;
         }
         if (out_channels > 0) {
             n += snprintf(full_desc + n, sizeof(full_desc) - n, "%schannel_layouts=%dc", first ? "" : ":", out_channels);
+            if (n < 0 || n >= (int)sizeof(full_desc)) { avfilter_graph_free(&graph); return AVERROR(EINVAL); }
         }
-        if (n >= (int)sizeof(full_desc)) { avfilter_graph_free(&graph); return AVERROR(EINVAL); }
     }
 
     rc = ffkmp_graph_finish_(graph, src_ctx, sink_ctx, full_desc);
@@ -708,33 +718,39 @@ static inline int ffkmp_graph_build_audio_multi(
     int rc = avfilter_graph_create_filter(&sink_ctx, sink, "out", NULL, NULL, graph);
     if (rc < 0) { avfilter_graph_free(&graph); return rc; }
 
-    /* Same aformat pinning trick as the single-input audio builder. */
+    /* Same aformat pinning trick as the single-input audio builder, and the same rule about
+       checking the running length after every append. See that builder for why. */
     char full_desc[2048];
     int len = snprintf(full_desc, sizeof(full_desc), "%s",
                        (description && description[0]) ? description : "anull");
+    if (len < 0 || len >= (int)sizeof(full_desc)) { avfilter_graph_free(&graph); return AVERROR(EINVAL); }
     if (out_sample_fmt >= 0 || out_sample_rate > 0 || out_channels > 0) {
         /* The pinned chain must hang off [out]'s producer; description already routes to [out],
-           so splice aformat between: rename the user's terminal label is intrusive — instead we
-           rely on the sink accepting anything and pin via aformat appended INSIDE the chain
-           only when the description has no explicit [out] label. With an explicit [out] the
-           caller controls formats; Transcoder always appends its own aformat before [out]. */
+           so splice aformat between. Renaming the caller's terminal label would be intrusive,
+           so instead we rely on the sink accepting anything and pin via aformat appended INSIDE
+           the chain only when the description has no explicit [out] label. With an explicit
+           [out] the caller controls formats; Transcoder always appends its own aformat before
+           [out]. */
         if (!strstr(full_desc, "[out]")) {
             int first = 1;
             len += snprintf(full_desc + len, sizeof(full_desc) - len, ",aformat=");
+            if (len < 0 || len >= (int)sizeof(full_desc)) { avfilter_graph_free(&graph); return AVERROR(EINVAL); }
             if (out_sample_fmt >= 0) {
                 const char *of = av_get_sample_fmt_name((enum AVSampleFormat)out_sample_fmt);
                 if (!of) { avfilter_graph_free(&graph); return AVERROR(EINVAL); }
                 len += snprintf(full_desc + len, sizeof(full_desc) - len, "sample_fmts=%s", of);
+                if (len < 0 || len >= (int)sizeof(full_desc)) { avfilter_graph_free(&graph); return AVERROR(EINVAL); }
                 first = 0;
             }
             if (out_sample_rate > 0) {
                 len += snprintf(full_desc + len, sizeof(full_desc) - len, "%ssample_rates=%d", first ? "" : ":", out_sample_rate);
+                if (len < 0 || len >= (int)sizeof(full_desc)) { avfilter_graph_free(&graph); return AVERROR(EINVAL); }
                 first = 0;
             }
             if (out_channels > 0) {
                 len += snprintf(full_desc + len, sizeof(full_desc) - len, "%schannel_layouts=%dc", first ? "" : ":", out_channels);
+                if (len < 0 || len >= (int)sizeof(full_desc)) { avfilter_graph_free(&graph); return AVERROR(EINVAL); }
             }
-            if (len >= (int)sizeof(full_desc)) { avfilter_graph_free(&graph); return AVERROR(EINVAL); }
         }
     }
 
@@ -756,7 +772,7 @@ static inline int  ffkmp_graph_receive(AVFilterContext *sink, AVFrame *frame) {
 static inline void ffkmp_buffersink_set_frame_size(AVFilterContext *sink, unsigned n) {
     if (sink && n > 0) av_buffersink_set_frame_size(sink, n);
 }
-/* The time-base frames carry when they leave the graph — filters like fps/atempo change it,
+/* The time-base frames carry when they leave the graph. Filters like fps/atempo change it,
    so the consumer must read it from the sink rather than assume the input time-base. */
 static inline void ffkmp_buffersink_time_base(AVFilterContext *sink, int *n, int *d) {
     if (!sink || !n || !d) { if (n) *n = 0; if (d) *d = 1; return; }

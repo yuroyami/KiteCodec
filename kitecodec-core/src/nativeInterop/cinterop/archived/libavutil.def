@@ -67,7 +67,7 @@ static inline void     ffkmp_frame_set_nb_samples(AVFrame *f, int v) { if (f) f-
 static inline int      ffkmp_frame_get_buffer(AVFrame *f, int align) { return av_frame_get_buffer(f, align); }
 static inline int      ffkmp_frame_make_writable(AVFrame *f) { return av_frame_make_writable(f); }
 
-/* Set ch_layout from a default-for-N-channels — works for 1,2,5.1,7.1 etc. */
+/* Set ch_layout from a default-for-N-channels, which works for 1,2,5.1,7.1 etc. */
 static inline void ffkmp_frame_set_ch_layout_default(AVFrame *f, int channels) {
     if (!f) return;
     av_channel_layout_uninit(&f->ch_layout);

@@ -151,7 +151,7 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
                 "the install prefix may not have been honoured."
         }
         check(outputDir.resolve("include/libavformat/avformat.h").isFile) {
-            "FFmpeg installed libraries into $outputDir but no headers — cinterop needs both."
+            "FFmpeg installed libraries into $outputDir but no headers; cinterop needs both."
         }
         bundleThirdPartyArchives(target, license, outputDir)
         logger.lifecycle("[KiteCodec] FFmpeg ${sourceRef.get()} (${license.dirName}) installed into $outputDir")
@@ -194,7 +194,7 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
                 "They are linked INTO libavcodec.a. Searched: ${searchDirs.joinToString()}.\n" +
                 "Their package likely ships shared libraries only; the fix is to build those " +
                 "dependencies statically from source. Never substitute the shared library into " +
-                "the tree — that silently stops it being self-contained."
+                "the tree, which silently stops it being self-contained."
         if (requireSelfContained.getOrElse(false)) {
             throw GradleException(
                 "$explanation\n" +

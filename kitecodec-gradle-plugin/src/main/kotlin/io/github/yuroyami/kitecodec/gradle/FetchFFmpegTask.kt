@@ -182,7 +182,7 @@ abstract class FetchFFmpegTask : DefaultTask() {
             "kitecodec: could not obtain the SHA-256 for ${downloadUrl.get()} " +
                 "(no readable ${sha256Url.get()}), so the archive cannot be verified. " +
                 "Pin the checksum via kitecodec { ffmpeg { pinnedSha256.put(<asset>, <sha256>) } }, " +
-                "or — if you accept linking an unverified binary — set the Gradle property " +
+                "or, if you accept linking an unverified binary, set the Gradle property " +
                 "kitecodec.ffmpeg.allowUnverified=true.",
         )
     }

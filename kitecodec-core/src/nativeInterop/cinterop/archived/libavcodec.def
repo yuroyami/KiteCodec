@@ -69,7 +69,7 @@ static inline int             ffkmp_codecctx_from_par(AVCodecContext *c, const A
     return avcodec_parameters_to_context(c, p);
 }
 
-/* Encoder configuration — done before open. */
+/* Encoder configuration, done before open. */
 static inline void ffkmp_codecctx_set_video(AVCodecContext *c,
                                             int width, int height, int pix_fmt,
                                             int fr_num, int fr_den,

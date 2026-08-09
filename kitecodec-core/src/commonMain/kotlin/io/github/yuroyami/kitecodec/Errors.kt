@@ -18,7 +18,7 @@ package io.github.yuroyami.kitecodec
  * ```
  *
  * Every subclass keeps the raw code in [code] (0 for [Internal]), so nothing is lost by the
- * classification — unmapped codes surface as [AvError].
+ * classification; unmapped codes surface as [AvError].
  */
 public sealed class FFmpegError(public val code: Int, public val message: String) {
 
@@ -64,7 +64,7 @@ public sealed class FFmpegError(public val code: Int, public val message: String
     /** Native allocation failure (`AVERROR(ENOMEM)`). */
     public class OutOfMemory(code: Int, message: String) : FFmpegError(code, message)
 
-    /** End of file/stream surfaced as an error (`AVERROR_EOF`) — rare; loops consume it. */
+    /** End of file/stream surfaced as an error (`AVERROR_EOF`). Rare, loops consume it. */
     public class EndOfFile(code: Int, message: String) : FFmpegError(code, message)
 
     /** Generic I/O failure (`AVERROR(EIO)`). */
@@ -73,7 +73,7 @@ public sealed class FFmpegError(public val code: Int, public val message: String
     /** Any `AVERROR_*` code without a dedicated category above. */
     public class AvError(code: Int, message: String) : FFmpegError(code, message)
 
-    /** Library-internal invariant failure — not an FFmpeg return code. */
+    /** Library-internal invariant failure, not an FFmpeg return code. */
     public class Internal(message: String) : FFmpegError(0, message)
 
     override fun toString(): String = "${this::class.simpleName}(code=$code, message=$message)"

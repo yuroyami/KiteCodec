@@ -51,7 +51,7 @@ public class Rational private constructor(public val num: Int, public val den: I
         val reduced = scalar / g
         val product = reduced * num
         if (num != 0 && product / num != reduced) {
-            throw ArithmeticException("$scalar * $this overflows Long — use av_rescale_q-backed APIs for timestamp math")
+            throw ArithmeticException("$scalar * $this overflows Long. Use av_rescale_q-backed APIs for timestamp math")
         }
         return product / (den / g)
     }

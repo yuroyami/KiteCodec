@@ -224,6 +224,21 @@ container and filter list is in [Platform support](docs/platforms.md).
 `nativeMain` is the only implementation source set. Every target compiles the
 same Kotlin. What differs is which FFmpeg it links.
 
+Every target claim in the Kite family means one of these tiers and nothing more.
+
+| Tier | Meaning |
+|---|---|
+| T1 API | The Kotlin compiles for the target. No claim that any media opens. |
+| T2 Codec | A runtime on the target opens, decodes, seeks, cancels and closes real media. |
+| T3 and above | Output, OS integration and release qualification. A codec library makes no such claim, so KiteCodec never reports one. |
+
+Against that scale: `macosArm64` is T2, measured on an Apple silicon development
+machine by 58 `kitecodec-core` tests and the e2e script. `linuxX64` and
+`mingwX64` are T2 on CI evidence only, never on a machine you can inspect here.
+The `androidNative*` klibs are T1: they compile per ABI and nothing runs them.
+`iosArm64`, `iosSimulatorArm64`, `iosX64`, `macosX64` and `linuxArm64` are built
+nowhere, so they carry no tier at all.
+
 | Target | Published | Built and tested in CI | FFmpeg comes from |
 |---|---|---|---|
 | `macosArm64` | yes | unit tests, native tests and an e2e transcode, run twice: against Homebrew, and against the vendored LGPL build compiled from source | Homebrew, vendored, or a prebuilt asset |
@@ -276,8 +291,9 @@ $KEXE transcode in.mp4 out.mp4 "scale=1280:720" -acopy   # also: info, probe, th
 scripts/e2e.sh "$KEXE"
 ```
 
-There are 53 tests in `kitecodec-core`, plus 3 TestKit functional tests for the
-Gradle plugin. `commonTest` covers the pure logic. `nativeTest` runs against the
+There are 58 tests in `kitecodec-core`, plus 3 TestKit functional tests for the
+Gradle plugin, of which 2 fail on a clean checkout and are a known defect of the
+plugin's test setup, not of the library. `commonTest` covers the pure logic. `nativeTest` runs against the
 FFmpeg the build actually linked. `PipelineRoundTripTest` needs no media
 fixtures: it synthesizes frames, muxes them through the real pipeline, then reads
 them back. `scripts/e2e.sh` generates a clip with the ffmpeg CLI, runs it through

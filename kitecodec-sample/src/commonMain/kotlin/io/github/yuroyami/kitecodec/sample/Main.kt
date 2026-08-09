@@ -15,18 +15,18 @@ internal expect fun writeBytes(path: String, bytes: ByteArray)
 /**
  * CLI demo:
  *
- *   no args / info  — prints FFmpeg info + capability probe.
- *   probe <file>    — opens the file, lists streams + their metadata.
+ *   no args / info  : prints FFmpeg info + capability probe.
+ *   probe <file>    : opens the file, lists streams + their metadata.
  *   transcode <in> <out> [<filter>] [-an | -acopy] [-vt] [--ss <sec>] [--to <sec>]
- *                   — full pipeline: decode → filter → encode → mux.
+ *                   : full pipeline: decode → filter → encode → mux.
  *                     Inputs without video transcode audio-only (filter ignored).
  *                     Audio: AAC re-encode by default, `-acopy` copies bit-exact, `-an` drops.
  *                     `-vt` uses the h264_videotoolbox hardware encoder.
  *                     `--ss`/`--to` trim (frame-exact for re-encoded streams).
  *   thumbnail <in> <out.jpg|png> [<atSec>]
- *                   — extract one frame as a compressed image.
+ *                   : extract one frame as a compressed image.
  *   remux <in> <out> [--ss <sec>] [--to <sec>]
- *                   — lossless container rewrite (`ffmpeg -c copy`), keyframe-snapped trim.
+ *                   : lossless container rewrite (`ffmpeg -c copy`), keyframe-snapped trim.
  */
 fun main(args: Array<String>) {
     when (args.firstOrNull()) {
@@ -101,7 +101,7 @@ private fun usage(text: String): Nothing {
 
 private fun printInfo() {
     val v = FFmpeg.versions
-    println("KiteCodec — Kotlin Multiplatform codec library (FFmpeg backend)")
+    println("KiteCodec, a Kotlin Multiplatform codec library (FFmpeg backend)")
     println("=".repeat(60))
     println("  libavutil ${v.avutil}  libavcodec ${v.avcodec}  libavformat ${v.avformat}")
     println("  libavfilter ${v.avfilter}  libswscale ${v.swscale}  libswresample ${v.swresample}")
@@ -123,8 +123,8 @@ private fun printInfo() {
  * The video encoder to use, chosen by PROBING the linked FFmpeg instead of assuming one.
  *
  * `libx264` exists only in a GPL build. KiteCodec's default vendored profile is LGPL, where the
- * dependency-free baseline is `mpeg4`. Hard-coding libx264 made this sample — and the e2e suite
- * that drives it — silently require a GPL FFmpeg, which is exactly the flavour the project does
+ * dependency-free baseline is `mpeg4`. Hard-coding libx264 made this sample, and the e2e suite
+ * that drives it, silently require a GPL FFmpeg, which is exactly the flavour the project does
  * NOT ship by default.
  */
 internal fun pickVideoEncoder(preferHardware: Boolean): CodecId {
@@ -204,7 +204,7 @@ private fun transcode(
                 options = if (codec.name.endsWith("_videotoolbox")) mapOf("allow_sw" to "1") else emptyMap(),
             )
         } else {
-            println("  (input has no video — audio-only transcode, filter ignored)")
+            println("  (input has no video, audio-only transcode, filter ignored)")
             null
         }
         val audioNote = when (audio) {
@@ -218,7 +218,7 @@ private fun transcode(
             input = input,
             output = output,
             spec = spec,
-            // An empty filter argument means "no graph at all" — decoder frames go straight to the
+            // An empty filter argument means "no graph at all": decoder frames go straight to the
             // encoder. Passing "" through would hand libavfilter an unparseable description.
             videoFilter = if (spec != null) filter.takeIf { it.isNotBlank() } else null,
             audioSpec = if (audio == AudioChoice.Encode) AudioEncoderSpec(codec = CodecId.Aac) else null,

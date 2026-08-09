@@ -85,7 +85,7 @@ public actual class MediaSink internal constructor(
      * Reentrant lock serializing everything that touches the shared muxer state: header
      * write, `av_interleaved_write_frame`, and the shared timeline base. Encoding itself
      * (separate AVCodecContexts) stays lock-free, so a video and an audio encoder driven
-     * from concurrent coroutines only serialize at the muxer boundary — which libavformat
+     * from concurrent coroutines only serialize at the muxer boundary, which libavformat
      * requires anyway.
      */
     private val muxLock = SynchronizedObject()
@@ -126,8 +126,8 @@ public actual class MediaSink internal constructor(
             stream = stream,
             // Read back from the OPENED context, never assumed from the spec: avcodec_open2 is
             // free to adjust time_base, and a stale value here would rescale every packet
-            // against the wrong base (wrong playback speed) while newStreamFor — which reads it
-            // properly — told the muxer the real one.
+            // against the wrong base (wrong playback speed) while newStreamFor, which reads it
+            // properly, told the muxer the real one.
             codecTimeBase = codecCtxTimeBase(codecCtx),
             isAudio = false,
         )
@@ -159,7 +159,7 @@ public actual class MediaSink internal constructor(
             if (negotiatedFormat == SampleFormat.None) {
                 val first = ffkmp_codec_first_sample_fmt(codec)
                 if (first < 0) throw FFmpegException(
-                    FFmpegError.Internal("Encoder '${spec.codec.name}' does not advertise sample formats — set AudioEncoderSpec.sampleFormat explicitly")
+                    FFmpegError.Internal("Encoder '${spec.codec.name}' does not advertise sample formats; set AudioEncoderSpec.sampleFormat explicitly")
                 )
                 negotiatedFormat = sampleFormatFromAv(first)
             }
@@ -185,14 +185,14 @@ public actual class MediaSink internal constructor(
             core = core,
             frameSize = ffkmp_codecctx_frame_size(codecCtx),
             sampleFormat = negotiatedFormat,
-            // Report what the encoder actually opened with, not what was asked for — callers
+            // Report what the encoder actually opened with, not what was asked for, because callers
             // (Transcoder builds its aformat pin from these) must resample to the real values.
             sampleRate = ffkmp_codecctx_sample_rate(codecCtx).takeIf { it > 0 } ?: spec.sampleRate,
             channels = ffkmp_codecctx_channels(codecCtx).takeIf { it > 0 } ?: spec.channels,
         )
     }
 
-    /** The time-base the OPENED context settled on — authoritative for all pts math. */
+    /** The time-base the OPENED context settled on; authoritative for all pts math. */
     private fun codecCtxTimeBase(codecCtx: CPointer<AVCodecContext>): Rational = memScoped {
         val n = alloc<IntVar>(); val d = alloc<IntVar>()
         ffkmp_codecctx_time_base(codecCtx, n.ptr, d.ptr)
@@ -253,7 +253,7 @@ public actual class MediaSink internal constructor(
         when (headerState) {
             HeaderState.Written -> return
             HeaderState.Failed -> throw FFmpegException(
-                FFmpegError.Internal("The muxer header failed to write earlier — this sink is unusable")
+                FFmpegError.Internal("The muxer header failed to write earlier, so this sink is unusable")
             )
             HeaderState.NotWritten -> {}
         }
@@ -280,7 +280,7 @@ public actual class MediaSink internal constructor(
             try {
                 // Flush BEFORE freeing the contexts. Encoders buffer (libx264's lookahead holds
                 // tens of frames); freeing without an EOF drain silently truncates the tail. The
-                // drain is best-effort — close() must still write a trailer for whatever did land
+                // drain is best-effort; close() must still write a trailer for whatever did land
                 // if an encoder errors out here, and drive()/Transcoder have usually finished
                 // already, in which case finish() is a no-op on a spent encoder.
                 if (encoderCores.isNotEmpty()) {
@@ -301,7 +301,7 @@ public actual class MediaSink internal constructor(
             }
             rc
         }
-        // A failed trailer means the file on disk is broken (e.g. mp4 moov never written) —
+        // A failed trailer means the file on disk is broken (e.g. mp4 moov never written), and
         // surfacing that beats handing the caller a corrupt output with a green checkmark.
         if (trailerRc < 0) throw FFmpegException(avError(trailerRc))
     }
@@ -384,16 +384,16 @@ internal class EncoderCore(
     /**
      * Video frames do NOT necessarily arrive in the encoder's pixel format: a filter graph's
      * buffersink is left unconstrained on purpose (so `scale`/`overlay` can negotiate freely), and
-     * an unfiltered passthrough hands over whatever the decoder produced — 10-bit sources are the
+     * an unfiltered passthrough hands over whatever the decoder produced, and 10-bit sources are the
      * common case. Converting here is what makes "no videoFilter" and "filter chain without a
      * trailing `format=`" work instead of failing with a bare EINVAL from avcodec_send_frame.
      *
      * Returns a freshly allocated frame the caller must free, or null when no conversion is needed.
-     * Geometry mismatches are NOT silently rescaled — that is a caller error worth a clear message.
+     * Geometry mismatches are NOT silently rescaled; that is a caller error worth a clear message.
      */
     private fun conversionFor(native: CPointer<AVFrame>): CPointer<AVFrame>? {
         // Geometry is checked FIRST and unconditionally. Folding it into the pixel-format branch
-        // would skip it whenever the formats already agree — and several encoders (mpeg4 among
+        // would skip it whenever the formats already agree, and several encoders (mpeg4 among
         // them) happily accept a wrong-sized frame and produce a corrupt stream rather than
         // failing, so there is no backstop behind this check.
         val frameW = ffkmp_frame_width(native)
@@ -405,7 +405,7 @@ internal class EncoderCore(
                 FFmpegError.InvalidArgument(
                     0,
                     "Frame is ${frameW}x$frameH but the encoder was opened for ${encW}x$encH. " +
-                        "KiteCodec converts pixel formats for you but never silently rescales — " +
+                        "KiteCodec converts pixel formats for you but never silently rescales, so " +
                         "match VideoEncoderSpec.width/height to the filter graph's output, or add " +
                         "a scale= stage to the filter chain.",
                 ),
@@ -436,7 +436,7 @@ internal class EncoderCore(
      * frame sits at the trim offset). The base offset is SHARED across the sink's streams
      * ([MediaSink.claimBaseMicros]) so the relative A/V offset survives the rebase. Frames
      * with no pts fall back to a synthetic timeline (frame count for video, accumulated
-     * samples for audio). Output is forced strictly monotonic — both libx264 and muxers
+     * samples for audio). Output is forced strictly monotonic because both libx264 and muxers
      * reject non-increasing pts.
      */
     private fun restampPts(frame: Frame) {
@@ -470,7 +470,7 @@ internal class EncoderCore(
     }
 
     /**
-     * `avcodec_send_frame` returning EAGAIN means the output queue is full — drain packets and
+     * `avcodec_send_frame` returning EAGAIN means the output queue is full; drain packets and
      * retry the SAME frame. The previous implementation dropped the frame on EAGAIN.
      */
     private fun sendAndDrain(packet: CPointer<AVPacket>, frame: CPointer<AVFrame>?) {
@@ -499,7 +499,7 @@ internal class EncoderCore(
             sink.ensureHeaderWritten()
             ffkmp_packet_set_stream_index(packet, streamIndex)
             // Packet pts is in the codec time-base. Convert into the muxer's stream time-base,
-            // which avformat_write_header may have rewritten — read it fresh each pass.
+            // which avformat_write_header may have rewritten; read it fresh each pass.
             memScoped {
                 val n = alloc<IntVar>(); val d = alloc<IntVar>()
                 ffkmp_stream_time_base(stream, n.ptr, d.ptr)
@@ -548,12 +548,12 @@ public actual class CopyStream internal constructor(
 
     /**
      * Write one demuxed packet through to the muxer: rebase timestamps so the output starts
-     * at ~0 (matters for trimmed copies — players choke on a stream starting at 95s), then
+     * at ~0 (matters for trimmed copies, since players choke on a stream starting at 95s), then
      * rescale from the source stream's time-base onto whatever the output muxer chose.
      * `av_interleaved_write_frame` takes ownership of the payload; the packet comes back blank.
      */
     internal fun writeCopyPacket(packet: CPointer<AVPacket>) {
-        // Header first — avformat_write_header may rewrite the stream time-base we read below.
+        // Header first, because avformat_write_header may rewrite the stream time-base we read below.
         sink.ensureHeaderWritten()
         ffkmp_packet_set_stream_index(packet, streamIndex)
 
