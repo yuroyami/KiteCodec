@@ -1,0 +1,589 @@
+/* ffkmp_frame_convert_pixfmt, the only swscale use in the whole helper layer.
+ *
+ * Register item B1-23: the helper builds and destroys an SwsContext on every call. B2 owns caching
+ * that context; B1 changes nothing about it and writes the baseline B2's caching has to match. So
+ * every case here asserts the behaviour as it is today, not as it should become, and the numbers
+ * are measured rather than chosen.
+ *
+ * The baseline has four parts.
+ *
+ *   Correctness, against an oracle that is not the helper. The expected RGBA for a flat yuv420p
+ *   frame is computed here from the BT.601 limited-range matrix, in floating point, and compared
+ *   with what the helper produced. Measured on this machine, the two agree exactly on all six
+ *   colours tried, so the tolerance is stated as 1 rather than as whatever the first run happened
+ *   to print. A flat colour is the right fixture: source and destination are the same size, so
+ *   SWS_BILINEAR does no filtering and the case measures colour conversion alone.
+ *
+ *   The metadata the helper carries, and the metadata it drops. It sets width, height, format and
+ *   pts, and nothing else. Sample aspect ratio, colour range, colour space and duration are left
+ *   at their defaults, measured. That is asserted rather than described, because a caller reading
+ *   dst->color_range would get 0 (unspecified) and B2 must either keep that or change it on
+ *   purpose.
+ *
+ *   Allocation cost per call, which is the actual subject of B1-23. Measured under the interposer
+ *   in the plain variant: an even-height frame costs 9 allocating calls per conversion and an
+ *   odd-height frame costs 61, deterministic and repeatable, with the difference coming from
+ *   swscale needing full filter tables when the last chroma row is half populated. Every call
+ *   frees 5 of those and hands 4 live blocks to the caller, and ffkmp_frame_free brings the window
+ *   to exactly zero. A cached context is what makes those numbers fall; this file is what says
+ *   what they were.
+ *
+ *   Leak freedom on the failure paths, which is the half a caching change is most likely to
+ *   break. Every refusal returns NULL with a net-zero allocation window, including the two that
+ *   fail late: a source frame with no data pointers gets as far as sws_scale and has to unwind an
+ *   already allocated destination frame, and an unsupported destination format is refused by
+ *   sws_getContext before the destination frame exists.
+ *
+ * One hazard found while writing this file, and recorded here because a caller cannot discover it
+ * any other way: a destination format outside the enum, AV_PIX_FMT_NONE included, does not return
+ * NULL. It aborts the process from inside libswscale, at an assertion in swscale_internal.h. The
+ * case named "a destination format outside the enum never yields a frame" makes that call in a
+ * child process for exactly that reason.
+ */
+
+#include "harness.h"
+
+#include <math.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/wait.h>
+
+#include "kitecodec_helpers.h"
+
+/* argv[0] of this process, so the invalid-format case can re-run itself in a child. */
+static const char *self_path;
+
+#define KC_CHILD_ARG "kc-child-convert-invalid-format"
+#define KC_CHILD_RETURNED_NULL 0
+#define KC_CHILD_RETURNED_FRAME 3
+
+/* ---- Fixtures ---- */
+
+/* A flat yuv420p frame: one luma value everywhere, one chroma pair everywhere. */
+static AVFrame *flat_yuv420p(int width, int height, int y, int u, int v, int64_t pts)
+{
+    AVFrame *frame = ffkmp_frame_alloc();
+    int row;
+
+    if (frame == NULL)
+        return NULL;
+    ffkmp_frame_set_width(frame, width);
+    ffkmp_frame_set_height(frame, height);
+    ffkmp_frame_set_format(frame, AV_PIX_FMT_YUV420P);
+    ffkmp_frame_set_pts(frame, pts);
+    if (ffkmp_frame_get_buffer(frame, 0) < 0) {
+        ffkmp_frame_free(frame);
+        return NULL;
+    }
+    for (row = 0; row < height; row++)
+        memset(frame->data[0] + (ptrdiff_t)row * frame->linesize[0], y, (size_t)width);
+    for (row = 0; row < (height + 1) / 2; row++) {
+        memset(frame->data[1] + (ptrdiff_t)row * frame->linesize[1], u, (size_t)((width + 1) / 2));
+        memset(frame->data[2] + (ptrdiff_t)row * frame->linesize[2], v, (size_t)((width + 1) / 2));
+    }
+    return frame;
+}
+
+/* A frame with dimensions and a format but no buffer, for the guard rows. */
+static AVFrame *bare_frame(int width, int height, int format)
+{
+    AVFrame *frame = ffkmp_frame_alloc();
+
+    if (frame == NULL)
+        return NULL;
+    ffkmp_frame_set_width(frame, width);
+    ffkmp_frame_set_height(frame, height);
+    ffkmp_frame_set_format(frame, format);
+    return frame;
+}
+
+/* ---- The oracle ---- */
+
+/* BT.601 limited range, the conversion swscale applies to a yuv420p frame that declares neither a
+ * colour space nor a range. Written from the coefficients rather than from swscale's tables, so
+ * this is an independent answer and not a restatement of the code under test. */
+static void bt601_limited_to_rgb(int y, int u, int v, int *r, int *g, int *b)
+{
+    const double kr = 0.299;
+    const double kg = 0.587;
+    const double kb = 0.114;
+    double luma = 255.0 / 219.0 * (y - 16);
+    double cb = u - 128;
+    double cr = v - 128;
+    double red = luma + 255.0 / 112.0 * (1.0 - kr) * cr;
+    double green = luma
+        - 255.0 / 112.0 * (1.0 - kb) * (kb / kg) * cb
+        - 255.0 / 112.0 * (1.0 - kr) * (kr / kg) * cr;
+    double blue = luma + 255.0 / 112.0 * (1.0 - kb) * cb;
+
+    *r = (int)lround(red < 0.0 ? 0.0 : red > 255.0 ? 255.0 : red);
+    *g = (int)lround(green < 0.0 ? 0.0 : green > 255.0 ? 255.0 : green);
+    *b = (int)lround(blue < 0.0 ? 0.0 : blue > 255.0 ? 255.0 : blue);
+}
+
+/* The largest absolute difference between a converted RGBA frame and one expected pixel, over
+ * every pixel in the frame. A flat source must convert to a flat destination, so one expected
+ * pixel is the right shape for the assertion. */
+static int max_rgba_deviation(const AVFrame *frame, int r, int g, int b, int a)
+{
+    int worst = 0;
+    int row;
+    int col;
+
+    for (row = 0; row < frame->height; row++) {
+        const uint8_t *line = frame->data[0] + (ptrdiff_t)row * frame->linesize[0];
+        for (col = 0; col < frame->width; col++) {
+            int expected[4];
+            int channel;
+            expected[0] = r;
+            expected[1] = g;
+            expected[2] = b;
+            expected[3] = a;
+            for (channel = 0; channel < 4; channel++) {
+                int difference = (int)line[col * 4 + channel] - expected[channel];
+                if (difference < 0)
+                    difference = -difference;
+                if (difference > worst)
+                    worst = difference;
+            }
+        }
+    }
+    return worst;
+}
+
+/* ---- Correctness ---- */
+
+static void case_flat_colours(void)
+{
+    struct row {
+        const char *name;
+        int y;
+        int u;
+        int v;
+    };
+    struct row rows[] = {
+        { "limited black",  16, 128, 128 },
+        { "limited white", 235, 128, 128 },
+        { "601 red",        81,  90, 240 },
+        { "601 green",     145,  54,  34 },
+        { "601 blue",       41, 240, 110 },
+        { "mid grey",      126, 128, 128 }
+    };
+    /* Measured deviation from the oracle on this machine: 0 on every one of the six. The tolerance
+     * is 1 so that a future FFmpeg rounding its last bit differently does not fail the gate, and
+     * the measured deviation is reported on each case line so a drift is still visible. */
+    const int tolerance = 1;
+    size_t i;
+    int worst_overall = 0;
+
+    for (i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+        AVFrame *src;
+        AVFrame *dst;
+        int r;
+        int g;
+        int b;
+        int deviation;
+
+        kc_case("%s (y=%d u=%d v=%d) converts to the BT.601 limited-range answer", rows[i].name,
+                rows[i].y, rows[i].u, rows[i].v);
+        src = flat_yuv420p(64, 64, rows[i].y, rows[i].u, rows[i].v, 12345);
+        KC_NOT_NULL(src);
+        dst = ffkmp_frame_convert_pixfmt(src, AV_PIX_FMT_RGBA);
+        KC_NOT_NULL(dst);
+        bt601_limited_to_rgb(rows[i].y, rows[i].u, rows[i].v, &r, &g, &b);
+        deviation = max_rgba_deviation(dst, r, g, b, 255);
+        KC_CHECKF(deviation <= tolerance,
+                  "worst channel deviation %d exceeds the stated tolerance of %d; the oracle says "
+                  "rgba(%d,%d,%d,255)", deviation, tolerance, r, g, b);
+        if (deviation > worst_overall)
+            worst_overall = deviation;
+        kc_detail("oracle rgba(%d,%d,%d,255) worst deviation %d of %d allowed", r, g, b, deviation,
+                  tolerance);
+        ffkmp_frame_free(dst);
+        ffkmp_frame_free(src);
+    }
+
+    kc_case("the worst deviation across all six colours");
+    KC_CHECKF(worst_overall <= tolerance, "worst overall deviation %d", worst_overall);
+    kc_detail("worst=%d, measured 0 when this baseline was written", worst_overall);
+}
+
+static void case_metadata_carried_and_dropped(void)
+{
+    AVFrame *src = flat_yuv420p(48, 32, 81, 90, 240, 987654321);
+    AVFrame *dst;
+
+    KC_NOT_NULL(src);
+    src->sample_aspect_ratio.num = 4;
+    src->sample_aspect_ratio.den = 3;
+    src->color_range = AVCOL_RANGE_MPEG;
+    src->colorspace = AVCOL_SPC_BT470BG;
+    src->duration = 4242;
+
+    kc_case("the helper carries width, height, format and pts");
+    dst = ffkmp_frame_convert_pixfmt(src, AV_PIX_FMT_RGBA);
+    KC_NOT_NULL(dst);
+    KC_EQ_INT(ffkmp_frame_width(dst), 48);
+    KC_EQ_INT(ffkmp_frame_height(dst), 32);
+    KC_EQ_INT(ffkmp_frame_format(dst), AV_PIX_FMT_RGBA);
+    KC_EQ_I64(ffkmp_frame_pts(dst), 987654321);
+    kc_detail("w=%d h=%d fmt=%d pts=%lld", ffkmp_frame_width(dst), ffkmp_frame_height(dst),
+              ffkmp_frame_format(dst), (long long)ffkmp_frame_pts(dst));
+
+    kc_case("and it carries nothing else: sar, range, space and duration stay at their defaults");
+    KC_EQ_INT(dst->sample_aspect_ratio.num, 0);
+    KC_EQ_INT(dst->sample_aspect_ratio.den, 1);
+    KC_EQ_INT((int)dst->color_range, (int)AVCOL_RANGE_UNSPECIFIED);
+    KC_EQ_INT((int)dst->colorspace, (int)AVCOL_SPC_UNSPECIFIED);
+    KC_EQ_I64(dst->duration, 0);
+    kc_note("the source declared 4/3, MPEG range, BT470BG and a duration of 4242, and none of the");
+    kc_note("four reached the result. That is the baseline, not an endorsement: a consumer that");
+    kc_note("needs them has to copy them itself today.");
+    ffkmp_frame_free(dst);
+    ffkmp_frame_free(src);
+}
+
+static void case_destination_is_a_new_frame(void)
+{
+    AVFrame *src = flat_yuv420p(16, 16, 81, 90, 240, 7);
+    AVFrame *dst;
+
+    KC_NOT_NULL(src);
+
+    kc_case("converting to the source format still produces a separate frame, not an alias");
+    dst = ffkmp_frame_convert_pixfmt(src, AV_PIX_FMT_YUV420P);
+    KC_NOT_NULL(dst);
+    KC_CHECKF(dst != src, "the helper returned its own argument");
+    KC_CHECKF(dst->data[0] != src->data[0], "the helper shared the source's pixel buffer");
+    KC_EQ_INT(dst->data[0][0], src->data[0][0]);
+    KC_EQ_INT(dst->data[1][0], src->data[1][0]);
+    KC_EQ_INT(dst->data[2][0], src->data[2][0]);
+    kc_detail("src plane0 at %p, dst plane0 at %p, same y byte %u", (const void *)src->data[0],
+              (const void *)dst->data[0], dst->data[0][0]);
+    ffkmp_frame_free(dst);
+    ffkmp_frame_free(src);
+}
+
+static void case_ten_bit_destination(void)
+{
+    AVFrame *src = flat_yuv420p(16, 16, 235, 128, 128, 5);
+    AVFrame *dst;
+    unsigned luma;
+
+    KC_NOT_NULL(src);
+
+    kc_case("a 10 bit destination puts the sample in the high bits, P010 style");
+    dst = ffkmp_frame_convert_pixfmt(src, AV_PIX_FMT_P010LE);
+    KC_NOT_NULL(dst);
+    KC_EQ_INT(ffkmp_frame_format(dst), AV_PIX_FMT_P010LE);
+    luma = (unsigned)dst->data[0][0] | ((unsigned)dst->data[0][1] << 8);
+    /* 235 in 8 bits becomes 235 << 8 in P010's 16 bit little-endian container, which is the
+     * alignment register item D26 is about. Asserting it here means a conversion that started
+     * shifting by 6 instead of 8 would fail this case rather than a renderer. */
+    KC_EQ_INT((int)luma, 235 << 8);
+    kc_detail("luma word %u, expected %u", luma, 235u << 8);
+    ffkmp_frame_free(dst);
+    ffkmp_frame_free(src);
+}
+
+static void case_odd_dimensions(void)
+{
+    AVFrame *src = flat_yuv420p(17, 9, 81, 90, 240, 3);
+    AVFrame *dst;
+    int r;
+    int g;
+    int b;
+
+    KC_NOT_NULL(src);
+
+    kc_case("an odd 17x9 frame converts, and the colour survives the half chroma row");
+    dst = ffkmp_frame_convert_pixfmt(src, AV_PIX_FMT_RGBA);
+    KC_NOT_NULL(dst);
+    KC_EQ_INT(ffkmp_frame_width(dst), 17);
+    KC_EQ_INT(ffkmp_frame_height(dst), 9);
+    bt601_limited_to_rgb(81, 90, 240, &r, &g, &b);
+    KC_CHECKF(max_rgba_deviation(dst, r, g, b, 255) <= 1, "odd geometry changed the colour");
+    kc_detail("deviation %d", max_rgba_deviation(dst, r, g, b, 255));
+    ffkmp_frame_free(dst);
+    ffkmp_frame_free(src);
+}
+
+static void case_round_trip(void)
+{
+    AVFrame *rgba = ffkmp_frame_alloc();
+    AVFrame *yuv;
+    AVFrame *back;
+    int row;
+    int col;
+
+    KC_NOT_NULL(rgba);
+    ffkmp_frame_set_width(rgba, 32);
+    ffkmp_frame_set_height(rgba, 32);
+    ffkmp_frame_set_format(rgba, AV_PIX_FMT_RGBA);
+    KC_CHECK(ffkmp_frame_get_buffer(rgba, 0) >= 0);
+    for (row = 0; row < 32; row++) {
+        uint8_t *line = rgba->data[0] + (ptrdiff_t)row * rgba->linesize[0];
+        for (col = 0; col < 32; col++) {
+            line[col * 4 + 0] = 200;
+            line[col * 4 + 1] = 30;
+            line[col * 4 + 2] = 60;
+            line[col * 4 + 3] = 255;
+        }
+    }
+
+    kc_case("rgba to yuv420p and back lands within 1 of where it started");
+    yuv = ffkmp_frame_convert_pixfmt(rgba, AV_PIX_FMT_YUV420P);
+    KC_NOT_NULL(yuv);
+    back = ffkmp_frame_convert_pixfmt(yuv, AV_PIX_FMT_RGBA);
+    KC_NOT_NULL(back);
+    /* Chroma subsampling loses information, but a flat colour has nothing to lose: every chroma
+     * sample averages identical neighbours. So the round trip is exact up to the two rounding
+     * steps, which measured 1 on the green and blue channels. */
+    KC_CHECKF(max_rgba_deviation(back, 200, 30, 60, 255) <= 1,
+              "round trip deviation %d exceeds 1", max_rgba_deviation(back, 200, 30, 60, 255));
+    kc_detail("yuv (%u,%u,%u), back deviation %d", yuv->data[0][0], yuv->data[1][0],
+              yuv->data[2][0], max_rgba_deviation(back, 200, 30, 60, 255));
+    ffkmp_frame_free(back);
+    ffkmp_frame_free(yuv);
+    ffkmp_frame_free(rgba);
+}
+
+/* ---- Allocation, the actual B1-23 baseline ---- */
+
+static void case_allocation_baseline(void)
+{
+    AVFrame *even = flat_yuv420p(64, 64, 81, 90, 240, 1);
+    AVFrame *odd = flat_yuv420p(64, 63, 81, 90, 240, 1);
+    kc_alloc_counts before;
+    AVFrame *dst;
+    long long held_live;
+    long long per_call_even = 0;
+    long long per_call_odd = 0;
+    int repeat;
+
+    KC_NOT_NULL(even);
+    KC_NOT_NULL(odd);
+
+    kc_case("one conversion, held: the caller owns the frame and its buffer");
+    kc_alloc_snapshot(&before);
+    dst = ffkmp_frame_convert_pixfmt(even, AV_PIX_FMT_RGBA);
+    KC_NOT_NULL(dst);
+    if (kc_alloc_active()) {
+        held_live = kc_alloc_live_delta(&before);
+        kc_detail("new=%lld freed=%lld live=%lld", kc_alloc_new_delta(&before),
+                  kc_alloc_free_delta(&before), held_live);
+        KC_CHECKF(held_live == 4, "expected 4 live blocks after a conversion, measured %lld",
+                  held_live);
+        per_call_even = kc_alloc_new_delta(&before);
+    } else {
+        kc_partial("allocation pairing not observable in this variant");
+    }
+
+    kc_case("and freeing it brings the whole window to zero, SwsContext included");
+    ffkmp_frame_free(dst);
+    KC_ALLOC_BALANCED(&before);
+
+    kc_case("the per-call cost is stable across repeats, which is what caching will change");
+    if (kc_alloc_active()) {
+        for (repeat = 0; repeat < 8; repeat++) {
+            long long cost;
+            kc_alloc_snapshot(&before);
+            dst = ffkmp_frame_convert_pixfmt(even, AV_PIX_FMT_RGBA);
+            KC_NOT_NULL(dst);
+            ffkmp_frame_free(dst);
+            cost = kc_alloc_new_delta(&before);
+            KC_CHECKF(cost == per_call_even,
+                      "repeat %d cost %lld allocating calls, the first cost %lld; the per-call "
+                      "cost is supposed to be constant because nothing is cached", repeat, cost,
+                      per_call_even);
+            KC_CHECKF(kc_alloc_live_delta(&before) == 0, "repeat %d leaked", repeat);
+        }
+        /* Measured when this baseline was written: 9 for an even-height frame. Asserted, so a
+         * change in the per-call cost is a failing case with a number in it rather than a silent
+         * improvement or regression. */
+        KC_CHECKF(per_call_even == 9,
+                  "an even-height conversion cost %lld allocating calls, the recorded baseline is "
+                  "9. If B2's caching landed, this is the case that should be updated with the new "
+                  "number and a note", per_call_even);
+        kc_detail("9 allocating calls per conversion, 8 repeats, all identical");
+    } else {
+        kc_partial("allocation pairing not observable in this variant");
+    }
+
+    kc_case("an odd height costs more, because swscale cannot take its fast path");
+    if (kc_alloc_active()) {
+        kc_alloc_snapshot(&before);
+        dst = ffkmp_frame_convert_pixfmt(odd, AV_PIX_FMT_RGBA);
+        KC_NOT_NULL(dst);
+        ffkmp_frame_free(dst);
+        per_call_odd = kc_alloc_new_delta(&before);
+        KC_CHECKF(kc_alloc_live_delta(&before) == 0, "the odd-height conversion leaked");
+        KC_CHECKF(per_call_odd == 61,
+                  "a 64x63 conversion cost %lld allocating calls, the recorded baseline is 61",
+                  per_call_odd);
+        KC_CHECKF(per_call_odd > per_call_even, "the odd case did not cost more");
+        kc_detail("even=%lld odd=%lld", per_call_even, per_call_odd);
+        kc_note("both numbers are the cost of rebuilding the SwsContext per call. They are the");
+        kc_note("baseline B2's cached contexts have to beat, and the ratio is why the odd case is");
+        kc_note("recorded separately.");
+    } else {
+        kc_partial("allocation pairing not observable in this variant");
+    }
+
+    ffkmp_frame_free(odd);
+    ffkmp_frame_free(even);
+}
+
+/* ---- Refusals, all of which must allocate nothing net ---- */
+
+static void case_guard_paths(void)
+{
+    struct row {
+        const char *name;
+        int width;
+        int height;
+        int src_format;
+        int with_buffer;
+        int dst_format;
+        const char *why;
+    };
+    struct row rows[] = {
+        { "a NULL source", 0, 0, 0, 0, AV_PIX_FMT_RGBA,
+          "the first guard in the helper" },
+        { "zero width", 0, 16, AV_PIX_FMT_YUV420P, 0, AV_PIX_FMT_RGBA,
+          "refused before swscale is touched" },
+        { "zero height", 16, 0, AV_PIX_FMT_YUV420P, 0, AV_PIX_FMT_RGBA,
+          "refused before swscale is touched" },
+        { "a negative height", 16, -2, AV_PIX_FMT_YUV420P, 0, AV_PIX_FMT_RGBA,
+          "refused before swscale is touched" },
+        { "a source with no pixel buffer", 16, 16, AV_PIX_FMT_YUV420P, 0, AV_PIX_FMT_RGBA,
+          "fails inside sws_scale, so the destination frame has to be unwound" },
+        { "pal8 as the destination", 16, 16, AV_PIX_FMT_YUV420P, 1, AV_PIX_FMT_PAL8,
+          "a real format swscale cannot write" },
+        { "videotoolbox as the destination", 16, 16, AV_PIX_FMT_YUV420P, 1,
+          AV_PIX_FMT_VIDEOTOOLBOX, "a hardware format, refused by sws_getContext" }
+    };
+    size_t i;
+
+    for (i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+        AVFrame *src = NULL;
+        AVFrame *dst;
+        kc_alloc_counts before;
+
+        kc_case("%s is refused with NULL and allocates nothing: %s", rows[i].name, rows[i].why);
+        /* The first row is the NULL-source row, so it is the only one with no frame to build. */
+        if (i > 0) {
+            src = rows[i].with_buffer
+                ? flat_yuv420p(rows[i].width, rows[i].height, 81, 90, 240, 1)
+                : bare_frame(rows[i].width, rows[i].height, rows[i].src_format);
+            KC_NOT_NULL(src);
+        }
+        kc_alloc_snapshot(&before);
+        dst = ffkmp_frame_convert_pixfmt(src, rows[i].dst_format);
+        KC_NULL(dst);
+        KC_ALLOC_BALANCED(&before);
+        if (src != NULL)
+            ffkmp_frame_free(src);
+    }
+}
+
+/* ---- The one refusal that is not a refusal ---- */
+
+/* Run in a child process. A destination format outside the pixel format enum reaches
+ * av_pix_fmt_desc_get inside swscale, which returns NULL, and swscale asserts rather than
+ * returning an error. The child exits 0 if the call came back with NULL and 3 if it came back with
+ * a frame; if it aborts, the parent sees the signal. Only the third of those is a failure, because
+ * a frame built from a format that does not exist is the one outcome no consumer could survive. */
+static int child_convert_invalid_format(void)
+{
+    AVFrame *src = flat_yuv420p(16, 16, 81, 90, 240, 1);
+    AVFrame *dst;
+
+    av_log_set_level(AV_LOG_QUIET);
+    if (src == NULL)
+        return KC_CHILD_RETURNED_NULL;
+    dst = ffkmp_frame_convert_pixfmt(src, AV_PIX_FMT_NONE);
+    ffkmp_frame_free(src);
+    if (dst != NULL) {
+        ffkmp_frame_free(dst);
+        return KC_CHILD_RETURNED_FRAME;
+    }
+    return KC_CHILD_RETURNED_NULL;
+}
+
+static void case_invalid_destination_format(void)
+{
+    pid_t child;
+    int status = 0;
+
+    kc_case("a destination format outside the enum never yields a frame");
+    KC_NOT_NULL(self_path);
+    KC_CHECKF(access(self_path, X_OK) == 0,
+              "cannot re-run this binary as a child: %s is not executable", self_path);
+
+    child = fork();
+    KC_CHECKF(child >= 0, "fork failed");
+    if (child == 0) {
+        char *argv[3];
+        argv[0] = (char *)self_path;
+        argv[1] = (char *)KC_CHILD_ARG;
+        argv[2] = NULL;
+        /* The child is expected to abort, and libswscale plus any sanitizer runtime would print
+         * pages of it into the middle of this suite's one-line-per-case output. */
+        if (freopen("/dev/null", "w", stderr) == NULL)
+            _exit(126);
+        if (freopen("/dev/null", "w", stdout) == NULL)
+            _exit(126);
+        execv(self_path, argv);
+        _exit(127);
+    }
+    KC_CHECKF(waitpid(child, &status, 0) == child, "waitpid failed");
+
+    if (WIFSIGNALED(status)) {
+        int signal_number = WTERMSIG(status);
+        kc_detail("the child died with signal %d", signal_number);
+        KC_CHECKF(signal_number == SIGABRT || signal_number == SIGSEGV || signal_number == SIGBUS,
+                  "the child died with signal %d, which is not the libswscale assertion this case "
+                  "documents", signal_number);
+        kc_note("measured: libswscale asserts in swscale_internal.h rather than refusing, so this");
+        kc_note("call takes the process down. The helper's own guards cover a NULL source and a");
+        kc_note("non-positive size, and nothing validates the destination format. A Kotlin caller");
+        kc_note("passing an enum cannot reach this; a C caller can.");
+    } else if (WIFEXITED(status)) {
+        int code = WEXITSTATUS(status);
+        kc_detail("the child exited %d", code);
+        KC_CHECKF(code != KC_CHILD_RETURNED_FRAME,
+                  "the helper built a frame from a destination format that does not exist");
+        KC_CHECKF(code == KC_CHILD_RETURNED_NULL,
+                  "the child could not run the case, exit %d", code);
+        kc_note("this FFmpeg refused the format instead of asserting, which is the kinder of the");
+        kc_note("two behaviours and is recorded rather than required");
+    } else {
+        KC_FAIL("the child neither exited nor was signalled, status %d", status);
+    }
+}
+
+int main(int argc, char **argv)
+{
+    self_path = argv[0];
+
+    if (argc == 2 && strcmp(argv[1], KC_CHILD_ARG) == 0)
+        return child_convert_invalid_format();
+
+    kc_suite_begin("test_convert");
+
+    case_flat_colours();
+    case_metadata_carried_and_dropped();
+    case_destination_is_a_new_frame();
+    case_ten_bit_destination();
+    case_odd_dimensions();
+    case_round_trip();
+    case_allocation_baseline();
+    case_guard_paths();
+    case_invalid_destination_format();
+
+    return kc_suite_end();
+}

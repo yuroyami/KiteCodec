@@ -12,6 +12,11 @@ captures/
 
 # Source tarballs / submodule build artefacts.
 # The whole vendor/ tree: the docs tell you to `git clone ... vendor/ffmpeg`, which is ~10k
-# files of someone else's source — it must never show up in `git status` as untracked noise.
+# files of someone else's source, and it must never show up in `git status` as untracked noise.
 vendor/
 native-libs/
+
+# native/kitecodec-c/tools/extract_from_def.py is a committed generator, so importing it or
+# running py_compile over it leaves bytecode next to it. That is output, not source.
+__pycache__/
+*.pyc
