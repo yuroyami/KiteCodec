@@ -11,6 +11,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 The library is source-only for now. Nothing has been published, not `kitecodec-core`, not the Gradle plugin, and not the FFmpeg Release assets the plugin's `FFmpegSource.Prebuilt` default downloads. Release state and the per-target table live in the [README](https://github.com/yuroyami/KiteCodec#release-status) rather than being restated here.
 
 ### Added
+- The low-level playback layer, behind the `@KiteCodecLowLevelApi` opt-in, built for and consumed by [KitePlayer](https://github.com/yuroyami/KitePlayer): `MediaSource.openPacketReader` (owned packets, transactional stream selection, `avformat_seek_file` with a real min/max window and flag set), `MediaSource.openDecoder` (one independent decoder per stream: `send`/`receive`/`flush`/`isDrained`; the first exposure of `avcodec_flush_buffers` anywhere in the binding), `Frame.withPlanes` (zero-copy plane pointers with row pitches; video frames only, audio rejects with a clear message) and `Frame.hardwareSurface`.
+- Overflow-safe timestamp helpers on the low-level types: `Packet.ptsMicros`/`dtsMicros`/`durationMicros` and `Frame.ptsMicros`/`durationMicros`, all through the 128-bit `av_rescale_q`, null on `AV_NOPTS_VALUE`.
+- Colour metadata on `FrameInfo` (`ColorInfo`: matrix, primaries, transfer, range, chroma siting, with the conventional SD/HD guess applied at frame height), plus frame duration, keyframe flag, sample aspect ratio and `isHardware`.
+- On `StreamInfo`: `Disposition` flags, `rotationDegrees` from the display matrix, per-stream start times, and `channelLayoutMask` (also on audio `FrameInfo`), the native channel order mask so 5.1 side and 5.1 back are distinguishable.
+- `MediaSource.isSeekable`, read from the real I/O context instead of assumed.
 - `MediaSource.startTimeMicros`: where a container's timeline begins. Raw stream/frame timestamps are absolute and include it; every parameter KiteCodec takes (`seekMicros`, `extractFrame`, trim bounds) is content-relative. Exposed so callers can convert between the two.
 - Vendored FFmpeg profile now also builds `mpeg4` (encode + decode), `flac`, and the `pcm_s16le`/`s24le`/`f32le` encoders, the dependency-free baseline every profile shares. Previously the LGPL build had **no** video encoder except libsvtav1 and mjpeg, and the already-enabled `wav`/`flac` muxers had no encoder to feed them.
 - Vendored FFmpeg profile gained the MPEG-TS muxer/demuxer, the `matroska_audio` muxer (`.mka`), and the `http`/`tcp` protocols. (`https` still needs a TLS backend and is not built; see the note in `BuildFFmpegTask`.)
@@ -36,6 +41,12 @@ The library is source-only for now. Nothing has been published, not `kitecodec-c
 - Concurrent misuse of one `MediaSource` (second decode flow, seek/close mid-decode) is rejected with `IllegalStateException` instead of racing native code.
 
 ### Fixed
+- **A stack buffer overflow reachable from public filter descriptions.** Both audio filter-graph builders accumulated `snprintf` results into a fixed buffer and checked the total only after every append; on truncation `snprintf` returns the length it wanted, so a long description moved the write pointer past the stack array with a wrapped remaining size. Every append is now bounds-checked before the next pointer is computed, and a length test drives descriptions from 0 bytes to 1 MB through both builders.
+- `openPacketReader` left unselected streams on `AVDISCARD_ALL` after the reader closed, so a later batch decode of those streams silently returned nothing. Discard flags are restored when the reader closes and on the open failure path.
+- `FilterGraph` multi-input feeding could spin forever when the graph needed a different input pad (EAGAIN with no progress now throws a typed error naming the starved graph), and `drainTo` did not release its landing frame when a callback declined to; it now always does.
+- `MediaSink` stepped missing and non-monotonic audio timestamps by the current frame's sample count instead of the previous frame's, so frames of 960 then 1024 samples started at 0 and 1024 rather than 0 and 960.
+- `seekMicros` while a `PacketReader` owns the demuxer cursor now throws instead of moving the cursor out from under it.
+- Reading any getter of a closed `Packet`, or sending one to a decoder, dereferenced freed native memory and returned plausible garbage; both now throw.
 - **The vendored static path had never linked.** `ffmpeg.def` names only the six libav* libraries, which is all a shared FFmpeg needs; a static `libavcodec.a` also needs every third-party archive it draws symbols from named at the final link. The library's own build never did that, so `native-libs/` was unusable, `_svt_av1_enc_init`, `_png_set_tRNS_to_alpha`, `_gr_*`, and the CoreGraphics/CoreText/VideoToolbox frameworks all went unresolved. `BuildFFmpegTask` now bundles those archives into the tree and `StaticLinkFlags` names them.
 - **The vendored profile enabled no bitstream filters at all.** libavformat inserts these itself during stream copy, so their absence produced a corrupt output file rather than an error, copying h264 from MPEG-TS into mp4 yielded a file ffprobe rejects with "No start code is found". `extract_extradata`, `aac_adtstoasc`, `h264/hevc_mp4toannexb`, `vp9_superframe` are now built.
 - **`eq` and `boxblur` are `deps="gpl"` in FFmpeg**, so the LGPL profile silently dropped them, including `eq`, the filter every example and the e2e suite reached for. They moved to the GPL flavour; the examples now use `hue=b=…`, which exists everywhere.
@@ -82,7 +93,7 @@ Everything below grew from `0.0.1` and is listed for orientation rather than as 
 ### Known gaps
 - Publishing is wired but not yet executed, no artifacts on Maven Central until the first release run (needs Central Portal credentials + signing key in CI). The BCV `apiDump` baseline must be generated on a machine with FFmpeg present for all targets.
 - No Android AAR for JVM apps (JNI substrate planned); `kitecodec-gpl` artifact is a skeleton.
-- No custom AVIO (in-memory/pipe sources and sinks), no typed channel layouts (channel count only), no chapter read/write, no subtitle decode (copy only).
+- No custom AVIO (in-memory/pipe sources and sinks), no chapter read/write, no subtitle decode (copy only). Channel layouts expose the native order mask, but named/custom layout objects, `extended_data` access and more than 8 channels remain absent.
 - No hardware decode / hwframes pipelines; no bitstream filters on the copy path (MPEG-TS Annex B unsupported).
 - iOS targets lack CI verification.
 

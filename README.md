@@ -208,6 +208,29 @@ filter `deps="gpl"`, so `hasFilter("eq")` is false in an LGPL build.
 default profile is LGPL. Asking for one there throws `FFmpegException` from
 `addVideoEncoder`, before a single frame is read.
 
+### The low-level playback layer
+
+The batch API above fuses demuxing and decoding into one pass, which is right
+for transcoding and wrong for a player: a player needs audio and video decoding
+to proceed independently, and it needs to seek while both run. For that there
+is a second surface, gated behind the `@KiteCodecLowLevelApi` opt-in because it
+hands out raw pointers with manual lifetimes:
+
+- `MediaSource.openPacketReader(...)` reads owned packets one at a time and
+  seeks with a real `avformat_seek_file` window.
+- `MediaSource.openDecoder(...)` opens one decoder per stream, driven through
+  `send`/`receive`/`flush`/`isDrained`, independent of the reader and of every
+  other decoder.
+- `Frame.withPlanes { ... }` lends plane pointers and row pitches without
+  copying the frame, and `Frame.hardwareSurface` exposes the surface handle.
+- Overflow-safe timestamp helpers (`ptsMicros`, `dtsMicros`, `durationMicros`
+  on packets and frames), colour metadata, dispositions, rotation and channel
+  layout masks travel with the streams and frames.
+
+This layer exists because [KitePlayer](https://github.com/yuroyami/KitePlayer)
+is built on it, and it is public because any real-time consumer needs the same
+things. The safe batch API remains the front door.
+
 | | Desktop LGPL | Desktop GPL | Android |
 |---|---|---|---|
 | Always | `mpeg4`, `mjpeg`, `png`, `aac`, `flac`, `pcm_*` | same | same |
@@ -233,7 +256,7 @@ Every target claim in the Kite family means one of these tiers and nothing more.
 | T3 and above | Output, OS integration and release qualification. A codec library makes no such claim, so KiteCodec never reports one. |
 
 Against that scale: `macosArm64` is T2, measured on an Apple silicon development
-machine by 58 `kitecodec-core` tests and the e2e script. `linuxX64` and
+machine by 72 `kitecodec-core` tests and the e2e script. `linuxX64` and
 `mingwX64` are T2 on CI evidence only, never on a machine you can inspect here.
 The `androidNative*` klibs are T1: they compile per ABI and nothing runs them.
 `iosArm64`, `iosSimulatorArm64`, `iosX64`, `macosX64` and `linuxArm64` are built
@@ -291,7 +314,7 @@ $KEXE transcode in.mp4 out.mp4 "scale=1280:720" -acopy   # also: info, probe, th
 scripts/e2e.sh "$KEXE"
 ```
 
-There are 58 tests in `kitecodec-core`, plus 3 TestKit functional tests for the
+There are 72 tests in `kitecodec-core`, plus 3 TestKit functional tests for the
 Gradle plugin, of which 2 fail on a clean checkout and are a known defect of the
 plugin's test setup, not of the library. `commonTest` covers the pure logic. `nativeTest` runs against the
 FFmpeg the build actually linked. `PipelineRoundTripTest` needs no media
