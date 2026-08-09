@@ -1,0 +1,988 @@
+// Klib ABI Dump
+// Targets: [macosArm64]
+// Rendering settings:
+// - Signature version: 2
+// - Show manifest properties: true
+// - Show declarations: true
+
+// Library unique name: <io.github.yuroyami:kitecodec-core>
+open annotation class io.github.yuroyami.kitecodec/KiteCodecLowLevelApi : kotlin/Annotation { // io.github.yuroyami.kitecodec/KiteCodecLowLevelApi|null[0]
+    constructor <init>() // io.github.yuroyami.kitecodec/KiteCodecLowLevelApi.<init>|<init>(){}[0]
+}
+
+final enum class io.github.yuroyami.kitecodec/ChromaLocation : kotlin/Enum<io.github.yuroyami.kitecodec/ChromaLocation> { // io.github.yuroyami.kitecodec/ChromaLocation|null[0]
+    enum entry Bottom // io.github.yuroyami.kitecodec/ChromaLocation.Bottom|null[0]
+    enum entry BottomLeft // io.github.yuroyami.kitecodec/ChromaLocation.BottomLeft|null[0]
+    enum entry Center // io.github.yuroyami.kitecodec/ChromaLocation.Center|null[0]
+    enum entry Left // io.github.yuroyami.kitecodec/ChromaLocation.Left|null[0]
+    enum entry Top // io.github.yuroyami.kitecodec/ChromaLocation.Top|null[0]
+    enum entry TopLeft // io.github.yuroyami.kitecodec/ChromaLocation.TopLeft|null[0]
+    enum entry Unspecified // io.github.yuroyami.kitecodec/ChromaLocation.Unspecified|null[0]
+
+    final val avValue // io.github.yuroyami.kitecodec/ChromaLocation.avValue|{}avValue[0]
+        final fun <get-avValue>(): kotlin/Int // io.github.yuroyami.kitecodec/ChromaLocation.avValue.<get-avValue>|<get-avValue>(){}[0]
+    final val entries // io.github.yuroyami.kitecodec/ChromaLocation.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<io.github.yuroyami.kitecodec/ChromaLocation> // io.github.yuroyami.kitecodec/ChromaLocation.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): io.github.yuroyami.kitecodec/ChromaLocation // io.github.yuroyami.kitecodec/ChromaLocation.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<io.github.yuroyami.kitecodec/ChromaLocation> // io.github.yuroyami.kitecodec/ChromaLocation.values|values#static(){}[0]
+
+    final object Companion { // io.github.yuroyami.kitecodec/ChromaLocation.Companion|null[0]
+        final fun fromAv(kotlin/Int): io.github.yuroyami.kitecodec/ChromaLocation // io.github.yuroyami.kitecodec/ChromaLocation.Companion.fromAv|fromAv(kotlin.Int){}[0]
+    }
+}
+
+final enum class io.github.yuroyami.kitecodec/ColorMatrix : kotlin/Enum<io.github.yuroyami.kitecodec/ColorMatrix> { // io.github.yuroyami.kitecodec/ColorMatrix|null[0]
+    enum entry Bt2020Cl // io.github.yuroyami.kitecodec/ColorMatrix.Bt2020Cl|null[0]
+    enum entry Bt2020Ncl // io.github.yuroyami.kitecodec/ColorMatrix.Bt2020Ncl|null[0]
+    enum entry Bt470bg // io.github.yuroyami.kitecodec/ColorMatrix.Bt470bg|null[0]
+    enum entry Bt709 // io.github.yuroyami.kitecodec/ColorMatrix.Bt709|null[0]
+    enum entry Fcc // io.github.yuroyami.kitecodec/ColorMatrix.Fcc|null[0]
+    enum entry ICtCp // io.github.yuroyami.kitecodec/ColorMatrix.ICtCp|null[0]
+    enum entry Rgb // io.github.yuroyami.kitecodec/ColorMatrix.Rgb|null[0]
+    enum entry Smpte170m // io.github.yuroyami.kitecodec/ColorMatrix.Smpte170m|null[0]
+    enum entry Smpte240m // io.github.yuroyami.kitecodec/ColorMatrix.Smpte240m|null[0]
+    enum entry Unspecified // io.github.yuroyami.kitecodec/ColorMatrix.Unspecified|null[0]
+    enum entry YCgCo // io.github.yuroyami.kitecodec/ColorMatrix.YCgCo|null[0]
+
+    final val avValue // io.github.yuroyami.kitecodec/ColorMatrix.avValue|{}avValue[0]
+        final fun <get-avValue>(): kotlin/Int // io.github.yuroyami.kitecodec/ColorMatrix.avValue.<get-avValue>|<get-avValue>(){}[0]
+    final val entries // io.github.yuroyami.kitecodec/ColorMatrix.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<io.github.yuroyami.kitecodec/ColorMatrix> // io.github.yuroyami.kitecodec/ColorMatrix.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): io.github.yuroyami.kitecodec/ColorMatrix // io.github.yuroyami.kitecodec/ColorMatrix.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<io.github.yuroyami.kitecodec/ColorMatrix> // io.github.yuroyami.kitecodec/ColorMatrix.values|values#static(){}[0]
+
+    final object Companion { // io.github.yuroyami.kitecodec/ColorMatrix.Companion|null[0]
+        final fun fromAv(kotlin/Int): io.github.yuroyami.kitecodec/ColorMatrix // io.github.yuroyami.kitecodec/ColorMatrix.Companion.fromAv|fromAv(kotlin.Int){}[0]
+    }
+}
+
+final enum class io.github.yuroyami.kitecodec/ColorPrimaries : kotlin/Enum<io.github.yuroyami.kitecodec/ColorPrimaries> { // io.github.yuroyami.kitecodec/ColorPrimaries|null[0]
+    enum entry Bt2020 // io.github.yuroyami.kitecodec/ColorPrimaries.Bt2020|null[0]
+    enum entry Bt470bg // io.github.yuroyami.kitecodec/ColorPrimaries.Bt470bg|null[0]
+    enum entry Bt470m // io.github.yuroyami.kitecodec/ColorPrimaries.Bt470m|null[0]
+    enum entry Bt709 // io.github.yuroyami.kitecodec/ColorPrimaries.Bt709|null[0]
+    enum entry Film // io.github.yuroyami.kitecodec/ColorPrimaries.Film|null[0]
+    enum entry Smpte170m // io.github.yuroyami.kitecodec/ColorPrimaries.Smpte170m|null[0]
+    enum entry Smpte240m // io.github.yuroyami.kitecodec/ColorPrimaries.Smpte240m|null[0]
+    enum entry SmpteSt428 // io.github.yuroyami.kitecodec/ColorPrimaries.SmpteSt428|null[0]
+    enum entry SmpteSt431 // io.github.yuroyami.kitecodec/ColorPrimaries.SmpteSt431|null[0]
+    enum entry SmpteSt432 // io.github.yuroyami.kitecodec/ColorPrimaries.SmpteSt432|null[0]
+    enum entry Unspecified // io.github.yuroyami.kitecodec/ColorPrimaries.Unspecified|null[0]
+
+    final val avValue // io.github.yuroyami.kitecodec/ColorPrimaries.avValue|{}avValue[0]
+        final fun <get-avValue>(): kotlin/Int // io.github.yuroyami.kitecodec/ColorPrimaries.avValue.<get-avValue>|<get-avValue>(){}[0]
+    final val entries // io.github.yuroyami.kitecodec/ColorPrimaries.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<io.github.yuroyami.kitecodec/ColorPrimaries> // io.github.yuroyami.kitecodec/ColorPrimaries.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): io.github.yuroyami.kitecodec/ColorPrimaries // io.github.yuroyami.kitecodec/ColorPrimaries.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<io.github.yuroyami.kitecodec/ColorPrimaries> // io.github.yuroyami.kitecodec/ColorPrimaries.values|values#static(){}[0]
+
+    final object Companion { // io.github.yuroyami.kitecodec/ColorPrimaries.Companion|null[0]
+        final fun fromAv(kotlin/Int): io.github.yuroyami.kitecodec/ColorPrimaries // io.github.yuroyami.kitecodec/ColorPrimaries.Companion.fromAv|fromAv(kotlin.Int){}[0]
+    }
+}
+
+final enum class io.github.yuroyami.kitecodec/ColorTransfer : kotlin/Enum<io.github.yuroyami.kitecodec/ColorTransfer> { // io.github.yuroyami.kitecodec/ColorTransfer|null[0]
+    enum entry AribStdB67 // io.github.yuroyami.kitecodec/ColorTransfer.AribStdB67|null[0]
+    enum entry Bt1361Ecg // io.github.yuroyami.kitecodec/ColorTransfer.Bt1361Ecg|null[0]
+    enum entry Bt2020Ten // io.github.yuroyami.kitecodec/ColorTransfer.Bt2020Ten|null[0]
+    enum entry Bt2020Twelve // io.github.yuroyami.kitecodec/ColorTransfer.Bt2020Twelve|null[0]
+    enum entry Bt709 // io.github.yuroyami.kitecodec/ColorTransfer.Bt709|null[0]
+    enum entry Gamma22 // io.github.yuroyami.kitecodec/ColorTransfer.Gamma22|null[0]
+    enum entry Gamma28 // io.github.yuroyami.kitecodec/ColorTransfer.Gamma28|null[0]
+    enum entry Iec6196621 // io.github.yuroyami.kitecodec/ColorTransfer.Iec6196621|null[0]
+    enum entry Iec6196624 // io.github.yuroyami.kitecodec/ColorTransfer.Iec6196624|null[0]
+    enum entry Linear // io.github.yuroyami.kitecodec/ColorTransfer.Linear|null[0]
+    enum entry Log // io.github.yuroyami.kitecodec/ColorTransfer.Log|null[0]
+    enum entry LogSqrt // io.github.yuroyami.kitecodec/ColorTransfer.LogSqrt|null[0]
+    enum entry Smpte170m // io.github.yuroyami.kitecodec/ColorTransfer.Smpte170m|null[0]
+    enum entry Smpte240m // io.github.yuroyami.kitecodec/ColorTransfer.Smpte240m|null[0]
+    enum entry SmpteSt2084 // io.github.yuroyami.kitecodec/ColorTransfer.SmpteSt2084|null[0]
+    enum entry SmpteSt428 // io.github.yuroyami.kitecodec/ColorTransfer.SmpteSt428|null[0]
+    enum entry Unspecified // io.github.yuroyami.kitecodec/ColorTransfer.Unspecified|null[0]
+
+    final val avValue // io.github.yuroyami.kitecodec/ColorTransfer.avValue|{}avValue[0]
+        final fun <get-avValue>(): kotlin/Int // io.github.yuroyami.kitecodec/ColorTransfer.avValue.<get-avValue>|<get-avValue>(){}[0]
+    final val entries // io.github.yuroyami.kitecodec/ColorTransfer.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<io.github.yuroyami.kitecodec/ColorTransfer> // io.github.yuroyami.kitecodec/ColorTransfer.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): io.github.yuroyami.kitecodec/ColorTransfer // io.github.yuroyami.kitecodec/ColorTransfer.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<io.github.yuroyami.kitecodec/ColorTransfer> // io.github.yuroyami.kitecodec/ColorTransfer.values|values#static(){}[0]
+
+    final object Companion { // io.github.yuroyami.kitecodec/ColorTransfer.Companion|null[0]
+        final fun fromAv(kotlin/Int): io.github.yuroyami.kitecodec/ColorTransfer // io.github.yuroyami.kitecodec/ColorTransfer.Companion.fromAv|fromAv(kotlin.Int){}[0]
+    }
+}
+
+final enum class io.github.yuroyami.kitecodec/MediaType : kotlin/Enum<io.github.yuroyami.kitecodec/MediaType> { // io.github.yuroyami.kitecodec/MediaType|null[0]
+    enum entry Attachment // io.github.yuroyami.kitecodec/MediaType.Attachment|null[0]
+    enum entry Audio // io.github.yuroyami.kitecodec/MediaType.Audio|null[0]
+    enum entry Data // io.github.yuroyami.kitecodec/MediaType.Data|null[0]
+    enum entry Subtitle // io.github.yuroyami.kitecodec/MediaType.Subtitle|null[0]
+    enum entry Unknown // io.github.yuroyami.kitecodec/MediaType.Unknown|null[0]
+    enum entry Video // io.github.yuroyami.kitecodec/MediaType.Video|null[0]
+
+    final val entries // io.github.yuroyami.kitecodec/MediaType.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<io.github.yuroyami.kitecodec/MediaType> // io.github.yuroyami.kitecodec/MediaType.entries.<get-entries>|<get-entries>#static(){}[0]
+    final val isAv // io.github.yuroyami.kitecodec/MediaType.isAv|{}isAv[0]
+        final fun <get-isAv>(): kotlin/Boolean // io.github.yuroyami.kitecodec/MediaType.isAv.<get-isAv>|<get-isAv>(){}[0]
+
+    final fun valueOf(kotlin/String): io.github.yuroyami.kitecodec/MediaType // io.github.yuroyami.kitecodec/MediaType.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<io.github.yuroyami.kitecodec/MediaType> // io.github.yuroyami.kitecodec/MediaType.values|values#static(){}[0]
+}
+
+final enum class io.github.yuroyami.kitecodec/SeekDirection : kotlin/Enum<io.github.yuroyami.kitecodec/SeekDirection> { // io.github.yuroyami.kitecodec/SeekDirection|null[0]
+    enum entry Any // io.github.yuroyami.kitecodec/SeekDirection.Any|null[0]
+    enum entry Backward // io.github.yuroyami.kitecodec/SeekDirection.Backward|null[0]
+    enum entry Forward // io.github.yuroyami.kitecodec/SeekDirection.Forward|null[0]
+
+    final val entries // io.github.yuroyami.kitecodec/SeekDirection.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<io.github.yuroyami.kitecodec/SeekDirection> // io.github.yuroyami.kitecodec/SeekDirection.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): io.github.yuroyami.kitecodec/SeekDirection // io.github.yuroyami.kitecodec/SeekDirection.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<io.github.yuroyami.kitecodec/SeekDirection> // io.github.yuroyami.kitecodec/SeekDirection.values|values#static(){}[0]
+}
+
+final class io.github.yuroyami.kitecodec/AudioEncoder : kotlin/AutoCloseable { // io.github.yuroyami.kitecodec/AudioEncoder|null[0]
+    final val channels // io.github.yuroyami.kitecodec/AudioEncoder.channels|{}channels[0]
+        final fun <get-channels>(): kotlin/Int // io.github.yuroyami.kitecodec/AudioEncoder.channels.<get-channels>|<get-channels>(){}[0]
+    final val frameSize // io.github.yuroyami.kitecodec/AudioEncoder.frameSize|{}frameSize[0]
+        final fun <get-frameSize>(): kotlin/Int // io.github.yuroyami.kitecodec/AudioEncoder.frameSize.<get-frameSize>|<get-frameSize>(){}[0]
+    final val sampleFormat // io.github.yuroyami.kitecodec/AudioEncoder.sampleFormat|{}sampleFormat[0]
+        final fun <get-sampleFormat>(): io.github.yuroyami.kitecodec/SampleFormat // io.github.yuroyami.kitecodec/AudioEncoder.sampleFormat.<get-sampleFormat>|<get-sampleFormat>(){}[0]
+    final val sampleRate // io.github.yuroyami.kitecodec/AudioEncoder.sampleRate|{}sampleRate[0]
+        final fun <get-sampleRate>(): kotlin/Int // io.github.yuroyami.kitecodec/AudioEncoder.sampleRate.<get-sampleRate>|<get-sampleRate>(){}[0]
+
+    final fun close() // io.github.yuroyami.kitecodec/AudioEncoder.close|close(){}[0]
+    final suspend fun drive(kotlinx.coroutines.flow/Flow<io.github.yuroyami.kitecodec/Frame>) // io.github.yuroyami.kitecodec/AudioEncoder.drive|drive(kotlinx.coroutines.flow.Flow<io.github.yuroyami.kitecodec.Frame>){}[0]
+}
+
+final class io.github.yuroyami.kitecodec/AudioEncoderSpec { // io.github.yuroyami.kitecodec/AudioEncoderSpec|null[0]
+    constructor <init>(io.github.yuroyami.kitecodec/CodecId, kotlin/Int = ..., kotlin/Int = ..., io.github.yuroyami.kitecodec/SampleFormat = ..., kotlin/Long = ..., kotlin.collections/Map<kotlin/String, kotlin/String> = ...) // io.github.yuroyami.kitecodec/AudioEncoderSpec.<init>|<init>(io.github.yuroyami.kitecodec.CodecId;kotlin.Int;kotlin.Int;io.github.yuroyami.kitecodec.SampleFormat;kotlin.Long;kotlin.collections.Map<kotlin.String,kotlin.String>){}[0]
+
+    final val bitrateBps // io.github.yuroyami.kitecodec/AudioEncoderSpec.bitrateBps|{}bitrateBps[0]
+        final fun <get-bitrateBps>(): kotlin/Long // io.github.yuroyami.kitecodec/AudioEncoderSpec.bitrateBps.<get-bitrateBps>|<get-bitrateBps>(){}[0]
+    final val channels // io.github.yuroyami.kitecodec/AudioEncoderSpec.channels|{}channels[0]
+        final fun <get-channels>(): kotlin/Int // io.github.yuroyami.kitecodec/AudioEncoderSpec.channels.<get-channels>|<get-channels>(){}[0]
+    final val codec // io.github.yuroyami.kitecodec/AudioEncoderSpec.codec|{}codec[0]
+        final fun <get-codec>(): io.github.yuroyami.kitecodec/CodecId // io.github.yuroyami.kitecodec/AudioEncoderSpec.codec.<get-codec>|<get-codec>(){}[0]
+    final val options // io.github.yuroyami.kitecodec/AudioEncoderSpec.options|{}options[0]
+        final fun <get-options>(): kotlin.collections/Map<kotlin/String, kotlin/String> // io.github.yuroyami.kitecodec/AudioEncoderSpec.options.<get-options>|<get-options>(){}[0]
+    final val sampleFormat // io.github.yuroyami.kitecodec/AudioEncoderSpec.sampleFormat|{}sampleFormat[0]
+        final fun <get-sampleFormat>(): io.github.yuroyami.kitecodec/SampleFormat // io.github.yuroyami.kitecodec/AudioEncoderSpec.sampleFormat.<get-sampleFormat>|<get-sampleFormat>(){}[0]
+    final val sampleRate // io.github.yuroyami.kitecodec/AudioEncoderSpec.sampleRate|{}sampleRate[0]
+        final fun <get-sampleRate>(): kotlin/Int // io.github.yuroyami.kitecodec/AudioEncoderSpec.sampleRate.<get-sampleRate>|<get-sampleRate>(){}[0]
+
+    final fun component1(): io.github.yuroyami.kitecodec/CodecId // io.github.yuroyami.kitecodec/AudioEncoderSpec.component1|component1(){}[0]
+    final fun component2(): kotlin/Int // io.github.yuroyami.kitecodec/AudioEncoderSpec.component2|component2(){}[0]
+    final fun component3(): kotlin/Int // io.github.yuroyami.kitecodec/AudioEncoderSpec.component3|component3(){}[0]
+    final fun component4(): io.github.yuroyami.kitecodec/SampleFormat // io.github.yuroyami.kitecodec/AudioEncoderSpec.component4|component4(){}[0]
+    final fun component5(): kotlin/Long // io.github.yuroyami.kitecodec/AudioEncoderSpec.component5|component5(){}[0]
+    final fun component6(): kotlin.collections/Map<kotlin/String, kotlin/String> // io.github.yuroyami.kitecodec/AudioEncoderSpec.component6|component6(){}[0]
+    final fun copy(io.github.yuroyami.kitecodec/CodecId = ..., kotlin/Int = ..., kotlin/Int = ..., io.github.yuroyami.kitecodec/SampleFormat = ..., kotlin/Long = ..., kotlin.collections/Map<kotlin/String, kotlin/String> = ...): io.github.yuroyami.kitecodec/AudioEncoderSpec // io.github.yuroyami.kitecodec/AudioEncoderSpec.copy|copy(io.github.yuroyami.kitecodec.CodecId;kotlin.Int;kotlin.Int;io.github.yuroyami.kitecodec.SampleFormat;kotlin.Long;kotlin.collections.Map<kotlin.String,kotlin.String>){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec/AudioEncoderSpec.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec/AudioEncoderSpec.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec/AudioEncoderSpec.toString|toString(){}[0]
+}
+
+final class io.github.yuroyami.kitecodec/AudioInput { // io.github.yuroyami.kitecodec/AudioInput|null[0]
+    constructor <init>(kotlin/Int, io.github.yuroyami.kitecodec/SampleFormat, kotlin/Int, io.github.yuroyami.kitecodec/Rational) // io.github.yuroyami.kitecodec/AudioInput.<init>|<init>(kotlin.Int;io.github.yuroyami.kitecodec.SampleFormat;kotlin.Int;io.github.yuroyami.kitecodec.Rational){}[0]
+
+    final val channels // io.github.yuroyami.kitecodec/AudioInput.channels|{}channels[0]
+        final fun <get-channels>(): kotlin/Int // io.github.yuroyami.kitecodec/AudioInput.channels.<get-channels>|<get-channels>(){}[0]
+    final val sampleFormat // io.github.yuroyami.kitecodec/AudioInput.sampleFormat|{}sampleFormat[0]
+        final fun <get-sampleFormat>(): io.github.yuroyami.kitecodec/SampleFormat // io.github.yuroyami.kitecodec/AudioInput.sampleFormat.<get-sampleFormat>|<get-sampleFormat>(){}[0]
+    final val sampleRate // io.github.yuroyami.kitecodec/AudioInput.sampleRate|{}sampleRate[0]
+        final fun <get-sampleRate>(): kotlin/Int // io.github.yuroyami.kitecodec/AudioInput.sampleRate.<get-sampleRate>|<get-sampleRate>(){}[0]
+    final val timeBase // io.github.yuroyami.kitecodec/AudioInput.timeBase|{}timeBase[0]
+        final fun <get-timeBase>(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/AudioInput.timeBase.<get-timeBase>|<get-timeBase>(){}[0]
+
+    final fun component1(): kotlin/Int // io.github.yuroyami.kitecodec/AudioInput.component1|component1(){}[0]
+    final fun component2(): io.github.yuroyami.kitecodec/SampleFormat // io.github.yuroyami.kitecodec/AudioInput.component2|component2(){}[0]
+    final fun component3(): kotlin/Int // io.github.yuroyami.kitecodec/AudioInput.component3|component3(){}[0]
+    final fun component4(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/AudioInput.component4|component4(){}[0]
+    final fun copy(kotlin/Int = ..., io.github.yuroyami.kitecodec/SampleFormat = ..., kotlin/Int = ..., io.github.yuroyami.kitecodec/Rational = ...): io.github.yuroyami.kitecodec/AudioInput // io.github.yuroyami.kitecodec/AudioInput.copy|copy(kotlin.Int;io.github.yuroyami.kitecodec.SampleFormat;kotlin.Int;io.github.yuroyami.kitecodec.Rational){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec/AudioInput.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec/AudioInput.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec/AudioInput.toString|toString(){}[0]
+}
+
+final class io.github.yuroyami.kitecodec/AudioStreamInfo { // io.github.yuroyami.kitecodec/AudioStreamInfo|null[0]
+    constructor <init>(kotlin/Int, kotlin/Int, io.github.yuroyami.kitecodec/SampleFormat, kotlin/Long? = ...) // io.github.yuroyami.kitecodec/AudioStreamInfo.<init>|<init>(kotlin.Int;kotlin.Int;io.github.yuroyami.kitecodec.SampleFormat;kotlin.Long?){}[0]
+
+    final val channelLayoutMask // io.github.yuroyami.kitecodec/AudioStreamInfo.channelLayoutMask|{}channelLayoutMask[0]
+        final fun <get-channelLayoutMask>(): kotlin/Long? // io.github.yuroyami.kitecodec/AudioStreamInfo.channelLayoutMask.<get-channelLayoutMask>|<get-channelLayoutMask>(){}[0]
+    final val channels // io.github.yuroyami.kitecodec/AudioStreamInfo.channels|{}channels[0]
+        final fun <get-channels>(): kotlin/Int // io.github.yuroyami.kitecodec/AudioStreamInfo.channels.<get-channels>|<get-channels>(){}[0]
+    final val sampleFormat // io.github.yuroyami.kitecodec/AudioStreamInfo.sampleFormat|{}sampleFormat[0]
+        final fun <get-sampleFormat>(): io.github.yuroyami.kitecodec/SampleFormat // io.github.yuroyami.kitecodec/AudioStreamInfo.sampleFormat.<get-sampleFormat>|<get-sampleFormat>(){}[0]
+    final val sampleRate // io.github.yuroyami.kitecodec/AudioStreamInfo.sampleRate|{}sampleRate[0]
+        final fun <get-sampleRate>(): kotlin/Int // io.github.yuroyami.kitecodec/AudioStreamInfo.sampleRate.<get-sampleRate>|<get-sampleRate>(){}[0]
+
+    final fun component1(): kotlin/Int // io.github.yuroyami.kitecodec/AudioStreamInfo.component1|component1(){}[0]
+    final fun component2(): kotlin/Int // io.github.yuroyami.kitecodec/AudioStreamInfo.component2|component2(){}[0]
+    final fun component3(): io.github.yuroyami.kitecodec/SampleFormat // io.github.yuroyami.kitecodec/AudioStreamInfo.component3|component3(){}[0]
+    final fun component4(): kotlin/Long? // io.github.yuroyami.kitecodec/AudioStreamInfo.component4|component4(){}[0]
+    final fun copy(kotlin/Int = ..., kotlin/Int = ..., io.github.yuroyami.kitecodec/SampleFormat = ..., kotlin/Long? = ...): io.github.yuroyami.kitecodec/AudioStreamInfo // io.github.yuroyami.kitecodec/AudioStreamInfo.copy|copy(kotlin.Int;kotlin.Int;io.github.yuroyami.kitecodec.SampleFormat;kotlin.Long?){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec/AudioStreamInfo.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec/AudioStreamInfo.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec/AudioStreamInfo.toString|toString(){}[0]
+}
+
+final class io.github.yuroyami.kitecodec/ColorInfo { // io.github.yuroyami.kitecodec/ColorInfo|null[0]
+    constructor <init>(io.github.yuroyami.kitecodec/ColorMatrix = ..., io.github.yuroyami.kitecodec/ColorPrimaries = ..., io.github.yuroyami.kitecodec/ColorTransfer = ..., kotlin/Boolean = ..., io.github.yuroyami.kitecodec/ChromaLocation = ...) // io.github.yuroyami.kitecodec/ColorInfo.<init>|<init>(io.github.yuroyami.kitecodec.ColorMatrix;io.github.yuroyami.kitecodec.ColorPrimaries;io.github.yuroyami.kitecodec.ColorTransfer;kotlin.Boolean;io.github.yuroyami.kitecodec.ChromaLocation){}[0]
+
+    final val chromaLocation // io.github.yuroyami.kitecodec/ColorInfo.chromaLocation|{}chromaLocation[0]
+        final fun <get-chromaLocation>(): io.github.yuroyami.kitecodec/ChromaLocation // io.github.yuroyami.kitecodec/ColorInfo.chromaLocation.<get-chromaLocation>|<get-chromaLocation>(){}[0]
+    final val fullRange // io.github.yuroyami.kitecodec/ColorInfo.fullRange|{}fullRange[0]
+        final fun <get-fullRange>(): kotlin/Boolean // io.github.yuroyami.kitecodec/ColorInfo.fullRange.<get-fullRange>|<get-fullRange>(){}[0]
+    final val isHdr // io.github.yuroyami.kitecodec/ColorInfo.isHdr|{}isHdr[0]
+        final fun <get-isHdr>(): kotlin/Boolean // io.github.yuroyami.kitecodec/ColorInfo.isHdr.<get-isHdr>|<get-isHdr>(){}[0]
+    final val isUnspecified // io.github.yuroyami.kitecodec/ColorInfo.isUnspecified|{}isUnspecified[0]
+        final fun <get-isUnspecified>(): kotlin/Boolean // io.github.yuroyami.kitecodec/ColorInfo.isUnspecified.<get-isUnspecified>|<get-isUnspecified>(){}[0]
+    final val matrix // io.github.yuroyami.kitecodec/ColorInfo.matrix|{}matrix[0]
+        final fun <get-matrix>(): io.github.yuroyami.kitecodec/ColorMatrix // io.github.yuroyami.kitecodec/ColorInfo.matrix.<get-matrix>|<get-matrix>(){}[0]
+    final val primaries // io.github.yuroyami.kitecodec/ColorInfo.primaries|{}primaries[0]
+        final fun <get-primaries>(): io.github.yuroyami.kitecodec/ColorPrimaries // io.github.yuroyami.kitecodec/ColorInfo.primaries.<get-primaries>|<get-primaries>(){}[0]
+    final val transfer // io.github.yuroyami.kitecodec/ColorInfo.transfer|{}transfer[0]
+        final fun <get-transfer>(): io.github.yuroyami.kitecodec/ColorTransfer // io.github.yuroyami.kitecodec/ColorInfo.transfer.<get-transfer>|<get-transfer>(){}[0]
+
+    final fun component1(): io.github.yuroyami.kitecodec/ColorMatrix // io.github.yuroyami.kitecodec/ColorInfo.component1|component1(){}[0]
+    final fun component2(): io.github.yuroyami.kitecodec/ColorPrimaries // io.github.yuroyami.kitecodec/ColorInfo.component2|component2(){}[0]
+    final fun component3(): io.github.yuroyami.kitecodec/ColorTransfer // io.github.yuroyami.kitecodec/ColorInfo.component3|component3(){}[0]
+    final fun component4(): kotlin/Boolean // io.github.yuroyami.kitecodec/ColorInfo.component4|component4(){}[0]
+    final fun component5(): io.github.yuroyami.kitecodec/ChromaLocation // io.github.yuroyami.kitecodec/ColorInfo.component5|component5(){}[0]
+    final fun copy(io.github.yuroyami.kitecodec/ColorMatrix = ..., io.github.yuroyami.kitecodec/ColorPrimaries = ..., io.github.yuroyami.kitecodec/ColorTransfer = ..., kotlin/Boolean = ..., io.github.yuroyami.kitecodec/ChromaLocation = ...): io.github.yuroyami.kitecodec/ColorInfo // io.github.yuroyami.kitecodec/ColorInfo.copy|copy(io.github.yuroyami.kitecodec.ColorMatrix;io.github.yuroyami.kitecodec.ColorPrimaries;io.github.yuroyami.kitecodec.ColorTransfer;kotlin.Boolean;io.github.yuroyami.kitecodec.ChromaLocation){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec/ColorInfo.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec/ColorInfo.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec/ColorInfo.toString|toString(){}[0]
+
+    final object Companion { // io.github.yuroyami.kitecodec/ColorInfo.Companion|null[0]
+        final val Unspecified // io.github.yuroyami.kitecodec/ColorInfo.Companion.Unspecified|{}Unspecified[0]
+            final fun <get-Unspecified>(): io.github.yuroyami.kitecodec/ColorInfo // io.github.yuroyami.kitecodec/ColorInfo.Companion.Unspecified.<get-Unspecified>|<get-Unspecified>(){}[0]
+
+        final fun guessFor(kotlin/Int): io.github.yuroyami.kitecodec/ColorInfo // io.github.yuroyami.kitecodec/ColorInfo.Companion.guessFor|guessFor(kotlin.Int){}[0]
+    }
+}
+
+final class io.github.yuroyami.kitecodec/CopyStream // io.github.yuroyami.kitecodec/CopyStream|null[0]
+
+final class io.github.yuroyami.kitecodec/Disposition { // io.github.yuroyami.kitecodec/Disposition|null[0]
+    constructor <init>(kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ...) // io.github.yuroyami.kitecodec/Disposition.<init>|<init>(kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean){}[0]
+
+    final val attachedPicture // io.github.yuroyami.kitecodec/Disposition.attachedPicture|{}attachedPicture[0]
+        final fun <get-attachedPicture>(): kotlin/Boolean // io.github.yuroyami.kitecodec/Disposition.attachedPicture.<get-attachedPicture>|<get-attachedPicture>(){}[0]
+    final val default // io.github.yuroyami.kitecodec/Disposition.default|{}default[0]
+        final fun <get-default>(): kotlin/Boolean // io.github.yuroyami.kitecodec/Disposition.default.<get-default>|<get-default>(){}[0]
+    final val forced // io.github.yuroyami.kitecodec/Disposition.forced|{}forced[0]
+        final fun <get-forced>(): kotlin/Boolean // io.github.yuroyami.kitecodec/Disposition.forced.<get-forced>|<get-forced>(){}[0]
+    final val hearingImpaired // io.github.yuroyami.kitecodec/Disposition.hearingImpaired|{}hearingImpaired[0]
+        final fun <get-hearingImpaired>(): kotlin/Boolean // io.github.yuroyami.kitecodec/Disposition.hearingImpaired.<get-hearingImpaired>|<get-hearingImpaired>(){}[0]
+    final val visualImpaired // io.github.yuroyami.kitecodec/Disposition.visualImpaired|{}visualImpaired[0]
+        final fun <get-visualImpaired>(): kotlin/Boolean // io.github.yuroyami.kitecodec/Disposition.visualImpaired.<get-visualImpaired>|<get-visualImpaired>(){}[0]
+
+    final fun component1(): kotlin/Boolean // io.github.yuroyami.kitecodec/Disposition.component1|component1(){}[0]
+    final fun component2(): kotlin/Boolean // io.github.yuroyami.kitecodec/Disposition.component2|component2(){}[0]
+    final fun component3(): kotlin/Boolean // io.github.yuroyami.kitecodec/Disposition.component3|component3(){}[0]
+    final fun component4(): kotlin/Boolean // io.github.yuroyami.kitecodec/Disposition.component4|component4(){}[0]
+    final fun component5(): kotlin/Boolean // io.github.yuroyami.kitecodec/Disposition.component5|component5(){}[0]
+    final fun copy(kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ...): io.github.yuroyami.kitecodec/Disposition // io.github.yuroyami.kitecodec/Disposition.copy|copy(kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec/Disposition.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec/Disposition.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec/Disposition.toString|toString(){}[0]
+
+    final object Companion { // io.github.yuroyami.kitecodec/Disposition.Companion|null[0]
+        final val None // io.github.yuroyami.kitecodec/Disposition.Companion.None|{}None[0]
+            final fun <get-None>(): io.github.yuroyami.kitecodec/Disposition // io.github.yuroyami.kitecodec/Disposition.Companion.None.<get-None>|<get-None>(){}[0]
+    }
+}
+
+final class io.github.yuroyami.kitecodec/FFmpegException : kotlin/RuntimeException { // io.github.yuroyami.kitecodec/FFmpegException|null[0]
+    constructor <init>(io.github.yuroyami.kitecodec/FFmpegError) // io.github.yuroyami.kitecodec/FFmpegException.<init>|<init>(io.github.yuroyami.kitecodec.FFmpegError){}[0]
+
+    final val code // io.github.yuroyami.kitecodec/FFmpegException.code|{}code[0]
+        final fun <get-code>(): kotlin/Int // io.github.yuroyami.kitecodec/FFmpegException.code.<get-code>|<get-code>(){}[0]
+    final val error // io.github.yuroyami.kitecodec/FFmpegException.error|{}error[0]
+        final fun <get-error>(): io.github.yuroyami.kitecodec/FFmpegError // io.github.yuroyami.kitecodec/FFmpegException.error.<get-error>|<get-error>(){}[0]
+}
+
+final class io.github.yuroyami.kitecodec/FilterGraph : kotlin/AutoCloseable { // io.github.yuroyami.kitecodec/FilterGraph|null[0]
+    final val inputCount // io.github.yuroyami.kitecodec/FilterGraph.inputCount|{}inputCount[0]
+        final fun <get-inputCount>(): kotlin/Int // io.github.yuroyami.kitecodec/FilterGraph.inputCount.<get-inputCount>|<get-inputCount>(){}[0]
+    final val outputTimeBase // io.github.yuroyami.kitecodec/FilterGraph.outputTimeBase|{}outputTimeBase[0]
+        final fun <get-outputTimeBase>(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/FilterGraph.outputTimeBase.<get-outputTimeBase>|<get-outputTimeBase>(){}[0]
+
+    final fun close() // io.github.yuroyami.kitecodec/FilterGraph.close|close(){}[0]
+    final fun feedInput(kotlin/Int, io.github.yuroyami.kitecodec/Frame, kotlin/Function1<io.github.yuroyami.kitecodec/Frame, kotlin/Unit>) // io.github.yuroyami.kitecodec/FilterGraph.feedInput|feedInput(kotlin.Int;io.github.yuroyami.kitecodec.Frame;kotlin.Function1<io.github.yuroyami.kitecodec.Frame,kotlin.Unit>){}[0]
+    final fun flushInput(kotlin/Int, kotlin/Function1<io.github.yuroyami.kitecodec/Frame, kotlin/Unit>) // io.github.yuroyami.kitecodec/FilterGraph.flushInput|flushInput(kotlin.Int;kotlin.Function1<io.github.yuroyami.kitecodec.Frame,kotlin.Unit>){}[0]
+    final fun process(kotlinx.coroutines.flow/Flow<io.github.yuroyami.kitecodec/Frame>): kotlinx.coroutines.flow/Flow<io.github.yuroyami.kitecodec/Frame> // io.github.yuroyami.kitecodec/FilterGraph.process|process(kotlinx.coroutines.flow.Flow<io.github.yuroyami.kitecodec.Frame>){}[0]
+    final fun setOutputFrameSize(kotlin/Int) // io.github.yuroyami.kitecodec/FilterGraph.setOutputFrameSize|setOutputFrameSize(kotlin.Int){}[0]
+
+    final object Companion { // io.github.yuroyami.kitecodec/FilterGraph.Companion|null[0]
+        final fun buildAudio(kotlin/String, kotlin/Int, io.github.yuroyami.kitecodec/SampleFormat, kotlin/Int, io.github.yuroyami.kitecodec/Rational, kotlin/Int = ..., io.github.yuroyami.kitecodec/SampleFormat = ..., kotlin/Int = ...): io.github.yuroyami.kitecodec/FilterGraph // io.github.yuroyami.kitecodec/FilterGraph.Companion.buildAudio|buildAudio(kotlin.String;kotlin.Int;io.github.yuroyami.kitecodec.SampleFormat;kotlin.Int;io.github.yuroyami.kitecodec.Rational;kotlin.Int;io.github.yuroyami.kitecodec.SampleFormat;kotlin.Int){}[0]
+        final fun buildAudioMulti(kotlin/String, kotlin.collections/List<io.github.yuroyami.kitecodec/AudioInput>, kotlin/Int = ..., io.github.yuroyami.kitecodec/SampleFormat = ..., kotlin/Int = ...): io.github.yuroyami.kitecodec/FilterGraph // io.github.yuroyami.kitecodec/FilterGraph.Companion.buildAudioMulti|buildAudioMulti(kotlin.String;kotlin.collections.List<io.github.yuroyami.kitecodec.AudioInput>;kotlin.Int;io.github.yuroyami.kitecodec.SampleFormat;kotlin.Int){}[0]
+        final fun buildVideo(kotlin/String, kotlin/Int, kotlin/Int, io.github.yuroyami.kitecodec/PixelFormat, io.github.yuroyami.kitecodec/Rational, io.github.yuroyami.kitecodec/Rational, io.github.yuroyami.kitecodec/Rational = ...): io.github.yuroyami.kitecodec/FilterGraph // io.github.yuroyami.kitecodec/FilterGraph.Companion.buildVideo|buildVideo(kotlin.String;kotlin.Int;kotlin.Int;io.github.yuroyami.kitecodec.PixelFormat;io.github.yuroyami.kitecodec.Rational;io.github.yuroyami.kitecodec.Rational;io.github.yuroyami.kitecodec.Rational){}[0]
+        final fun buildVideoMulti(kotlin/String, kotlin.collections/List<io.github.yuroyami.kitecodec/VideoInput>): io.github.yuroyami.kitecodec/FilterGraph // io.github.yuroyami.kitecodec/FilterGraph.Companion.buildVideoMulti|buildVideoMulti(kotlin.String;kotlin.collections.List<io.github.yuroyami.kitecodec.VideoInput>){}[0]
+    }
+}
+
+final class io.github.yuroyami.kitecodec/Frame : kotlin/AutoCloseable { // io.github.yuroyami.kitecodec/Frame|null[0]
+    final val info // io.github.yuroyami.kitecodec/Frame.info|{}info[0]
+        final fun <get-info>(): io.github.yuroyami.kitecodec/FrameInfo // io.github.yuroyami.kitecodec/Frame.info.<get-info>|<get-info>(){}[0]
+
+    final fun close() // io.github.yuroyami.kitecodec/Frame.close|close(){}[0]
+    final fun copy(): io.github.yuroyami.kitecodec/Frame // io.github.yuroyami.kitecodec/Frame.copy|copy(){}[0]
+    final fun copyPlanesToByteArray(): kotlin/ByteArray // io.github.yuroyami.kitecodec/Frame.copyPlanesToByteArray|copyPlanesToByteArray(){}[0]
+    final fun encodeImage(io.github.yuroyami.kitecodec/CodecId = ...): kotlin/ByteArray // io.github.yuroyami.kitecodec/Frame.encodeImage|encodeImage(io.github.yuroyami.kitecodec.CodecId){}[0]
+
+    final object Companion { // io.github.yuroyami.kitecodec/Frame.Companion|null[0]
+        final fun ofAudio(kotlin/ByteArray, kotlin/Int, kotlin/Int, kotlin/Int, io.github.yuroyami.kitecodec/SampleFormat, kotlin/Long = ...): io.github.yuroyami.kitecodec/Frame // io.github.yuroyami.kitecodec/Frame.Companion.ofAudio|ofAudio(kotlin.ByteArray;kotlin.Int;kotlin.Int;kotlin.Int;io.github.yuroyami.kitecodec.SampleFormat;kotlin.Long){}[0]
+        final fun ofVideo(kotlin/ByteArray, kotlin/Int, kotlin/Int, io.github.yuroyami.kitecodec/PixelFormat, kotlin/Long = ...): io.github.yuroyami.kitecodec/Frame // io.github.yuroyami.kitecodec/Frame.Companion.ofVideo|ofVideo(kotlin.ByteArray;kotlin.Int;kotlin.Int;io.github.yuroyami.kitecodec.PixelFormat;kotlin.Long){}[0]
+    }
+}
+
+final class io.github.yuroyami.kitecodec/FrameInfo { // io.github.yuroyami.kitecodec/FrameInfo|null[0]
+    constructor <init>(kotlin/Int, io.github.yuroyami.kitecodec/MediaType, kotlin/Long, io.github.yuroyami.kitecodec/Rational, kotlin/Int = ..., kotlin/Int = ..., io.github.yuroyami.kitecodec/PixelFormat = ..., kotlin/Int = ..., kotlin/Int = ..., kotlin/Int = ..., io.github.yuroyami.kitecodec/SampleFormat = ..., kotlin/Long? = ..., kotlin/Long = ..., kotlin/Boolean = ..., io.github.yuroyami.kitecodec/ColorInfo = ..., io.github.yuroyami.kitecodec/Rational = ..., kotlin/Boolean = ...) // io.github.yuroyami.kitecodec/FrameInfo.<init>|<init>(kotlin.Int;io.github.yuroyami.kitecodec.MediaType;kotlin.Long;io.github.yuroyami.kitecodec.Rational;kotlin.Int;kotlin.Int;io.github.yuroyami.kitecodec.PixelFormat;kotlin.Int;kotlin.Int;kotlin.Int;io.github.yuroyami.kitecodec.SampleFormat;kotlin.Long?;kotlin.Long;kotlin.Boolean;io.github.yuroyami.kitecodec.ColorInfo;io.github.yuroyami.kitecodec.Rational;kotlin.Boolean){}[0]
+
+    final val channelCount // io.github.yuroyami.kitecodec/FrameInfo.channelCount|{}channelCount[0]
+        final fun <get-channelCount>(): kotlin/Int // io.github.yuroyami.kitecodec/FrameInfo.channelCount.<get-channelCount>|<get-channelCount>(){}[0]
+    final val channelLayoutMask // io.github.yuroyami.kitecodec/FrameInfo.channelLayoutMask|{}channelLayoutMask[0]
+        final fun <get-channelLayoutMask>(): kotlin/Long? // io.github.yuroyami.kitecodec/FrameInfo.channelLayoutMask.<get-channelLayoutMask>|<get-channelLayoutMask>(){}[0]
+    final val color // io.github.yuroyami.kitecodec/FrameInfo.color|{}color[0]
+        final fun <get-color>(): io.github.yuroyami.kitecodec/ColorInfo // io.github.yuroyami.kitecodec/FrameInfo.color.<get-color>|<get-color>(){}[0]
+    final val duration // io.github.yuroyami.kitecodec/FrameInfo.duration|{}duration[0]
+        final fun <get-duration>(): kotlin/Long // io.github.yuroyami.kitecodec/FrameInfo.duration.<get-duration>|<get-duration>(){}[0]
+    final val hasPts // io.github.yuroyami.kitecodec/FrameInfo.hasPts|{}hasPts[0]
+        final fun <get-hasPts>(): kotlin/Boolean // io.github.yuroyami.kitecodec/FrameInfo.hasPts.<get-hasPts>|<get-hasPts>(){}[0]
+    final val height // io.github.yuroyami.kitecodec/FrameInfo.height|{}height[0]
+        final fun <get-height>(): kotlin/Int // io.github.yuroyami.kitecodec/FrameInfo.height.<get-height>|<get-height>(){}[0]
+    final val isHardware // io.github.yuroyami.kitecodec/FrameInfo.isHardware|{}isHardware[0]
+        final fun <get-isHardware>(): kotlin/Boolean // io.github.yuroyami.kitecodec/FrameInfo.isHardware.<get-isHardware>|<get-isHardware>(){}[0]
+    final val isKeyframe // io.github.yuroyami.kitecodec/FrameInfo.isKeyframe|{}isKeyframe[0]
+        final fun <get-isKeyframe>(): kotlin/Boolean // io.github.yuroyami.kitecodec/FrameInfo.isKeyframe.<get-isKeyframe>|<get-isKeyframe>(){}[0]
+    final val pixelFormat // io.github.yuroyami.kitecodec/FrameInfo.pixelFormat|{}pixelFormat[0]
+        final fun <get-pixelFormat>(): io.github.yuroyami.kitecodec/PixelFormat // io.github.yuroyami.kitecodec/FrameInfo.pixelFormat.<get-pixelFormat>|<get-pixelFormat>(){}[0]
+    final val pts // io.github.yuroyami.kitecodec/FrameInfo.pts|{}pts[0]
+        final fun <get-pts>(): kotlin/Long // io.github.yuroyami.kitecodec/FrameInfo.pts.<get-pts>|<get-pts>(){}[0]
+    final val ptsSeconds // io.github.yuroyami.kitecodec/FrameInfo.ptsSeconds|{}ptsSeconds[0]
+        final fun <get-ptsSeconds>(): kotlin/Double // io.github.yuroyami.kitecodec/FrameInfo.ptsSeconds.<get-ptsSeconds>|<get-ptsSeconds>(){}[0]
+    final val sampleAspectRatio // io.github.yuroyami.kitecodec/FrameInfo.sampleAspectRatio|{}sampleAspectRatio[0]
+        final fun <get-sampleAspectRatio>(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/FrameInfo.sampleAspectRatio.<get-sampleAspectRatio>|<get-sampleAspectRatio>(){}[0]
+    final val sampleCount // io.github.yuroyami.kitecodec/FrameInfo.sampleCount|{}sampleCount[0]
+        final fun <get-sampleCount>(): kotlin/Int // io.github.yuroyami.kitecodec/FrameInfo.sampleCount.<get-sampleCount>|<get-sampleCount>(){}[0]
+    final val sampleFormat // io.github.yuroyami.kitecodec/FrameInfo.sampleFormat|{}sampleFormat[0]
+        final fun <get-sampleFormat>(): io.github.yuroyami.kitecodec/SampleFormat // io.github.yuroyami.kitecodec/FrameInfo.sampleFormat.<get-sampleFormat>|<get-sampleFormat>(){}[0]
+    final val sampleRate // io.github.yuroyami.kitecodec/FrameInfo.sampleRate|{}sampleRate[0]
+        final fun <get-sampleRate>(): kotlin/Int // io.github.yuroyami.kitecodec/FrameInfo.sampleRate.<get-sampleRate>|<get-sampleRate>(){}[0]
+    final val streamIndex // io.github.yuroyami.kitecodec/FrameInfo.streamIndex|{}streamIndex[0]
+        final fun <get-streamIndex>(): kotlin/Int // io.github.yuroyami.kitecodec/FrameInfo.streamIndex.<get-streamIndex>|<get-streamIndex>(){}[0]
+    final val timeBase // io.github.yuroyami.kitecodec/FrameInfo.timeBase|{}timeBase[0]
+        final fun <get-timeBase>(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/FrameInfo.timeBase.<get-timeBase>|<get-timeBase>(){}[0]
+    final val type // io.github.yuroyami.kitecodec/FrameInfo.type|{}type[0]
+        final fun <get-type>(): io.github.yuroyami.kitecodec/MediaType // io.github.yuroyami.kitecodec/FrameInfo.type.<get-type>|<get-type>(){}[0]
+    final val width // io.github.yuroyami.kitecodec/FrameInfo.width|{}width[0]
+        final fun <get-width>(): kotlin/Int // io.github.yuroyami.kitecodec/FrameInfo.width.<get-width>|<get-width>(){}[0]
+
+    final fun component1(): kotlin/Int // io.github.yuroyami.kitecodec/FrameInfo.component1|component1(){}[0]
+    final fun component10(): kotlin/Int // io.github.yuroyami.kitecodec/FrameInfo.component10|component10(){}[0]
+    final fun component11(): io.github.yuroyami.kitecodec/SampleFormat // io.github.yuroyami.kitecodec/FrameInfo.component11|component11(){}[0]
+    final fun component12(): kotlin/Long? // io.github.yuroyami.kitecodec/FrameInfo.component12|component12(){}[0]
+    final fun component13(): kotlin/Long // io.github.yuroyami.kitecodec/FrameInfo.component13|component13(){}[0]
+    final fun component14(): kotlin/Boolean // io.github.yuroyami.kitecodec/FrameInfo.component14|component14(){}[0]
+    final fun component15(): io.github.yuroyami.kitecodec/ColorInfo // io.github.yuroyami.kitecodec/FrameInfo.component15|component15(){}[0]
+    final fun component16(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/FrameInfo.component16|component16(){}[0]
+    final fun component17(): kotlin/Boolean // io.github.yuroyami.kitecodec/FrameInfo.component17|component17(){}[0]
+    final fun component2(): io.github.yuroyami.kitecodec/MediaType // io.github.yuroyami.kitecodec/FrameInfo.component2|component2(){}[0]
+    final fun component3(): kotlin/Long // io.github.yuroyami.kitecodec/FrameInfo.component3|component3(){}[0]
+    final fun component4(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/FrameInfo.component4|component4(){}[0]
+    final fun component5(): kotlin/Int // io.github.yuroyami.kitecodec/FrameInfo.component5|component5(){}[0]
+    final fun component6(): kotlin/Int // io.github.yuroyami.kitecodec/FrameInfo.component6|component6(){}[0]
+    final fun component7(): io.github.yuroyami.kitecodec/PixelFormat // io.github.yuroyami.kitecodec/FrameInfo.component7|component7(){}[0]
+    final fun component8(): kotlin/Int // io.github.yuroyami.kitecodec/FrameInfo.component8|component8(){}[0]
+    final fun component9(): kotlin/Int // io.github.yuroyami.kitecodec/FrameInfo.component9|component9(){}[0]
+    final fun copy(kotlin/Int = ..., io.github.yuroyami.kitecodec/MediaType = ..., kotlin/Long = ..., io.github.yuroyami.kitecodec/Rational = ..., kotlin/Int = ..., kotlin/Int = ..., io.github.yuroyami.kitecodec/PixelFormat = ..., kotlin/Int = ..., kotlin/Int = ..., kotlin/Int = ..., io.github.yuroyami.kitecodec/SampleFormat = ..., kotlin/Long? = ..., kotlin/Long = ..., kotlin/Boolean = ..., io.github.yuroyami.kitecodec/ColorInfo = ..., io.github.yuroyami.kitecodec/Rational = ..., kotlin/Boolean = ...): io.github.yuroyami.kitecodec/FrameInfo // io.github.yuroyami.kitecodec/FrameInfo.copy|copy(kotlin.Int;io.github.yuroyami.kitecodec.MediaType;kotlin.Long;io.github.yuroyami.kitecodec.Rational;kotlin.Int;kotlin.Int;io.github.yuroyami.kitecodec.PixelFormat;kotlin.Int;kotlin.Int;kotlin.Int;io.github.yuroyami.kitecodec.SampleFormat;kotlin.Long?;kotlin.Long;kotlin.Boolean;io.github.yuroyami.kitecodec.ColorInfo;io.github.yuroyami.kitecodec.Rational;kotlin.Boolean){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec/FrameInfo.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec/FrameInfo.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec/FrameInfo.toString|toString(){}[0]
+
+    final object Companion { // io.github.yuroyami.kitecodec/FrameInfo.Companion|null[0]
+        final const val NOPTS // io.github.yuroyami.kitecodec/FrameInfo.Companion.NOPTS|{}NOPTS[0]
+            final fun <get-NOPTS>(): kotlin/Long // io.github.yuroyami.kitecodec/FrameInfo.Companion.NOPTS.<get-NOPTS>|<get-NOPTS>(){}[0]
+    }
+}
+
+final class io.github.yuroyami.kitecodec/MediaSink : kotlin/AutoCloseable { // io.github.yuroyami.kitecodec/MediaSink|null[0]
+    final fun addAudioEncoder(io.github.yuroyami.kitecodec/AudioEncoderSpec): io.github.yuroyami.kitecodec/AudioEncoder // io.github.yuroyami.kitecodec/MediaSink.addAudioEncoder|addAudioEncoder(io.github.yuroyami.kitecodec.AudioEncoderSpec){}[0]
+    final fun addCopyStream(io.github.yuroyami.kitecodec/MediaSource, io.github.yuroyami.kitecodec/StreamInfo): io.github.yuroyami.kitecodec/CopyStream // io.github.yuroyami.kitecodec/MediaSink.addCopyStream|addCopyStream(io.github.yuroyami.kitecodec.MediaSource;io.github.yuroyami.kitecodec.StreamInfo){}[0]
+    final fun addVideoEncoder(io.github.yuroyami.kitecodec/VideoEncoderSpec): io.github.yuroyami.kitecodec/VideoEncoder // io.github.yuroyami.kitecodec/MediaSink.addVideoEncoder|addVideoEncoder(io.github.yuroyami.kitecodec.VideoEncoderSpec){}[0]
+    final fun close() // io.github.yuroyami.kitecodec/MediaSink.close|close(){}[0]
+    final fun setMetadata(kotlin.collections/Map<kotlin/String, kotlin/String>) // io.github.yuroyami.kitecodec/MediaSink.setMetadata|setMetadata(kotlin.collections.Map<kotlin.String,kotlin.String>){}[0]
+
+    final object Companion { // io.github.yuroyami.kitecodec/MediaSink.Companion|null[0]
+        final fun open(kotlin/String, kotlin/String? = ..., kotlin.collections/Map<kotlin/String, kotlin/String> = ...): io.github.yuroyami.kitecodec/MediaSink // io.github.yuroyami.kitecodec/MediaSink.Companion.open|open(kotlin.String;kotlin.String?;kotlin.collections.Map<kotlin.String,kotlin.String>){}[0]
+    }
+}
+
+final class io.github.yuroyami.kitecodec/MediaSource : kotlin/AutoCloseable { // io.github.yuroyami.kitecodec/MediaSource|null[0]
+    final val durationMicros // io.github.yuroyami.kitecodec/MediaSource.durationMicros|{}durationMicros[0]
+        final fun <get-durationMicros>(): kotlin/Long? // io.github.yuroyami.kitecodec/MediaSource.durationMicros.<get-durationMicros>|<get-durationMicros>(){}[0]
+    final val formatName // io.github.yuroyami.kitecodec/MediaSource.formatName|{}formatName[0]
+        final fun <get-formatName>(): kotlin/String // io.github.yuroyami.kitecodec/MediaSource.formatName.<get-formatName>|<get-formatName>(){}[0]
+    final val isSeekable // io.github.yuroyami.kitecodec/MediaSource.isSeekable|{}isSeekable[0]
+        final fun <get-isSeekable>(): kotlin/Boolean // io.github.yuroyami.kitecodec/MediaSource.isSeekable.<get-isSeekable>|<get-isSeekable>(){}[0]
+    final val metadata // io.github.yuroyami.kitecodec/MediaSource.metadata|{}metadata[0]
+        final fun <get-metadata>(): kotlin.collections/Map<kotlin/String, kotlin/String> // io.github.yuroyami.kitecodec/MediaSource.metadata.<get-metadata>|<get-metadata>(){}[0]
+    final val primaryAudio // io.github.yuroyami.kitecodec/MediaSource.primaryAudio|{}primaryAudio[0]
+        final fun <get-primaryAudio>(): io.github.yuroyami.kitecodec/StreamInfo? // io.github.yuroyami.kitecodec/MediaSource.primaryAudio.<get-primaryAudio>|<get-primaryAudio>(){}[0]
+    final val primaryVideo // io.github.yuroyami.kitecodec/MediaSource.primaryVideo|{}primaryVideo[0]
+        final fun <get-primaryVideo>(): io.github.yuroyami.kitecodec/StreamInfo? // io.github.yuroyami.kitecodec/MediaSource.primaryVideo.<get-primaryVideo>|<get-primaryVideo>(){}[0]
+    final val startTimeMicros // io.github.yuroyami.kitecodec/MediaSource.startTimeMicros|{}startTimeMicros[0]
+        final fun <get-startTimeMicros>(): kotlin/Long // io.github.yuroyami.kitecodec/MediaSource.startTimeMicros.<get-startTimeMicros>|<get-startTimeMicros>(){}[0]
+    final val streams // io.github.yuroyami.kitecodec/MediaSource.streams|{}streams[0]
+        final fun <get-streams>(): kotlin.collections/List<io.github.yuroyami.kitecodec/StreamInfo> // io.github.yuroyami.kitecodec/MediaSource.streams.<get-streams>|<get-streams>(){}[0]
+
+    final fun close() // io.github.yuroyami.kitecodec/MediaSource.close|close(){}[0]
+    final fun decodeStreams(kotlin.collections/List<io.github.yuroyami.kitecodec/StreamInfo>): kotlinx.coroutines.flow/Flow<io.github.yuroyami.kitecodec/Frame> // io.github.yuroyami.kitecodec/MediaSource.decodeStreams|decodeStreams(kotlin.collections.List<io.github.yuroyami.kitecodec.StreamInfo>){}[0]
+    final fun decodedFrames(io.github.yuroyami.kitecodec/StreamInfo): kotlinx.coroutines.flow/Flow<io.github.yuroyami.kitecodec/Frame> // io.github.yuroyami.kitecodec/MediaSource.decodedFrames|decodedFrames(io.github.yuroyami.kitecodec.StreamInfo){}[0]
+    final fun openDecoder(io.github.yuroyami.kitecodec/StreamInfo, kotlin/Int = ..., kotlin/Boolean = ...): io.github.yuroyami.kitecodec/StreamDecoder // io.github.yuroyami.kitecodec/MediaSource.openDecoder|openDecoder(io.github.yuroyami.kitecodec.StreamInfo;kotlin.Int;kotlin.Boolean){}[0]
+    final fun openPacketReader(kotlin.collections/List<io.github.yuroyami.kitecodec/StreamInfo>): io.github.yuroyami.kitecodec/PacketReader // io.github.yuroyami.kitecodec/MediaSource.openPacketReader|openPacketReader(kotlin.collections.List<io.github.yuroyami.kitecodec.StreamInfo>){}[0]
+    final suspend fun extractFrame(kotlin/Long, io.github.yuroyami.kitecodec/StreamInfo? = ...): io.github.yuroyami.kitecodec/Frame // io.github.yuroyami.kitecodec/MediaSource.extractFrame|extractFrame(kotlin.Long;io.github.yuroyami.kitecodec.StreamInfo?){}[0]
+    final suspend fun seekMicros(kotlin/Long) // io.github.yuroyami.kitecodec/MediaSource.seekMicros|seekMicros(kotlin.Long){}[0]
+
+    final object Companion { // io.github.yuroyami.kitecodec/MediaSource.Companion|null[0]
+        final fun open(kotlin/String): io.github.yuroyami.kitecodec/MediaSource // io.github.yuroyami.kitecodec/MediaSource.Companion.open|open(kotlin.String){}[0]
+    }
+}
+
+final class io.github.yuroyami.kitecodec/Packet : kotlin/AutoCloseable { // io.github.yuroyami.kitecodec/Packet|null[0]
+    final val bytePosition // io.github.yuroyami.kitecodec/Packet.bytePosition|{}bytePosition[0]
+        final fun <get-bytePosition>(): kotlin/Long // io.github.yuroyami.kitecodec/Packet.bytePosition.<get-bytePosition>|<get-bytePosition>(){}[0]
+    final val dts // io.github.yuroyami.kitecodec/Packet.dts|{}dts[0]
+        final fun <get-dts>(): kotlin/Long // io.github.yuroyami.kitecodec/Packet.dts.<get-dts>|<get-dts>(){}[0]
+    final val dtsMicros // io.github.yuroyami.kitecodec/Packet.dtsMicros|{}dtsMicros[0]
+        final fun <get-dtsMicros>(): kotlin/Long? // io.github.yuroyami.kitecodec/Packet.dtsMicros.<get-dtsMicros>|<get-dtsMicros>(){}[0]
+    final val duration // io.github.yuroyami.kitecodec/Packet.duration|{}duration[0]
+        final fun <get-duration>(): kotlin/Long // io.github.yuroyami.kitecodec/Packet.duration.<get-duration>|<get-duration>(){}[0]
+    final val durationMicros // io.github.yuroyami.kitecodec/Packet.durationMicros|{}durationMicros[0]
+        final fun <get-durationMicros>(): kotlin/Long? // io.github.yuroyami.kitecodec/Packet.durationMicros.<get-durationMicros>|<get-durationMicros>(){}[0]
+    final val hasPts // io.github.yuroyami.kitecodec/Packet.hasPts|{}hasPts[0]
+        final fun <get-hasPts>(): kotlin/Boolean // io.github.yuroyami.kitecodec/Packet.hasPts.<get-hasPts>|<get-hasPts>(){}[0]
+    final val isKeyframe // io.github.yuroyami.kitecodec/Packet.isKeyframe|{}isKeyframe[0]
+        final fun <get-isKeyframe>(): kotlin/Boolean // io.github.yuroyami.kitecodec/Packet.isKeyframe.<get-isKeyframe>|<get-isKeyframe>(){}[0]
+    final val pts // io.github.yuroyami.kitecodec/Packet.pts|{}pts[0]
+        final fun <get-pts>(): kotlin/Long // io.github.yuroyami.kitecodec/Packet.pts.<get-pts>|<get-pts>(){}[0]
+    final val ptsMicros // io.github.yuroyami.kitecodec/Packet.ptsMicros|{}ptsMicros[0]
+        final fun <get-ptsMicros>(): kotlin/Long? // io.github.yuroyami.kitecodec/Packet.ptsMicros.<get-ptsMicros>|<get-ptsMicros>(){}[0]
+    final val sizeBytes // io.github.yuroyami.kitecodec/Packet.sizeBytes|{}sizeBytes[0]
+        final fun <get-sizeBytes>(): kotlin/Int // io.github.yuroyami.kitecodec/Packet.sizeBytes.<get-sizeBytes>|<get-sizeBytes>(){}[0]
+    final val streamIndex // io.github.yuroyami.kitecodec/Packet.streamIndex|{}streamIndex[0]
+        final fun <get-streamIndex>(): kotlin/Int // io.github.yuroyami.kitecodec/Packet.streamIndex.<get-streamIndex>|<get-streamIndex>(){}[0]
+    final val timeBase // io.github.yuroyami.kitecodec/Packet.timeBase|{}timeBase[0]
+        final fun <get-timeBase>(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/Packet.timeBase.<get-timeBase>|<get-timeBase>(){}[0]
+
+    final fun close() // io.github.yuroyami.kitecodec/Packet.close|close(){}[0]
+}
+
+final class io.github.yuroyami.kitecodec/PacketReader : kotlin/AutoCloseable { // io.github.yuroyami.kitecodec/PacketReader|null[0]
+    final fun close() // io.github.yuroyami.kitecodec/PacketReader.close|close(){}[0]
+    final fun read(): io.github.yuroyami.kitecodec/Packet? // io.github.yuroyami.kitecodec/PacketReader.read|read(){}[0]
+    final fun seek(kotlin/Long, io.github.yuroyami.kitecodec/SeekDirection = ..., kotlin/Long? = ...) // io.github.yuroyami.kitecodec/PacketReader.seek|seek(kotlin.Long;io.github.yuroyami.kitecodec.SeekDirection;kotlin.Long?){}[0]
+}
+
+final class io.github.yuroyami.kitecodec/Rational : kotlin/Comparable<io.github.yuroyami.kitecodec/Rational> { // io.github.yuroyami.kitecodec/Rational|null[0]
+    final val asDouble // io.github.yuroyami.kitecodec/Rational.asDouble|{}asDouble[0]
+        final fun <get-asDouble>(): kotlin/Double // io.github.yuroyami.kitecodec/Rational.asDouble.<get-asDouble>|<get-asDouble>(){}[0]
+    final val asFloat // io.github.yuroyami.kitecodec/Rational.asFloat|{}asFloat[0]
+        final fun <get-asFloat>(): kotlin/Float // io.github.yuroyami.kitecodec/Rational.asFloat.<get-asFloat>|<get-asFloat>(){}[0]
+    final val den // io.github.yuroyami.kitecodec/Rational.den|{}den[0]
+        final fun <get-den>(): kotlin/Int // io.github.yuroyami.kitecodec/Rational.den.<get-den>|<get-den>(){}[0]
+    final val inverse // io.github.yuroyami.kitecodec/Rational.inverse|{}inverse[0]
+        final fun <get-inverse>(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/Rational.inverse.<get-inverse>|<get-inverse>(){}[0]
+    final val num // io.github.yuroyami.kitecodec/Rational.num|{}num[0]
+        final fun <get-num>(): kotlin/Int // io.github.yuroyami.kitecodec/Rational.num.<get-num>|<get-num>(){}[0]
+
+    final fun compareTo(io.github.yuroyami.kitecodec/Rational): kotlin/Int // io.github.yuroyami.kitecodec/Rational.compareTo|compareTo(io.github.yuroyami.kitecodec.Rational){}[0]
+    final fun div(io.github.yuroyami.kitecodec/Rational): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/Rational.div|div(io.github.yuroyami.kitecodec.Rational){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec/Rational.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec/Rational.hashCode|hashCode(){}[0]
+    final fun minus(io.github.yuroyami.kitecodec/Rational): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/Rational.minus|minus(io.github.yuroyami.kitecodec.Rational){}[0]
+    final fun plus(io.github.yuroyami.kitecodec/Rational): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/Rational.plus|plus(io.github.yuroyami.kitecodec.Rational){}[0]
+    final fun times(io.github.yuroyami.kitecodec/Rational): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/Rational.times|times(io.github.yuroyami.kitecodec.Rational){}[0]
+    final fun times(kotlin/Long): kotlin/Long // io.github.yuroyami.kitecodec/Rational.times|times(kotlin.Long){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec/Rational.toString|toString(){}[0]
+    final fun unaryMinus(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/Rational.unaryMinus|unaryMinus(){}[0]
+
+    final object Companion { // io.github.yuroyami.kitecodec/Rational.Companion|null[0]
+        final val Fps2398 // io.github.yuroyami.kitecodec/Rational.Companion.Fps2398|{}Fps2398[0]
+            final fun <get-Fps2398>(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/Rational.Companion.Fps2398.<get-Fps2398>|<get-Fps2398>(){}[0]
+        final val Fps24 // io.github.yuroyami.kitecodec/Rational.Companion.Fps24|{}Fps24[0]
+            final fun <get-Fps24>(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/Rational.Companion.Fps24.<get-Fps24>|<get-Fps24>(){}[0]
+        final val Fps25 // io.github.yuroyami.kitecodec/Rational.Companion.Fps25|{}Fps25[0]
+            final fun <get-Fps25>(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/Rational.Companion.Fps25.<get-Fps25>|<get-Fps25>(){}[0]
+        final val Fps2997 // io.github.yuroyami.kitecodec/Rational.Companion.Fps2997|{}Fps2997[0]
+            final fun <get-Fps2997>(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/Rational.Companion.Fps2997.<get-Fps2997>|<get-Fps2997>(){}[0]
+        final val Fps30 // io.github.yuroyami.kitecodec/Rational.Companion.Fps30|{}Fps30[0]
+            final fun <get-Fps30>(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/Rational.Companion.Fps30.<get-Fps30>|<get-Fps30>(){}[0]
+        final val Fps60 // io.github.yuroyami.kitecodec/Rational.Companion.Fps60|{}Fps60[0]
+            final fun <get-Fps60>(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/Rational.Companion.Fps60.<get-Fps60>|<get-Fps60>(){}[0]
+        final val Tb_us // io.github.yuroyami.kitecodec/Rational.Companion.Tb_us|{}Tb_us[0]
+            final fun <get-Tb_us>(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/Rational.Companion.Tb_us.<get-Tb_us>|<get-Tb_us>(){}[0]
+        final val Zero // io.github.yuroyami.kitecodec/Rational.Companion.Zero|{}Zero[0]
+            final fun <get-Zero>(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/Rational.Companion.Zero.<get-Zero>|<get-Zero>(){}[0]
+
+        final fun invoke(kotlin/Int, kotlin/Int): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/Rational.Companion.invoke|invoke(kotlin.Int;kotlin.Int){}[0]
+    }
+}
+
+final class io.github.yuroyami.kitecodec/StreamDecoder : kotlin/AutoCloseable { // io.github.yuroyami.kitecodec/StreamDecoder|null[0]
+    final val stream // io.github.yuroyami.kitecodec/StreamDecoder.stream|{}stream[0]
+        final fun <get-stream>(): io.github.yuroyami.kitecodec/StreamInfo // io.github.yuroyami.kitecodec/StreamDecoder.stream.<get-stream>|<get-stream>(){}[0]
+
+    final var isDrained // io.github.yuroyami.kitecodec/StreamDecoder.isDrained|{}isDrained[0]
+        final fun <get-isDrained>(): kotlin/Boolean // io.github.yuroyami.kitecodec/StreamDecoder.isDrained.<get-isDrained>|<get-isDrained>(){}[0]
+
+    final fun close() // io.github.yuroyami.kitecodec/StreamDecoder.close|close(){}[0]
+    final fun flush() // io.github.yuroyami.kitecodec/StreamDecoder.flush|flush(){}[0]
+    final fun receive(): io.github.yuroyami.kitecodec/Frame? // io.github.yuroyami.kitecodec/StreamDecoder.receive|receive(){}[0]
+    final fun send(io.github.yuroyami.kitecodec/Packet?): kotlin/Boolean // io.github.yuroyami.kitecodec/StreamDecoder.send|send(io.github.yuroyami.kitecodec.Packet?){}[0]
+}
+
+final class io.github.yuroyami.kitecodec/StreamInfo { // io.github.yuroyami.kitecodec/StreamInfo|null[0]
+    constructor <init>(kotlin/Int, io.github.yuroyami.kitecodec/MediaType, io.github.yuroyami.kitecodec/CodecId, io.github.yuroyami.kitecodec/Rational, kotlin/Long?, kotlin/Long?, io.github.yuroyami.kitecodec/VideoStreamInfo? = ..., io.github.yuroyami.kitecodec/AudioStreamInfo? = ..., kotlin.collections/Map<kotlin/String, kotlin/String> = ..., io.github.yuroyami.kitecodec/Disposition = ..., kotlin/Int = ..., kotlin/Long = ...) // io.github.yuroyami.kitecodec/StreamInfo.<init>|<init>(kotlin.Int;io.github.yuroyami.kitecodec.MediaType;io.github.yuroyami.kitecodec.CodecId;io.github.yuroyami.kitecodec.Rational;kotlin.Long?;kotlin.Long?;io.github.yuroyami.kitecodec.VideoStreamInfo?;io.github.yuroyami.kitecodec.AudioStreamInfo?;kotlin.collections.Map<kotlin.String,kotlin.String>;io.github.yuroyami.kitecodec.Disposition;kotlin.Int;kotlin.Long){}[0]
+
+    final val audio // io.github.yuroyami.kitecodec/StreamInfo.audio|{}audio[0]
+        final fun <get-audio>(): io.github.yuroyami.kitecodec/AudioStreamInfo? // io.github.yuroyami.kitecodec/StreamInfo.audio.<get-audio>|<get-audio>(){}[0]
+    final val bitrateBps // io.github.yuroyami.kitecodec/StreamInfo.bitrateBps|{}bitrateBps[0]
+        final fun <get-bitrateBps>(): kotlin/Long? // io.github.yuroyami.kitecodec/StreamInfo.bitrateBps.<get-bitrateBps>|<get-bitrateBps>(){}[0]
+    final val codec // io.github.yuroyami.kitecodec/StreamInfo.codec|{}codec[0]
+        final fun <get-codec>(): io.github.yuroyami.kitecodec/CodecId // io.github.yuroyami.kitecodec/StreamInfo.codec.<get-codec>|<get-codec>(){}[0]
+    final val disposition // io.github.yuroyami.kitecodec/StreamInfo.disposition|{}disposition[0]
+        final fun <get-disposition>(): io.github.yuroyami.kitecodec/Disposition // io.github.yuroyami.kitecodec/StreamInfo.disposition.<get-disposition>|<get-disposition>(){}[0]
+    final val durationMicros // io.github.yuroyami.kitecodec/StreamInfo.durationMicros|{}durationMicros[0]
+        final fun <get-durationMicros>(): kotlin/Long? // io.github.yuroyami.kitecodec/StreamInfo.durationMicros.<get-durationMicros>|<get-durationMicros>(){}[0]
+    final val index // io.github.yuroyami.kitecodec/StreamInfo.index|{}index[0]
+        final fun <get-index>(): kotlin/Int // io.github.yuroyami.kitecodec/StreamInfo.index.<get-index>|<get-index>(){}[0]
+    final val language // io.github.yuroyami.kitecodec/StreamInfo.language|{}language[0]
+        final fun <get-language>(): kotlin/String? // io.github.yuroyami.kitecodec/StreamInfo.language.<get-language>|<get-language>(){}[0]
+    final val metadata // io.github.yuroyami.kitecodec/StreamInfo.metadata|{}metadata[0]
+        final fun <get-metadata>(): kotlin.collections/Map<kotlin/String, kotlin/String> // io.github.yuroyami.kitecodec/StreamInfo.metadata.<get-metadata>|<get-metadata>(){}[0]
+    final val rotationDegrees // io.github.yuroyami.kitecodec/StreamInfo.rotationDegrees|{}rotationDegrees[0]
+        final fun <get-rotationDegrees>(): kotlin/Int // io.github.yuroyami.kitecodec/StreamInfo.rotationDegrees.<get-rotationDegrees>|<get-rotationDegrees>(){}[0]
+    final val startTimeMicros // io.github.yuroyami.kitecodec/StreamInfo.startTimeMicros|{}startTimeMicros[0]
+        final fun <get-startTimeMicros>(): kotlin/Long // io.github.yuroyami.kitecodec/StreamInfo.startTimeMicros.<get-startTimeMicros>|<get-startTimeMicros>(){}[0]
+    final val timeBase // io.github.yuroyami.kitecodec/StreamInfo.timeBase|{}timeBase[0]
+        final fun <get-timeBase>(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/StreamInfo.timeBase.<get-timeBase>|<get-timeBase>(){}[0]
+    final val title // io.github.yuroyami.kitecodec/StreamInfo.title|{}title[0]
+        final fun <get-title>(): kotlin/String? // io.github.yuroyami.kitecodec/StreamInfo.title.<get-title>|<get-title>(){}[0]
+    final val type // io.github.yuroyami.kitecodec/StreamInfo.type|{}type[0]
+        final fun <get-type>(): io.github.yuroyami.kitecodec/MediaType // io.github.yuroyami.kitecodec/StreamInfo.type.<get-type>|<get-type>(){}[0]
+    final val video // io.github.yuroyami.kitecodec/StreamInfo.video|{}video[0]
+        final fun <get-video>(): io.github.yuroyami.kitecodec/VideoStreamInfo? // io.github.yuroyami.kitecodec/StreamInfo.video.<get-video>|<get-video>(){}[0]
+
+    final fun component1(): kotlin/Int // io.github.yuroyami.kitecodec/StreamInfo.component1|component1(){}[0]
+    final fun component10(): io.github.yuroyami.kitecodec/Disposition // io.github.yuroyami.kitecodec/StreamInfo.component10|component10(){}[0]
+    final fun component11(): kotlin/Int // io.github.yuroyami.kitecodec/StreamInfo.component11|component11(){}[0]
+    final fun component12(): kotlin/Long // io.github.yuroyami.kitecodec/StreamInfo.component12|component12(){}[0]
+    final fun component2(): io.github.yuroyami.kitecodec/MediaType // io.github.yuroyami.kitecodec/StreamInfo.component2|component2(){}[0]
+    final fun component3(): io.github.yuroyami.kitecodec/CodecId // io.github.yuroyami.kitecodec/StreamInfo.component3|component3(){}[0]
+    final fun component4(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/StreamInfo.component4|component4(){}[0]
+    final fun component5(): kotlin/Long? // io.github.yuroyami.kitecodec/StreamInfo.component5|component5(){}[0]
+    final fun component6(): kotlin/Long? // io.github.yuroyami.kitecodec/StreamInfo.component6|component6(){}[0]
+    final fun component7(): io.github.yuroyami.kitecodec/VideoStreamInfo? // io.github.yuroyami.kitecodec/StreamInfo.component7|component7(){}[0]
+    final fun component8(): io.github.yuroyami.kitecodec/AudioStreamInfo? // io.github.yuroyami.kitecodec/StreamInfo.component8|component8(){}[0]
+    final fun component9(): kotlin.collections/Map<kotlin/String, kotlin/String> // io.github.yuroyami.kitecodec/StreamInfo.component9|component9(){}[0]
+    final fun copy(kotlin/Int = ..., io.github.yuroyami.kitecodec/MediaType = ..., io.github.yuroyami.kitecodec/CodecId = ..., io.github.yuroyami.kitecodec/Rational = ..., kotlin/Long? = ..., kotlin/Long? = ..., io.github.yuroyami.kitecodec/VideoStreamInfo? = ..., io.github.yuroyami.kitecodec/AudioStreamInfo? = ..., kotlin.collections/Map<kotlin/String, kotlin/String> = ..., io.github.yuroyami.kitecodec/Disposition = ..., kotlin/Int = ..., kotlin/Long = ...): io.github.yuroyami.kitecodec/StreamInfo // io.github.yuroyami.kitecodec/StreamInfo.copy|copy(kotlin.Int;io.github.yuroyami.kitecodec.MediaType;io.github.yuroyami.kitecodec.CodecId;io.github.yuroyami.kitecodec.Rational;kotlin.Long?;kotlin.Long?;io.github.yuroyami.kitecodec.VideoStreamInfo?;io.github.yuroyami.kitecodec.AudioStreamInfo?;kotlin.collections.Map<kotlin.String,kotlin.String>;io.github.yuroyami.kitecodec.Disposition;kotlin.Int;kotlin.Long){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec/StreamInfo.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec/StreamInfo.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec/StreamInfo.toString|toString(){}[0]
+}
+
+final class io.github.yuroyami.kitecodec/TranscodeProgress { // io.github.yuroyami.kitecodec/TranscodeProgress|null[0]
+    constructor <init>(kotlin/Long, kotlin/Long, kotlin/Double?) // io.github.yuroyami.kitecodec/TranscodeProgress.<init>|<init>(kotlin.Long;kotlin.Long;kotlin.Double?){}[0]
+
+    final val framesEncoded // io.github.yuroyami.kitecodec/TranscodeProgress.framesEncoded|{}framesEncoded[0]
+        final fun <get-framesEncoded>(): kotlin/Long // io.github.yuroyami.kitecodec/TranscodeProgress.framesEncoded.<get-framesEncoded>|<get-framesEncoded>(){}[0]
+    final val outputMicros // io.github.yuroyami.kitecodec/TranscodeProgress.outputMicros|{}outputMicros[0]
+        final fun <get-outputMicros>(): kotlin/Long // io.github.yuroyami.kitecodec/TranscodeProgress.outputMicros.<get-outputMicros>|<get-outputMicros>(){}[0]
+    final val percent // io.github.yuroyami.kitecodec/TranscodeProgress.percent|{}percent[0]
+        final fun <get-percent>(): kotlin/Double? // io.github.yuroyami.kitecodec/TranscodeProgress.percent.<get-percent>|<get-percent>(){}[0]
+
+    final fun component1(): kotlin/Long // io.github.yuroyami.kitecodec/TranscodeProgress.component1|component1(){}[0]
+    final fun component2(): kotlin/Long // io.github.yuroyami.kitecodec/TranscodeProgress.component2|component2(){}[0]
+    final fun component3(): kotlin/Double? // io.github.yuroyami.kitecodec/TranscodeProgress.component3|component3(){}[0]
+    final fun copy(kotlin/Long = ..., kotlin/Long = ..., kotlin/Double? = ...): io.github.yuroyami.kitecodec/TranscodeProgress // io.github.yuroyami.kitecodec/TranscodeProgress.copy|copy(kotlin.Long;kotlin.Long;kotlin.Double?){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec/TranscodeProgress.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec/TranscodeProgress.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec/TranscodeProgress.toString|toString(){}[0]
+}
+
+final class io.github.yuroyami.kitecodec/Versions { // io.github.yuroyami.kitecodec/Versions|null[0]
+    constructor <init>(kotlin/String, kotlin/String, kotlin/String, kotlin/String, kotlin/String, kotlin/String) // io.github.yuroyami.kitecodec/Versions.<init>|<init>(kotlin.String;kotlin.String;kotlin.String;kotlin.String;kotlin.String;kotlin.String){}[0]
+
+    final val avcodec // io.github.yuroyami.kitecodec/Versions.avcodec|{}avcodec[0]
+        final fun <get-avcodec>(): kotlin/String // io.github.yuroyami.kitecodec/Versions.avcodec.<get-avcodec>|<get-avcodec>(){}[0]
+    final val avfilter // io.github.yuroyami.kitecodec/Versions.avfilter|{}avfilter[0]
+        final fun <get-avfilter>(): kotlin/String // io.github.yuroyami.kitecodec/Versions.avfilter.<get-avfilter>|<get-avfilter>(){}[0]
+    final val avformat // io.github.yuroyami.kitecodec/Versions.avformat|{}avformat[0]
+        final fun <get-avformat>(): kotlin/String // io.github.yuroyami.kitecodec/Versions.avformat.<get-avformat>|<get-avformat>(){}[0]
+    final val avutil // io.github.yuroyami.kitecodec/Versions.avutil|{}avutil[0]
+        final fun <get-avutil>(): kotlin/String // io.github.yuroyami.kitecodec/Versions.avutil.<get-avutil>|<get-avutil>(){}[0]
+    final val swresample // io.github.yuroyami.kitecodec/Versions.swresample|{}swresample[0]
+        final fun <get-swresample>(): kotlin/String // io.github.yuroyami.kitecodec/Versions.swresample.<get-swresample>|<get-swresample>(){}[0]
+    final val swscale // io.github.yuroyami.kitecodec/Versions.swscale|{}swscale[0]
+        final fun <get-swscale>(): kotlin/String // io.github.yuroyami.kitecodec/Versions.swscale.<get-swscale>|<get-swscale>(){}[0]
+
+    final fun component1(): kotlin/String // io.github.yuroyami.kitecodec/Versions.component1|component1(){}[0]
+    final fun component2(): kotlin/String // io.github.yuroyami.kitecodec/Versions.component2|component2(){}[0]
+    final fun component3(): kotlin/String // io.github.yuroyami.kitecodec/Versions.component3|component3(){}[0]
+    final fun component4(): kotlin/String // io.github.yuroyami.kitecodec/Versions.component4|component4(){}[0]
+    final fun component5(): kotlin/String // io.github.yuroyami.kitecodec/Versions.component5|component5(){}[0]
+    final fun component6(): kotlin/String // io.github.yuroyami.kitecodec/Versions.component6|component6(){}[0]
+    final fun copy(kotlin/String = ..., kotlin/String = ..., kotlin/String = ..., kotlin/String = ..., kotlin/String = ..., kotlin/String = ...): io.github.yuroyami.kitecodec/Versions // io.github.yuroyami.kitecodec/Versions.copy|copy(kotlin.String;kotlin.String;kotlin.String;kotlin.String;kotlin.String;kotlin.String){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec/Versions.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec/Versions.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec/Versions.toString|toString(){}[0]
+}
+
+final class io.github.yuroyami.kitecodec/VideoEncoder : kotlin/AutoCloseable { // io.github.yuroyami.kitecodec/VideoEncoder|null[0]
+    final fun close() // io.github.yuroyami.kitecodec/VideoEncoder.close|close(){}[0]
+    final suspend fun drive(kotlinx.coroutines.flow/Flow<io.github.yuroyami.kitecodec/Frame>, kotlin/Function1<kotlin/Long, kotlin/Unit>? = ..., kotlin/Int = ...) // io.github.yuroyami.kitecodec/VideoEncoder.drive|drive(kotlinx.coroutines.flow.Flow<io.github.yuroyami.kitecodec.Frame>;kotlin.Function1<kotlin.Long,kotlin.Unit>?;kotlin.Int){}[0]
+}
+
+final class io.github.yuroyami.kitecodec/VideoEncoderSpec { // io.github.yuroyami.kitecodec/VideoEncoderSpec|null[0]
+    constructor <init>(io.github.yuroyami.kitecodec/CodecId, kotlin/Int, kotlin/Int, io.github.yuroyami.kitecodec/PixelFormat = ..., io.github.yuroyami.kitecodec/Rational, kotlin/Long = ..., kotlin/Int = ..., kotlin.collections/Map<kotlin/String, kotlin/String> = ...) // io.github.yuroyami.kitecodec/VideoEncoderSpec.<init>|<init>(io.github.yuroyami.kitecodec.CodecId;kotlin.Int;kotlin.Int;io.github.yuroyami.kitecodec.PixelFormat;io.github.yuroyami.kitecodec.Rational;kotlin.Long;kotlin.Int;kotlin.collections.Map<kotlin.String,kotlin.String>){}[0]
+
+    final val bitrateBps // io.github.yuroyami.kitecodec/VideoEncoderSpec.bitrateBps|{}bitrateBps[0]
+        final fun <get-bitrateBps>(): kotlin/Long // io.github.yuroyami.kitecodec/VideoEncoderSpec.bitrateBps.<get-bitrateBps>|<get-bitrateBps>(){}[0]
+    final val codec // io.github.yuroyami.kitecodec/VideoEncoderSpec.codec|{}codec[0]
+        final fun <get-codec>(): io.github.yuroyami.kitecodec/CodecId // io.github.yuroyami.kitecodec/VideoEncoderSpec.codec.<get-codec>|<get-codec>(){}[0]
+    final val frameRate // io.github.yuroyami.kitecodec/VideoEncoderSpec.frameRate|{}frameRate[0]
+        final fun <get-frameRate>(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/VideoEncoderSpec.frameRate.<get-frameRate>|<get-frameRate>(){}[0]
+    final val height // io.github.yuroyami.kitecodec/VideoEncoderSpec.height|{}height[0]
+        final fun <get-height>(): kotlin/Int // io.github.yuroyami.kitecodec/VideoEncoderSpec.height.<get-height>|<get-height>(){}[0]
+    final val keyframeIntervalFrames // io.github.yuroyami.kitecodec/VideoEncoderSpec.keyframeIntervalFrames|{}keyframeIntervalFrames[0]
+        final fun <get-keyframeIntervalFrames>(): kotlin/Int // io.github.yuroyami.kitecodec/VideoEncoderSpec.keyframeIntervalFrames.<get-keyframeIntervalFrames>|<get-keyframeIntervalFrames>(){}[0]
+    final val options // io.github.yuroyami.kitecodec/VideoEncoderSpec.options|{}options[0]
+        final fun <get-options>(): kotlin.collections/Map<kotlin/String, kotlin/String> // io.github.yuroyami.kitecodec/VideoEncoderSpec.options.<get-options>|<get-options>(){}[0]
+    final val pixelFormat // io.github.yuroyami.kitecodec/VideoEncoderSpec.pixelFormat|{}pixelFormat[0]
+        final fun <get-pixelFormat>(): io.github.yuroyami.kitecodec/PixelFormat // io.github.yuroyami.kitecodec/VideoEncoderSpec.pixelFormat.<get-pixelFormat>|<get-pixelFormat>(){}[0]
+    final val width // io.github.yuroyami.kitecodec/VideoEncoderSpec.width|{}width[0]
+        final fun <get-width>(): kotlin/Int // io.github.yuroyami.kitecodec/VideoEncoderSpec.width.<get-width>|<get-width>(){}[0]
+
+    final fun component1(): io.github.yuroyami.kitecodec/CodecId // io.github.yuroyami.kitecodec/VideoEncoderSpec.component1|component1(){}[0]
+    final fun component2(): kotlin/Int // io.github.yuroyami.kitecodec/VideoEncoderSpec.component2|component2(){}[0]
+    final fun component3(): kotlin/Int // io.github.yuroyami.kitecodec/VideoEncoderSpec.component3|component3(){}[0]
+    final fun component4(): io.github.yuroyami.kitecodec/PixelFormat // io.github.yuroyami.kitecodec/VideoEncoderSpec.component4|component4(){}[0]
+    final fun component5(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/VideoEncoderSpec.component5|component5(){}[0]
+    final fun component6(): kotlin/Long // io.github.yuroyami.kitecodec/VideoEncoderSpec.component6|component6(){}[0]
+    final fun component7(): kotlin/Int // io.github.yuroyami.kitecodec/VideoEncoderSpec.component7|component7(){}[0]
+    final fun component8(): kotlin.collections/Map<kotlin/String, kotlin/String> // io.github.yuroyami.kitecodec/VideoEncoderSpec.component8|component8(){}[0]
+    final fun copy(io.github.yuroyami.kitecodec/CodecId = ..., kotlin/Int = ..., kotlin/Int = ..., io.github.yuroyami.kitecodec/PixelFormat = ..., io.github.yuroyami.kitecodec/Rational = ..., kotlin/Long = ..., kotlin/Int = ..., kotlin.collections/Map<kotlin/String, kotlin/String> = ...): io.github.yuroyami.kitecodec/VideoEncoderSpec // io.github.yuroyami.kitecodec/VideoEncoderSpec.copy|copy(io.github.yuroyami.kitecodec.CodecId;kotlin.Int;kotlin.Int;io.github.yuroyami.kitecodec.PixelFormat;io.github.yuroyami.kitecodec.Rational;kotlin.Long;kotlin.Int;kotlin.collections.Map<kotlin.String,kotlin.String>){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec/VideoEncoderSpec.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec/VideoEncoderSpec.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec/VideoEncoderSpec.toString|toString(){}[0]
+}
+
+final class io.github.yuroyami.kitecodec/VideoInput { // io.github.yuroyami.kitecodec/VideoInput|null[0]
+    constructor <init>(kotlin/Int, kotlin/Int, io.github.yuroyami.kitecodec/PixelFormat, io.github.yuroyami.kitecodec/Rational, io.github.yuroyami.kitecodec/Rational, io.github.yuroyami.kitecodec/Rational = ...) // io.github.yuroyami.kitecodec/VideoInput.<init>|<init>(kotlin.Int;kotlin.Int;io.github.yuroyami.kitecodec.PixelFormat;io.github.yuroyami.kitecodec.Rational;io.github.yuroyami.kitecodec.Rational;io.github.yuroyami.kitecodec.Rational){}[0]
+
+    final val frameRate // io.github.yuroyami.kitecodec/VideoInput.frameRate|{}frameRate[0]
+        final fun <get-frameRate>(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/VideoInput.frameRate.<get-frameRate>|<get-frameRate>(){}[0]
+    final val height // io.github.yuroyami.kitecodec/VideoInput.height|{}height[0]
+        final fun <get-height>(): kotlin/Int // io.github.yuroyami.kitecodec/VideoInput.height.<get-height>|<get-height>(){}[0]
+    final val pixelFormat // io.github.yuroyami.kitecodec/VideoInput.pixelFormat|{}pixelFormat[0]
+        final fun <get-pixelFormat>(): io.github.yuroyami.kitecodec/PixelFormat // io.github.yuroyami.kitecodec/VideoInput.pixelFormat.<get-pixelFormat>|<get-pixelFormat>(){}[0]
+    final val sampleAspectRatio // io.github.yuroyami.kitecodec/VideoInput.sampleAspectRatio|{}sampleAspectRatio[0]
+        final fun <get-sampleAspectRatio>(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/VideoInput.sampleAspectRatio.<get-sampleAspectRatio>|<get-sampleAspectRatio>(){}[0]
+    final val timeBase // io.github.yuroyami.kitecodec/VideoInput.timeBase|{}timeBase[0]
+        final fun <get-timeBase>(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/VideoInput.timeBase.<get-timeBase>|<get-timeBase>(){}[0]
+    final val width // io.github.yuroyami.kitecodec/VideoInput.width|{}width[0]
+        final fun <get-width>(): kotlin/Int // io.github.yuroyami.kitecodec/VideoInput.width.<get-width>|<get-width>(){}[0]
+
+    final fun component1(): kotlin/Int // io.github.yuroyami.kitecodec/VideoInput.component1|component1(){}[0]
+    final fun component2(): kotlin/Int // io.github.yuroyami.kitecodec/VideoInput.component2|component2(){}[0]
+    final fun component3(): io.github.yuroyami.kitecodec/PixelFormat // io.github.yuroyami.kitecodec/VideoInput.component3|component3(){}[0]
+    final fun component4(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/VideoInput.component4|component4(){}[0]
+    final fun component5(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/VideoInput.component5|component5(){}[0]
+    final fun component6(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/VideoInput.component6|component6(){}[0]
+    final fun copy(kotlin/Int = ..., kotlin/Int = ..., io.github.yuroyami.kitecodec/PixelFormat = ..., io.github.yuroyami.kitecodec/Rational = ..., io.github.yuroyami.kitecodec/Rational = ..., io.github.yuroyami.kitecodec/Rational = ...): io.github.yuroyami.kitecodec/VideoInput // io.github.yuroyami.kitecodec/VideoInput.copy|copy(kotlin.Int;kotlin.Int;io.github.yuroyami.kitecodec.PixelFormat;io.github.yuroyami.kitecodec.Rational;io.github.yuroyami.kitecodec.Rational;io.github.yuroyami.kitecodec.Rational){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec/VideoInput.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec/VideoInput.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec/VideoInput.toString|toString(){}[0]
+}
+
+final class io.github.yuroyami.kitecodec/VideoStreamInfo { // io.github.yuroyami.kitecodec/VideoStreamInfo|null[0]
+    constructor <init>(kotlin/Int, kotlin/Int, io.github.yuroyami.kitecodec/PixelFormat, io.github.yuroyami.kitecodec/Rational, io.github.yuroyami.kitecodec/Rational) // io.github.yuroyami.kitecodec/VideoStreamInfo.<init>|<init>(kotlin.Int;kotlin.Int;io.github.yuroyami.kitecodec.PixelFormat;io.github.yuroyami.kitecodec.Rational;io.github.yuroyami.kitecodec.Rational){}[0]
+
+    final val frameRate // io.github.yuroyami.kitecodec/VideoStreamInfo.frameRate|{}frameRate[0]
+        final fun <get-frameRate>(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/VideoStreamInfo.frameRate.<get-frameRate>|<get-frameRate>(){}[0]
+    final val height // io.github.yuroyami.kitecodec/VideoStreamInfo.height|{}height[0]
+        final fun <get-height>(): kotlin/Int // io.github.yuroyami.kitecodec/VideoStreamInfo.height.<get-height>|<get-height>(){}[0]
+    final val pixelFormat // io.github.yuroyami.kitecodec/VideoStreamInfo.pixelFormat|{}pixelFormat[0]
+        final fun <get-pixelFormat>(): io.github.yuroyami.kitecodec/PixelFormat // io.github.yuroyami.kitecodec/VideoStreamInfo.pixelFormat.<get-pixelFormat>|<get-pixelFormat>(){}[0]
+    final val sampleAspectRatio // io.github.yuroyami.kitecodec/VideoStreamInfo.sampleAspectRatio|{}sampleAspectRatio[0]
+        final fun <get-sampleAspectRatio>(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/VideoStreamInfo.sampleAspectRatio.<get-sampleAspectRatio>|<get-sampleAspectRatio>(){}[0]
+    final val width // io.github.yuroyami.kitecodec/VideoStreamInfo.width|{}width[0]
+        final fun <get-width>(): kotlin/Int // io.github.yuroyami.kitecodec/VideoStreamInfo.width.<get-width>|<get-width>(){}[0]
+
+    final fun component1(): kotlin/Int // io.github.yuroyami.kitecodec/VideoStreamInfo.component1|component1(){}[0]
+    final fun component2(): kotlin/Int // io.github.yuroyami.kitecodec/VideoStreamInfo.component2|component2(){}[0]
+    final fun component3(): io.github.yuroyami.kitecodec/PixelFormat // io.github.yuroyami.kitecodec/VideoStreamInfo.component3|component3(){}[0]
+    final fun component4(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/VideoStreamInfo.component4|component4(){}[0]
+    final fun component5(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/VideoStreamInfo.component5|component5(){}[0]
+    final fun copy(kotlin/Int = ..., kotlin/Int = ..., io.github.yuroyami.kitecodec/PixelFormat = ..., io.github.yuroyami.kitecodec/Rational = ..., io.github.yuroyami.kitecodec/Rational = ...): io.github.yuroyami.kitecodec/VideoStreamInfo // io.github.yuroyami.kitecodec/VideoStreamInfo.copy|copy(kotlin.Int;kotlin.Int;io.github.yuroyami.kitecodec.PixelFormat;io.github.yuroyami.kitecodec.Rational;io.github.yuroyami.kitecodec.Rational){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec/VideoStreamInfo.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec/VideoStreamInfo.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec/VideoStreamInfo.toString|toString(){}[0]
+}
+
+final value class io.github.yuroyami.kitecodec/CodecId { // io.github.yuroyami.kitecodec/CodecId|null[0]
+    constructor <init>(kotlin/String) // io.github.yuroyami.kitecodec/CodecId.<init>|<init>(kotlin.String){}[0]
+
+    final val name // io.github.yuroyami.kitecodec/CodecId.name|{}name[0]
+        final fun <get-name>(): kotlin/String // io.github.yuroyami.kitecodec/CodecId.name.<get-name>|<get-name>(){}[0]
+
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec/CodecId.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec/CodecId.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec/CodecId.toString|toString(){}[0]
+
+    final object Companion { // io.github.yuroyami.kitecodec/CodecId.Companion|null[0]
+        final val Aac // io.github.yuroyami.kitecodec/CodecId.Companion.Aac|{}Aac[0]
+            final fun <get-Aac>(): io.github.yuroyami.kitecodec/CodecId // io.github.yuroyami.kitecodec/CodecId.Companion.Aac.<get-Aac>|<get-Aac>(){}[0]
+        final val Av1 // io.github.yuroyami.kitecodec/CodecId.Companion.Av1|{}Av1[0]
+            final fun <get-Av1>(): io.github.yuroyami.kitecodec/CodecId // io.github.yuroyami.kitecodec/CodecId.Companion.Av1.<get-Av1>|<get-Av1>(){}[0]
+        final val Flac // io.github.yuroyami.kitecodec/CodecId.Companion.Flac|{}Flac[0]
+            final fun <get-Flac>(): io.github.yuroyami.kitecodec/CodecId // io.github.yuroyami.kitecodec/CodecId.Companion.Flac.<get-Flac>|<get-Flac>(){}[0]
+        final val H264 // io.github.yuroyami.kitecodec/CodecId.Companion.H264|{}H264[0]
+            final fun <get-H264>(): io.github.yuroyami.kitecodec/CodecId // io.github.yuroyami.kitecodec/CodecId.Companion.H264.<get-H264>|<get-H264>(){}[0]
+        final val H264MediaCodec // io.github.yuroyami.kitecodec/CodecId.Companion.H264MediaCodec|{}H264MediaCodec[0]
+            final fun <get-H264MediaCodec>(): io.github.yuroyami.kitecodec/CodecId // io.github.yuroyami.kitecodec/CodecId.Companion.H264MediaCodec.<get-H264MediaCodec>|<get-H264MediaCodec>(){}[0]
+        final val H264VideoToolbox // io.github.yuroyami.kitecodec/CodecId.Companion.H264VideoToolbox|{}H264VideoToolbox[0]
+            final fun <get-H264VideoToolbox>(): io.github.yuroyami.kitecodec/CodecId // io.github.yuroyami.kitecodec/CodecId.Companion.H264VideoToolbox.<get-H264VideoToolbox>|<get-H264VideoToolbox>(){}[0]
+        final val Hevc // io.github.yuroyami.kitecodec/CodecId.Companion.Hevc|{}Hevc[0]
+            final fun <get-Hevc>(): io.github.yuroyami.kitecodec/CodecId // io.github.yuroyami.kitecodec/CodecId.Companion.Hevc.<get-Hevc>|<get-Hevc>(){}[0]
+        final val HevcMediaCodec // io.github.yuroyami.kitecodec/CodecId.Companion.HevcMediaCodec|{}HevcMediaCodec[0]
+            final fun <get-HevcMediaCodec>(): io.github.yuroyami.kitecodec/CodecId // io.github.yuroyami.kitecodec/CodecId.Companion.HevcMediaCodec.<get-HevcMediaCodec>|<get-HevcMediaCodec>(){}[0]
+        final val HevcVideoToolbox // io.github.yuroyami.kitecodec/CodecId.Companion.HevcVideoToolbox|{}HevcVideoToolbox[0]
+            final fun <get-HevcVideoToolbox>(): io.github.yuroyami.kitecodec/CodecId // io.github.yuroyami.kitecodec/CodecId.Companion.HevcVideoToolbox.<get-HevcVideoToolbox>|<get-HevcVideoToolbox>(){}[0]
+        final val LibMp3 // io.github.yuroyami.kitecodec/CodecId.Companion.LibMp3|{}LibMp3[0]
+            final fun <get-LibMp3>(): io.github.yuroyami.kitecodec/CodecId // io.github.yuroyami.kitecodec/CodecId.Companion.LibMp3.<get-LibMp3>|<get-LibMp3>(){}[0]
+        final val LibOpus // io.github.yuroyami.kitecodec/CodecId.Companion.LibOpus|{}LibOpus[0]
+            final fun <get-LibOpus>(): io.github.yuroyami.kitecodec/CodecId // io.github.yuroyami.kitecodec/CodecId.Companion.LibOpus.<get-LibOpus>|<get-LibOpus>(){}[0]
+        final val Libx264 // io.github.yuroyami.kitecodec/CodecId.Companion.Libx264|{}Libx264[0]
+            final fun <get-Libx264>(): io.github.yuroyami.kitecodec/CodecId // io.github.yuroyami.kitecodec/CodecId.Companion.Libx264.<get-Libx264>|<get-Libx264>(){}[0]
+        final val Libx265 // io.github.yuroyami.kitecodec/CodecId.Companion.Libx265|{}Libx265[0]
+            final fun <get-Libx265>(): io.github.yuroyami.kitecodec/CodecId // io.github.yuroyami.kitecodec/CodecId.Companion.Libx265.<get-Libx265>|<get-Libx265>(){}[0]
+        final val Mjpeg // io.github.yuroyami.kitecodec/CodecId.Companion.Mjpeg|{}Mjpeg[0]
+            final fun <get-Mjpeg>(): io.github.yuroyami.kitecodec/CodecId // io.github.yuroyami.kitecodec/CodecId.Companion.Mjpeg.<get-Mjpeg>|<get-Mjpeg>(){}[0]
+        final val Mp3 // io.github.yuroyami.kitecodec/CodecId.Companion.Mp3|{}Mp3[0]
+            final fun <get-Mp3>(): io.github.yuroyami.kitecodec/CodecId // io.github.yuroyami.kitecodec/CodecId.Companion.Mp3.<get-Mp3>|<get-Mp3>(){}[0]
+        final val Opus // io.github.yuroyami.kitecodec/CodecId.Companion.Opus|{}Opus[0]
+            final fun <get-Opus>(): io.github.yuroyami.kitecodec/CodecId // io.github.yuroyami.kitecodec/CodecId.Companion.Opus.<get-Opus>|<get-Opus>(){}[0]
+        final val PcmS16 // io.github.yuroyami.kitecodec/CodecId.Companion.PcmS16|{}PcmS16[0]
+            final fun <get-PcmS16>(): io.github.yuroyami.kitecodec/CodecId // io.github.yuroyami.kitecodec/CodecId.Companion.PcmS16.<get-PcmS16>|<get-PcmS16>(){}[0]
+        final val Png // io.github.yuroyami.kitecodec/CodecId.Companion.Png|{}Png[0]
+            final fun <get-Png>(): io.github.yuroyami.kitecodec/CodecId // io.github.yuroyami.kitecodec/CodecId.Companion.Png.<get-Png>|<get-Png>(){}[0]
+        final val Vorbis // io.github.yuroyami.kitecodec/CodecId.Companion.Vorbis|{}Vorbis[0]
+            final fun <get-Vorbis>(): io.github.yuroyami.kitecodec/CodecId // io.github.yuroyami.kitecodec/CodecId.Companion.Vorbis.<get-Vorbis>|<get-Vorbis>(){}[0]
+        final val Vp8 // io.github.yuroyami.kitecodec/CodecId.Companion.Vp8|{}Vp8[0]
+            final fun <get-Vp8>(): io.github.yuroyami.kitecodec/CodecId // io.github.yuroyami.kitecodec/CodecId.Companion.Vp8.<get-Vp8>|<get-Vp8>(){}[0]
+        final val Vp9 // io.github.yuroyami.kitecodec/CodecId.Companion.Vp9|{}Vp9[0]
+            final fun <get-Vp9>(): io.github.yuroyami.kitecodec/CodecId // io.github.yuroyami.kitecodec/CodecId.Companion.Vp9.<get-Vp9>|<get-Vp9>(){}[0]
+    }
+}
+
+final value class io.github.yuroyami.kitecodec/PixelFormat { // io.github.yuroyami.kitecodec/PixelFormat|null[0]
+    constructor <init>(kotlin/String) // io.github.yuroyami.kitecodec/PixelFormat.<init>|<init>(kotlin.String){}[0]
+
+    final val name // io.github.yuroyami.kitecodec/PixelFormat.name|{}name[0]
+        final fun <get-name>(): kotlin/String // io.github.yuroyami.kitecodec/PixelFormat.name.<get-name>|<get-name>(){}[0]
+
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec/PixelFormat.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec/PixelFormat.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec/PixelFormat.toString|toString(){}[0]
+
+    final object Companion { // io.github.yuroyami.kitecodec/PixelFormat.Companion|null[0]
+        final val Bgra // io.github.yuroyami.kitecodec/PixelFormat.Companion.Bgra|{}Bgra[0]
+            final fun <get-Bgra>(): io.github.yuroyami.kitecodec/PixelFormat // io.github.yuroyami.kitecodec/PixelFormat.Companion.Bgra.<get-Bgra>|<get-Bgra>(){}[0]
+        final val Gray8 // io.github.yuroyami.kitecodec/PixelFormat.Companion.Gray8|{}Gray8[0]
+            final fun <get-Gray8>(): io.github.yuroyami.kitecodec/PixelFormat // io.github.yuroyami.kitecodec/PixelFormat.Companion.Gray8.<get-Gray8>|<get-Gray8>(){}[0]
+        final val None // io.github.yuroyami.kitecodec/PixelFormat.Companion.None|{}None[0]
+            final fun <get-None>(): io.github.yuroyami.kitecodec/PixelFormat // io.github.yuroyami.kitecodec/PixelFormat.Companion.None.<get-None>|<get-None>(){}[0]
+        final val Nv12 // io.github.yuroyami.kitecodec/PixelFormat.Companion.Nv12|{}Nv12[0]
+            final fun <get-Nv12>(): io.github.yuroyami.kitecodec/PixelFormat // io.github.yuroyami.kitecodec/PixelFormat.Companion.Nv12.<get-Nv12>|<get-Nv12>(){}[0]
+        final val P010le // io.github.yuroyami.kitecodec/PixelFormat.Companion.P010le|{}P010le[0]
+            final fun <get-P010le>(): io.github.yuroyami.kitecodec/PixelFormat // io.github.yuroyami.kitecodec/PixelFormat.Companion.P010le.<get-P010le>|<get-P010le>(){}[0]
+        final val Rgb24 // io.github.yuroyami.kitecodec/PixelFormat.Companion.Rgb24|{}Rgb24[0]
+            final fun <get-Rgb24>(): io.github.yuroyami.kitecodec/PixelFormat // io.github.yuroyami.kitecodec/PixelFormat.Companion.Rgb24.<get-Rgb24>|<get-Rgb24>(){}[0]
+        final val Rgba // io.github.yuroyami.kitecodec/PixelFormat.Companion.Rgba|{}Rgba[0]
+            final fun <get-Rgba>(): io.github.yuroyami.kitecodec/PixelFormat // io.github.yuroyami.kitecodec/PixelFormat.Companion.Rgba.<get-Rgba>|<get-Rgba>(){}[0]
+        final val Yuv420p // io.github.yuroyami.kitecodec/PixelFormat.Companion.Yuv420p|{}Yuv420p[0]
+            final fun <get-Yuv420p>(): io.github.yuroyami.kitecodec/PixelFormat // io.github.yuroyami.kitecodec/PixelFormat.Companion.Yuv420p.<get-Yuv420p>|<get-Yuv420p>(){}[0]
+        final val Yuv420p10le // io.github.yuroyami.kitecodec/PixelFormat.Companion.Yuv420p10le|{}Yuv420p10le[0]
+            final fun <get-Yuv420p10le>(): io.github.yuroyami.kitecodec/PixelFormat // io.github.yuroyami.kitecodec/PixelFormat.Companion.Yuv420p10le.<get-Yuv420p10le>|<get-Yuv420p10le>(){}[0]
+        final val Yuv422p // io.github.yuroyami.kitecodec/PixelFormat.Companion.Yuv422p|{}Yuv422p[0]
+            final fun <get-Yuv422p>(): io.github.yuroyami.kitecodec/PixelFormat // io.github.yuroyami.kitecodec/PixelFormat.Companion.Yuv422p.<get-Yuv422p>|<get-Yuv422p>(){}[0]
+        final val Yuv422p10le // io.github.yuroyami.kitecodec/PixelFormat.Companion.Yuv422p10le|{}Yuv422p10le[0]
+            final fun <get-Yuv422p10le>(): io.github.yuroyami.kitecodec/PixelFormat // io.github.yuroyami.kitecodec/PixelFormat.Companion.Yuv422p10le.<get-Yuv422p10le>|<get-Yuv422p10le>(){}[0]
+        final val Yuv444p // io.github.yuroyami.kitecodec/PixelFormat.Companion.Yuv444p|{}Yuv444p[0]
+            final fun <get-Yuv444p>(): io.github.yuroyami.kitecodec/PixelFormat // io.github.yuroyami.kitecodec/PixelFormat.Companion.Yuv444p.<get-Yuv444p>|<get-Yuv444p>(){}[0]
+        final val Yuv444p10le // io.github.yuroyami.kitecodec/PixelFormat.Companion.Yuv444p10le|{}Yuv444p10le[0]
+            final fun <get-Yuv444p10le>(): io.github.yuroyami.kitecodec/PixelFormat // io.github.yuroyami.kitecodec/PixelFormat.Companion.Yuv444p10le.<get-Yuv444p10le>|<get-Yuv444p10le>(){}[0]
+    }
+}
+
+final value class io.github.yuroyami.kitecodec/SampleFormat { // io.github.yuroyami.kitecodec/SampleFormat|null[0]
+    constructor <init>(kotlin/String) // io.github.yuroyami.kitecodec/SampleFormat.<init>|<init>(kotlin.String){}[0]
+
+    final val isPlanar // io.github.yuroyami.kitecodec/SampleFormat.isPlanar|{}isPlanar[0]
+        final fun <get-isPlanar>(): kotlin/Boolean // io.github.yuroyami.kitecodec/SampleFormat.isPlanar.<get-isPlanar>|<get-isPlanar>(){}[0]
+    final val name // io.github.yuroyami.kitecodec/SampleFormat.name|{}name[0]
+        final fun <get-name>(): kotlin/String // io.github.yuroyami.kitecodec/SampleFormat.name.<get-name>|<get-name>(){}[0]
+
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec/SampleFormat.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec/SampleFormat.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec/SampleFormat.toString|toString(){}[0]
+
+    final object Companion { // io.github.yuroyami.kitecodec/SampleFormat.Companion|null[0]
+        final val Dbl // io.github.yuroyami.kitecodec/SampleFormat.Companion.Dbl|{}Dbl[0]
+            final fun <get-Dbl>(): io.github.yuroyami.kitecodec/SampleFormat // io.github.yuroyami.kitecodec/SampleFormat.Companion.Dbl.<get-Dbl>|<get-Dbl>(){}[0]
+        final val DblP // io.github.yuroyami.kitecodec/SampleFormat.Companion.DblP|{}DblP[0]
+            final fun <get-DblP>(): io.github.yuroyami.kitecodec/SampleFormat // io.github.yuroyami.kitecodec/SampleFormat.Companion.DblP.<get-DblP>|<get-DblP>(){}[0]
+        final val Flt // io.github.yuroyami.kitecodec/SampleFormat.Companion.Flt|{}Flt[0]
+            final fun <get-Flt>(): io.github.yuroyami.kitecodec/SampleFormat // io.github.yuroyami.kitecodec/SampleFormat.Companion.Flt.<get-Flt>|<get-Flt>(){}[0]
+        final val FltP // io.github.yuroyami.kitecodec/SampleFormat.Companion.FltP|{}FltP[0]
+            final fun <get-FltP>(): io.github.yuroyami.kitecodec/SampleFormat // io.github.yuroyami.kitecodec/SampleFormat.Companion.FltP.<get-FltP>|<get-FltP>(){}[0]
+        final val None // io.github.yuroyami.kitecodec/SampleFormat.Companion.None|{}None[0]
+            final fun <get-None>(): io.github.yuroyami.kitecodec/SampleFormat // io.github.yuroyami.kitecodec/SampleFormat.Companion.None.<get-None>|<get-None>(){}[0]
+        final val S16 // io.github.yuroyami.kitecodec/SampleFormat.Companion.S16|{}S16[0]
+            final fun <get-S16>(): io.github.yuroyami.kitecodec/SampleFormat // io.github.yuroyami.kitecodec/SampleFormat.Companion.S16.<get-S16>|<get-S16>(){}[0]
+        final val S16p // io.github.yuroyami.kitecodec/SampleFormat.Companion.S16p|{}S16p[0]
+            final fun <get-S16p>(): io.github.yuroyami.kitecodec/SampleFormat // io.github.yuroyami.kitecodec/SampleFormat.Companion.S16p.<get-S16p>|<get-S16p>(){}[0]
+        final val S32 // io.github.yuroyami.kitecodec/SampleFormat.Companion.S32|{}S32[0]
+            final fun <get-S32>(): io.github.yuroyami.kitecodec/SampleFormat // io.github.yuroyami.kitecodec/SampleFormat.Companion.S32.<get-S32>|<get-S32>(){}[0]
+        final val S32p // io.github.yuroyami.kitecodec/SampleFormat.Companion.S32p|{}S32p[0]
+            final fun <get-S32p>(): io.github.yuroyami.kitecodec/SampleFormat // io.github.yuroyami.kitecodec/SampleFormat.Companion.S32p.<get-S32p>|<get-S32p>(){}[0]
+        final val S64 // io.github.yuroyami.kitecodec/SampleFormat.Companion.S64|{}S64[0]
+            final fun <get-S64>(): io.github.yuroyami.kitecodec/SampleFormat // io.github.yuroyami.kitecodec/SampleFormat.Companion.S64.<get-S64>|<get-S64>(){}[0]
+        final val S64p // io.github.yuroyami.kitecodec/SampleFormat.Companion.S64p|{}S64p[0]
+            final fun <get-S64p>(): io.github.yuroyami.kitecodec/SampleFormat // io.github.yuroyami.kitecodec/SampleFormat.Companion.S64p.<get-S64p>|<get-S64p>(){}[0]
+        final val U8 // io.github.yuroyami.kitecodec/SampleFormat.Companion.U8|{}U8[0]
+            final fun <get-U8>(): io.github.yuroyami.kitecodec/SampleFormat // io.github.yuroyami.kitecodec/SampleFormat.Companion.U8.<get-U8>|<get-U8>(){}[0]
+        final val U8p // io.github.yuroyami.kitecodec/SampleFormat.Companion.U8p|{}U8p[0]
+            final fun <get-U8p>(): io.github.yuroyami.kitecodec/SampleFormat // io.github.yuroyami.kitecodec/SampleFormat.Companion.U8p.<get-U8p>|<get-U8p>(){}[0]
+    }
+}
+
+sealed class io.github.yuroyami.kitecodec/FFmpegError { // io.github.yuroyami.kitecodec/FFmpegError|null[0]
+    final val code // io.github.yuroyami.kitecodec/FFmpegError.code|{}code[0]
+        final fun <get-code>(): kotlin/Int // io.github.yuroyami.kitecodec/FFmpegError.code.<get-code>|<get-code>(){}[0]
+    final val message // io.github.yuroyami.kitecodec/FFmpegError.message|{}message[0]
+        final fun <get-message>(): kotlin/String // io.github.yuroyami.kitecodec/FFmpegError.message.<get-message>|<get-message>(){}[0]
+
+    open fun toString(): kotlin/String // io.github.yuroyami.kitecodec/FFmpegError.toString|toString(){}[0]
+
+    final class AvError : io.github.yuroyami.kitecodec/FFmpegError { // io.github.yuroyami.kitecodec/FFmpegError.AvError|null[0]
+        constructor <init>(kotlin/Int, kotlin/String) // io.github.yuroyami.kitecodec/FFmpegError.AvError.<init>|<init>(kotlin.Int;kotlin.String){}[0]
+    }
+
+    final class DecoderNotFound : io.github.yuroyami.kitecodec/FFmpegError { // io.github.yuroyami.kitecodec/FFmpegError.DecoderNotFound|null[0]
+        constructor <init>(kotlin/Int, kotlin/String) // io.github.yuroyami.kitecodec/FFmpegError.DecoderNotFound.<init>|<init>(kotlin.Int;kotlin.String){}[0]
+    }
+
+    final class DemuxerNotFound : io.github.yuroyami.kitecodec/FFmpegError { // io.github.yuroyami.kitecodec/FFmpegError.DemuxerNotFound|null[0]
+        constructor <init>(kotlin/Int, kotlin/String) // io.github.yuroyami.kitecodec/FFmpegError.DemuxerNotFound.<init>|<init>(kotlin.Int;kotlin.String){}[0]
+    }
+
+    final class EncoderNotFound : io.github.yuroyami.kitecodec/FFmpegError { // io.github.yuroyami.kitecodec/FFmpegError.EncoderNotFound|null[0]
+        constructor <init>(kotlin/Int, kotlin/String) // io.github.yuroyami.kitecodec/FFmpegError.EncoderNotFound.<init>|<init>(kotlin.Int;kotlin.String){}[0]
+    }
+
+    final class EndOfFile : io.github.yuroyami.kitecodec/FFmpegError { // io.github.yuroyami.kitecodec/FFmpegError.EndOfFile|null[0]
+        constructor <init>(kotlin/Int, kotlin/String) // io.github.yuroyami.kitecodec/FFmpegError.EndOfFile.<init>|<init>(kotlin.Int;kotlin.String){}[0]
+    }
+
+    final class FileNotFound : io.github.yuroyami.kitecodec/FFmpegError { // io.github.yuroyami.kitecodec/FFmpegError.FileNotFound|null[0]
+        constructor <init>(kotlin/Int, kotlin/String) // io.github.yuroyami.kitecodec/FFmpegError.FileNotFound.<init>|<init>(kotlin.Int;kotlin.String){}[0]
+    }
+
+    final class FilterNotFound : io.github.yuroyami.kitecodec/FFmpegError { // io.github.yuroyami.kitecodec/FFmpegError.FilterNotFound|null[0]
+        constructor <init>(kotlin/Int, kotlin/String) // io.github.yuroyami.kitecodec/FFmpegError.FilterNotFound.<init>|<init>(kotlin.Int;kotlin.String){}[0]
+    }
+
+    final class Internal : io.github.yuroyami.kitecodec/FFmpegError { // io.github.yuroyami.kitecodec/FFmpegError.Internal|null[0]
+        constructor <init>(kotlin/String) // io.github.yuroyami.kitecodec/FFmpegError.Internal.<init>|<init>(kotlin.String){}[0]
+    }
+
+    final class InvalidArgument : io.github.yuroyami.kitecodec/FFmpegError { // io.github.yuroyami.kitecodec/FFmpegError.InvalidArgument|null[0]
+        constructor <init>(kotlin/Int, kotlin/String) // io.github.yuroyami.kitecodec/FFmpegError.InvalidArgument.<init>|<init>(kotlin.Int;kotlin.String){}[0]
+    }
+
+    final class InvalidData : io.github.yuroyami.kitecodec/FFmpegError { // io.github.yuroyami.kitecodec/FFmpegError.InvalidData|null[0]
+        constructor <init>(kotlin/Int, kotlin/String) // io.github.yuroyami.kitecodec/FFmpegError.InvalidData.<init>|<init>(kotlin.Int;kotlin.String){}[0]
+    }
+
+    final class Io : io.github.yuroyami.kitecodec/FFmpegError { // io.github.yuroyami.kitecodec/FFmpegError.Io|null[0]
+        constructor <init>(kotlin/Int, kotlin/String) // io.github.yuroyami.kitecodec/FFmpegError.Io.<init>|<init>(kotlin.Int;kotlin.String){}[0]
+    }
+
+    final class MuxerNotFound : io.github.yuroyami.kitecodec/FFmpegError { // io.github.yuroyami.kitecodec/FFmpegError.MuxerNotFound|null[0]
+        constructor <init>(kotlin/Int, kotlin/String) // io.github.yuroyami.kitecodec/FFmpegError.MuxerNotFound.<init>|<init>(kotlin.Int;kotlin.String){}[0]
+    }
+
+    final class OptionNotFound : io.github.yuroyami.kitecodec/FFmpegError { // io.github.yuroyami.kitecodec/FFmpegError.OptionNotFound|null[0]
+        constructor <init>(kotlin/Int, kotlin/String) // io.github.yuroyami.kitecodec/FFmpegError.OptionNotFound.<init>|<init>(kotlin.Int;kotlin.String){}[0]
+    }
+
+    final class OutOfMemory : io.github.yuroyami.kitecodec/FFmpegError { // io.github.yuroyami.kitecodec/FFmpegError.OutOfMemory|null[0]
+        constructor <init>(kotlin/Int, kotlin/String) // io.github.yuroyami.kitecodec/FFmpegError.OutOfMemory.<init>|<init>(kotlin.Int;kotlin.String){}[0]
+    }
+
+    final class PermissionDenied : io.github.yuroyami.kitecodec/FFmpegError { // io.github.yuroyami.kitecodec/FFmpegError.PermissionDenied|null[0]
+        constructor <init>(kotlin/Int, kotlin/String) // io.github.yuroyami.kitecodec/FFmpegError.PermissionDenied.<init>|<init>(kotlin.Int;kotlin.String){}[0]
+    }
+
+    final class ProtocolNotFound : io.github.yuroyami.kitecodec/FFmpegError { // io.github.yuroyami.kitecodec/FFmpegError.ProtocolNotFound|null[0]
+        constructor <init>(kotlin/Int, kotlin/String) // io.github.yuroyami.kitecodec/FFmpegError.ProtocolNotFound.<init>|<init>(kotlin.Int;kotlin.String){}[0]
+    }
+
+    final class StreamNotFound : io.github.yuroyami.kitecodec/FFmpegError { // io.github.yuroyami.kitecodec/FFmpegError.StreamNotFound|null[0]
+        constructor <init>(kotlin/Int, kotlin/String) // io.github.yuroyami.kitecodec/FFmpegError.StreamNotFound.<init>|<init>(kotlin.Int;kotlin.String){}[0]
+    }
+
+    final class Unsupported : io.github.yuroyami.kitecodec/FFmpegError { // io.github.yuroyami.kitecodec/FFmpegError.Unsupported|null[0]
+        constructor <init>(kotlin/Int, kotlin/String) // io.github.yuroyami.kitecodec/FFmpegError.Unsupported.<init>|<init>(kotlin.Int;kotlin.String){}[0]
+    }
+
+    final object Companion // io.github.yuroyami.kitecodec/FFmpegError.Companion|null[0]
+}
+
+final object io.github.yuroyami.kitecodec/FFmpeg { // io.github.yuroyami.kitecodec/FFmpeg|null[0]
+    final val buildConfiguration // io.github.yuroyami.kitecodec/FFmpeg.buildConfiguration|{}buildConfiguration[0]
+        final fun <get-buildConfiguration>(): kotlin/String // io.github.yuroyami.kitecodec/FFmpeg.buildConfiguration.<get-buildConfiguration>|<get-buildConfiguration>(){}[0]
+    final val versions // io.github.yuroyami.kitecodec/FFmpeg.versions|{}versions[0]
+        final fun <get-versions>(): io.github.yuroyami.kitecodec/Versions // io.github.yuroyami.kitecodec/FFmpeg.versions.<get-versions>|<get-versions>(){}[0]
+
+    final fun hasDecoder(kotlin/String): kotlin/Boolean // io.github.yuroyami.kitecodec/FFmpeg.hasDecoder|hasDecoder(kotlin.String){}[0]
+    final fun hasEncoder(kotlin/String): kotlin/Boolean // io.github.yuroyami.kitecodec/FFmpeg.hasEncoder|hasEncoder(kotlin.String){}[0]
+    final fun hasFilter(kotlin/String): kotlin/Boolean // io.github.yuroyami.kitecodec/FFmpeg.hasFilter|hasFilter(kotlin.String){}[0]
+}
+
+final object io.github.yuroyami.kitecodec/Remuxer { // io.github.yuroyami.kitecodec/Remuxer|null[0]
+    final suspend fun remux(kotlin/String, kotlin/String, kotlin.collections/List<kotlin/Int>? = ..., kotlin/Long = ..., kotlin/Long = ..., kotlin.collections/Map<kotlin/String, kotlin/String> = ..., kotlin/Function1<kotlin/Long, kotlin/Unit>? = ...) // io.github.yuroyami.kitecodec/Remuxer.remux|remux(kotlin.String;kotlin.String;kotlin.collections.List<kotlin.Int>?;kotlin.Long;kotlin.Long;kotlin.collections.Map<kotlin.String,kotlin.String>;kotlin.Function1<kotlin.Long,kotlin.Unit>?){}[0]
+}
+
+final object io.github.yuroyami.kitecodec/Transcoder { // io.github.yuroyami.kitecodec/Transcoder|null[0]
+    final suspend fun transcode(kotlin/String, kotlin/String, io.github.yuroyami.kitecodec/VideoEncoderSpec? = ..., kotlin/String? = ..., kotlin/Boolean = ..., io.github.yuroyami.kitecodec/AudioEncoderSpec? = ..., kotlin/String? = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Long = ..., kotlin/Long = ..., kotlin.collections/Map<kotlin/String, kotlin/String> = ..., kotlin/Function1<io.github.yuroyami.kitecodec/TranscodeProgress, kotlin/Unit>? = ...) // io.github.yuroyami.kitecodec/Transcoder.transcode|transcode(kotlin.String;kotlin.String;io.github.yuroyami.kitecodec.VideoEncoderSpec?;kotlin.String?;kotlin.Boolean;io.github.yuroyami.kitecodec.AudioEncoderSpec?;kotlin.String?;kotlin.Boolean;kotlin.Boolean;kotlin.Long;kotlin.Long;kotlin.collections.Map<kotlin.String,kotlin.String>;kotlin.Function1<io.github.yuroyami.kitecodec.TranscodeProgress,kotlin.Unit>?){}[0]
+}
+
+final val io.github.yuroyami.kitecodec/durationMicros // io.github.yuroyami.kitecodec/durationMicros|@io.github.yuroyami.kitecodec.Frame{}durationMicros[0]
+    final fun (io.github.yuroyami.kitecodec/Frame).<get-durationMicros>(): kotlin/Long? // io.github.yuroyami.kitecodec/durationMicros.<get-durationMicros>|<get-durationMicros>@io.github.yuroyami.kitecodec.Frame(){}[0]
+final val io.github.yuroyami.kitecodec/hardwareSurface // io.github.yuroyami.kitecodec/hardwareSurface|@io.github.yuroyami.kitecodec.Frame{}hardwareSurface[0]
+    final fun (io.github.yuroyami.kitecodec/Frame).<get-hardwareSurface>(): kotlinx.cinterop/CPointer<out kotlinx.cinterop/CPointed>? // io.github.yuroyami.kitecodec/hardwareSurface.<get-hardwareSurface>|<get-hardwareSurface>@io.github.yuroyami.kitecodec.Frame(){}[0]
+final val io.github.yuroyami.kitecodec/ptsMicros // io.github.yuroyami.kitecodec/ptsMicros|@io.github.yuroyami.kitecodec.Frame{}ptsMicros[0]
+    final fun (io.github.yuroyami.kitecodec/Frame).<get-ptsMicros>(): kotlin/Long? // io.github.yuroyami.kitecodec/ptsMicros.<get-ptsMicros>|<get-ptsMicros>@io.github.yuroyami.kitecodec.Frame(){}[0]
+
+final fun <#A: kotlin/Any?> (io.github.yuroyami.kitecodec/Frame).io.github.yuroyami.kitecodec/withPlanes(kotlin/Function3<kotlin.collections/List<kotlinx.cinterop/CPointer<kotlinx.cinterop/UByteVarOf<kotlin/UByte>>>, kotlin.collections/List<kotlin/Int>, kotlin.collections/List<kotlin/Int>, #A>): #A // io.github.yuroyami.kitecodec/withPlanes|withPlanes@io.github.yuroyami.kitecodec.Frame(kotlin.Function3<kotlin.collections.List<kotlinx.cinterop.CPointer<kotlinx.cinterop.UByteVarOf<kotlin.UByte>>>,kotlin.collections.List<kotlin.Int>,kotlin.collections.List<kotlin.Int>,0:0>){0§<kotlin.Any?>}[0]

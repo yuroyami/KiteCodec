@@ -1,0 +1,36 @@
+# The Kotlin to FFmpeg coupling baseline of kitecodec-core.
+#
+# Why this file exists. B1 lifts the 176 `ffkmp_` helpers out of ffmpeg.def into a real, versioned
+# C library, but it deliberately defers the opaque handle migration: the Kotlin call sites, the
+# cinterop imports and the FFmpeg headers in the def all stay exactly where they are. A deferral
+# with no ratchet turns into a permanent half-state, and the coupling can grow while everyone
+# believes it is shrinking. So these four numbers are a ceiling, never a target.
+#
+# `./gradlew checkCinteropCoupling` recomputes all four over kitecodec-core/src and fails when any
+# one of them is HIGHER than the number recorded here. Lowering a number is a normal commit.
+# Raising one needs an Execution log entry saying why.
+#
+# Each number carries the command that produces it. The commands run from `kitecodec-core/src`.
+# CheckCinteropCouplingTask reimplements them so the check needs no shell, and it skips any
+# directory named `build` or `.claude`, because both hold gitignored scratch checkouts of these
+# same files and counting those would double every number.
+#
+# Measured on 2026-08-09 at KiteCodec cdb8ad2 with a clean tree, over 10 Kotlin files.
+
+# grep -rn '^import ffmpeg\.' --include='*.kt' . | wc -l
+cinterop_import_lines 253
+
+# grep -rn 'ffkmp_' --include='*.kt' . | grep -v ':import ' \
+#   | grep -o 'ffkmp_[A-Za-z0-9_]*' | wc -l
+ffkmp_call_sites 273
+
+# grep -rnoE '\b(av|avcodec|avdevice|avfilter|avformat|avutil|postproc|sws|swscale|swr|swresample)_[A-Za-z0-9_]*\(' \
+#   --include='*.kt' . | grep -v ':import ' | wc -l
+direct_libav_call_sites 21
+
+# The FFmpeg struct type names are derived from the def rather than hand listed: they are the
+# (AV|Sws|Swr)[A-Z][a-z]... tokens of nativeInterop/cinterop/ffmpeg.def that appear at least once
+# without the `enum` keyword in front of them, which is 18 names today. This count is how many of
+# those 18 are named as whole words anywhere in the Kotlin sources, comments included:
+#   for t in $(...the 18 names...); do grep -rqE "\b${t}\b" --include='*.kt' . && echo "$t"; done | wc -l
+ffmpeg_struct_types_named_in_kotlin 11

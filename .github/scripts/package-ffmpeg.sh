@@ -4,7 +4,7 @@
 #   package-ffmpeg.sh <ffmpeg-version> <license> <target-triple> [ffmpeg-source-dir]
 #
 # Zips the {include,lib} tree at native-libs/<license>/<triple> (NOT the parent dir, so the archive
-# root is {include,lib} — exactly what the kitecodec Gradle plugin's unzip expects) into
+# root is {include,lib}, exactly what the kitecodec Gradle plugin's unzip expects) into
 # dist/ffmpeg-<version>-<license>-<triple>.zip plus a matching .sha256.
 #
 # LGPL compliance: every zip additionally carries, at the archive root,
@@ -23,7 +23,7 @@ ffmpeg_src="${4:-vendor/ffmpeg}"
 src="native-libs/${license}/${triple}"
 
 # --- validate the build output --------------------------------------------------------------
-# All six libav* archives must be present — a partial `make install` must never ship.
+# All six libav* archives must be present: a partial `make install` must never ship.
 for lib in libavcodec libavformat libavutil libavfilter libswscale libswresample; do
   if [ ! -f "${src}/lib/${lib}.a" ]; then
     echo "::error::expected static lib ${src}/lib/${lib}.a but found none" >&2
@@ -32,10 +32,10 @@ for lib in libavcodec libavformat libavutil libavfilter libswscale libswresample
 done
 
 # Sanity-check the installed headers really are the requested FFmpeg version. Tag n8.0 reports
-# FFMPEG_VERSION as either "n8.0" (git describe) or "8.0[.x]" (release tarball) — accept both.
+# FFMPEG_VERSION as either "n8.0" (git describe) or "8.0[.x]" (release tarball), so accept both.
 ffversion_h="${src}/include/libavutil/ffversion.h"
 if [ ! -f "${ffversion_h}" ]; then
-  echo "::error::missing ${ffversion_h} — incomplete FFmpeg install?" >&2
+  echo "::error::missing ${ffversion_h}, incomplete FFmpeg install?" >&2
   exit 1
 fi
 if ! grep -q "FFMPEG_VERSION \"${version}" "${ffversion_h}" \
@@ -60,7 +60,7 @@ stage="$(mktemp -d)"
 trap 'rm -rf "${stage}"' EXIT
 for f in "${legal_files[@]}"; do
   if [ ! -f "${ffmpeg_src}/${f}" ]; then
-    echo "::error::license file ${ffmpeg_src}/${f} missing — cannot ship a compliant zip" >&2
+    echo "::error::license file ${ffmpeg_src}/${f} missing, cannot ship a compliant zip" >&2
     exit 1
   fi
   cp "${ffmpeg_src}/${f}" "${stage}/"
@@ -81,7 +81,7 @@ for log in "${ffmpeg_src}/build/${license}/${triple}/ffbuild/config.log" "${ffmp
 done
 
 cat > "${stage}/BUILD-INFO.txt" <<EOF
-FFmpeg build info — KiteCodec vendored binaries
+FFmpeg build info: KiteCodec vendored binaries
 ===============================================
 FFmpeg version:   ${version}
 Git commit:       ${commit}
@@ -99,17 +99,17 @@ EOF
 
 # --- desktop only: bundle third-party static libs + LINK-FLAGS.txt ---------------------------
 # The six libav* .a files reference symbols from the third-party encoder/text stack (svt-av1,
-# vpx, aom, opus, mp3lame, webp, freetype/harfbuzz/fribidi/ass — see BuildFFmpegTask's
+# vpx, aom, opus, mp3lame, webp, freetype/harfbuzz/fribidi/ass, see BuildFFmpegTask's
 # desktopBaseArgs/desktopGplArgs), which on the build runner come from brew/apt SHARED installs.
 # A consumer on a clean machine would hit undefined symbols at final link, so bundle the STATIC
 # (.a) versions of those libs into the zip's lib/ dir and write lib/LINK-FLAGS.txt (one linker
 # flag per line) describing the extra -l set that (triple, flavour) needs.
 #
-# KEEP IN SYNC with PrebuiltLinkFlags.kt in kitecodec-gradle-plugin — the plugin hardcodes the
+# KEEP IN SYNC with PrebuiltLinkFlags.kt in kitecodec-gradle-plugin. The plugin hardcodes the
 # same per-(platform, flavour) flag list because linkerOpts are fixed at configuration time,
 # before this zip (and its LINK-FLAGS.txt) has been fetched.
 #
-# HONESTY NOTE — this block is CI-verified, not locally verifiable:
+# HONESTY NOTE, this block is CI-verified, not locally verifiable:
 #   - Some brew formulas / apt -dev packages may ship only shared libs. The hard-fail below names
 #     every missing .a so a CI run surfaces the gap; the fix is building that dep statically from
 #     source in release-binaries.yml. Do NOT silently fall back to the shared lib.
@@ -179,7 +179,7 @@ case "${triple}" in
       exit 1
     fi
 
-    # One linker flag per line — the extra -l set a consumer's final link needs for this
+    # One linker flag per line, naming the extra -l set a consumer's final link needs for this
     # (triple, flavour). Dependents before dependencies (GNU ld resolves archives left→right).
     # -lz/-lbz2 (and -liconv on macOS) come from the OS/SDK; the C++ runtime backs x265.
     {

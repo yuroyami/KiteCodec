@@ -43,7 +43,7 @@ KC_VENCODER=$(printf '%s\n' "$KC_INFO" | sed -n 's/^KITECODEC_VIDEO_ENCODER=//p'
 echo "== kitecodec will encode video with $KC_VENCODER (ffprobe reports '$KC_VCODEC')"
 
 # The generator uses the system ffmpeg CLI, which is a separate install from the FFmpeg KiteCodec
-# links — pick a codec it actually has rather than assuming libx264 there either.
+# links, so pick a codec it actually has rather than assuming libx264 there either.
 if "$FFMPEG" -hide_banner -loglevel error -encoders 2>/dev/null | grep -qE '^ V[.A-Z]* +libx264 '; then
   GEN_VENC=libx264; GEN_VCODEC=h264
 else
@@ -101,7 +101,7 @@ audio_streams=$("$FFPROBE" -v error -select_streams a -show_entries stream=index
 echo "== kitecodec transcode with audio stream-copy (-acopy)"
 "$KEXE" transcode "$WORK/in.mp4" "$WORK/out_acopy.mp4" "scale=160:120,format=yuv420p" -acopy
 has_stream "$WORK/out_acopy.mp4" aac audio || { echo "FAIL: copied aac stream missing"; exit 1; }
-# Stream copy must preserve the source audio bit-exactly — compare extracted packets.
+# Stream copy must preserve the source audio bit-exactly, so compare the extracted packets.
 "$FFMPEG" -hide_banner -loglevel error -y -i "$WORK/in.mp4" -map 0:a:0 -c copy "$WORK/a_src.aac"
 "$FFMPEG" -hide_banner -loglevel error -y -i "$WORK/out_acopy.mp4" -map 0:a:0 -c copy "$WORK/a_copy.aac"
 cmp -s "$WORK/a_src.aac" "$WORK/a_copy.aac" || { echo "FAIL: -acopy audio differs from source (not bit-exact)"; exit 1; }
@@ -195,7 +195,7 @@ else
 fi
 
 # Regression: an unfiltered transcode must work. With no filter graph the encoder receives the
-# DECODER's frames, whose pixel format need not match the encoder's — the pipeline is responsible
+# DECODER's frames, whose pixel format need not match the encoder's, and the pipeline is responsible
 # for converting rather than failing with a bare EINVAL.
 echo "== kitecodec transcode with no filter chain (pixel-format reconciliation)"
 "$KEXE" transcode "$WORK/in.mp4" "$WORK/out_nofilter.mp4" "" -an

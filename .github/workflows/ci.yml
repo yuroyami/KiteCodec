@@ -2,7 +2,7 @@
 # that can get an FFmpeg toolchain in CI:
 #
 #   - macOS arm64  → Homebrew FFmpeg (8.x), dynamic linking
-#   - Linux x64    → Ubuntu apt FFmpeg (6.x) — also proves the lavc 6.x compat path in ffmpeg.def
+#   - Linux x64    → Ubuntu apt FFmpeg (6.x), which also proves the lavc 6.x compat path in ffmpeg.def
 #   - Windows x64  → BtbN mingw shared build dropped into native-libs/mingw-x64 (vendored path)
 #   - macOS arm64  → the VENDORED LGPL profile, built from source (see the vendored-lgpl job).
 #                    The three above all link a full GPL system FFmpeg; this one links what the
@@ -12,7 +12,7 @@
 # Android NDK targets get compile checks: each ABI builds its (self-contained, cached) LGPL
 # FFmpeg and compiles the klib.
 #
-# Not covered (yet): iOS targets need a cross-compiled vendored FFmpeg — the LGPL/GPL desktop
+# Not covered (yet): iOS targets need a cross-compiled vendored FFmpeg, and the LGPL/GPL desktop
 # profile links third-party encoder libs (svt-av1/vpx/aom/...) that brew only ships for macOS,
 # so :buildFFmpegForIos* cannot succeed on a stock runner and without it the ffmpeg cinterop
 # (and thus compileKotlinIos*) cannot configure; linuxArm64 needs an arm64 runner with K/N host
@@ -52,6 +52,19 @@ jobs:
             konan-macos-arm64-
       - name: Install FFmpeg
         run: brew install ffmpeg
+      # The two ratchets. apiCheck compares kitecodec-core's klib against the committed dump in
+      # kitecodec-core/api, so a public API change fails here instead of shipping.
+      # checkCinteropCoupling recounts the Kotlin-to-FFmpeg coupling and fails when it grew.
+      #
+      # -Pkitecodec.hostTargetsOnly=true is load bearing, not cosmetic: this runner has only brew
+      # FFmpeg, so no FFmpeg tree resolves for the other ten registered targets, their ffmpeg
+      # cinterop is skipped, and compileKotlin<Target> then fails on unresolved `ffmpeg` references.
+      # The committed dump is therefore a macosArm64 dump, and apiCheck has to be scoped the same
+      # way it was produced. Widening it to every target needs an FFmpeg tree per target in CI.
+      - name: Public API baseline + FFmpeg coupling ratchet
+        run: |
+          ./gradlew :kitecodec-core:apiCheck -Pkitecodec.hostTargetsOnly=true --stacktrace
+          ./gradlew checkCinteropCoupling --stacktrace
       - name: Unit + native tests
         run: ./gradlew :kitecodec-core:macosArm64Test --stacktrace
       - name: Link sample
@@ -111,15 +124,15 @@ jobs:
 
   # THE job that keeps the library honest about what it ships.
   #
-  # Every other desktop job links the runner's brew/apt FFmpeg — a full GPL build with every codec
+  # Every other desktop job links the runner's brew/apt FFmpeg, a full GPL build with every codec
   # compiled in. What users actually get is the vendored LGPL profile from BuildFFmpegTask: no
   # libx264, a deliberately small codec/muxer/protocol set. Testing only against the system build
   # means the test suite and the sample can drift into depending on codecs the shipped artifact
   # does not contain, and nothing notices. So: build the real profile from source, put it under
-  # native-libs/ (where FFmpegPaths prefers it over any system install), and run the whole suite —
-  # unit tests, native tests, and the full e2e — against that.
+  # native-libs/ (where FFmpegPaths prefers it over any system install), and run the whole suite
+  # against that: unit tests, native tests, and the full e2e.
   vendored-lgpl:
-    name: macOS arm64 (vendored LGPL FFmpeg — the shipped profile)
+    name: macOS arm64 (vendored LGPL FFmpeg, the shipped profile)
     runs-on: macos-latest
     timeout-minutes: 90
     steps:
@@ -137,7 +150,7 @@ jobs:
             konan-vendored-lgpl-
       # The desktop LGPL profile links these; several (lame above all) ship no pkg-config file,
       # which is why BuildFFmpegTask passes an explicit -I/-L for the Homebrew prefix.
-      # `ffmpeg` itself is for scripts/e2e.sh's CLI generation + ffprobe assertions only — KiteCodec
+      # `ffmpeg` itself is for scripts/e2e.sh's CLI generation + ffprobe assertions only. KiteCodec
       # links the vendored tree, not this one.
       - name: Install build deps + the ffmpeg CLI (for e2e assertions)
         run: brew install nasm svt-av1 aom libvpx opus lame webp freetype harfbuzz fribidi libass ffmpeg jq
@@ -196,7 +209,7 @@ jobs:
           key: konan-android-${{ hashFiles('gradle/libs.versions.toml') }}
           restore-keys: |
             konan-android-
-      # The NDK cross-compile of FFmpeg takes ~6 min per ABI — cache the resulting static libs
+      # The NDK cross-compile of FFmpeg takes ~6 min per ABI, so cache the resulting static libs
       # and only rebuild when the build-task definition (codec set, flags) changes.
       - uses: actions/cache@v4
         id: ffmpeg-android
@@ -223,7 +236,7 @@ jobs:
           if-no-files-found: ignore
 
   # Consumer end-to-end smoke: publishes kitecodec-core + the Gradle plugin to mavenLocal from
-  # this checkout (host desktop target only, via -Pkitecodec.hostTargetsOnly=true — see
+  # this checkout (host desktop target only, via -Pkitecodec.hostTargetsOnly=true, see
   # kitecodec-core/build.gradle.kts), generates a throwaway consumer project, and builds + RUNS a
   # real executable that calls into FFmpeg. This proves the full consumer chain end to end:
   # plugin resolution from mavenLocal, klib + bundled cinterop compile, final native link, and
@@ -327,7 +340,7 @@ jobs:
           import io.github.yuroyami.kitecodec.FFmpeg
 
           fun main() {
-              // Touches real FFmpeg symbols at runtime — proves the cinterop klib linked and loads.
+              // Touches real FFmpeg symbols at runtime, which proves the cinterop klib linked and loads.
               println("KITECODEC_SMOKE avutil=${FFmpeg.versions.avutil} avcodec=${FFmpeg.versions.avcodec}")
           }
           EOF
@@ -359,7 +372,7 @@ jobs:
       run:
         shell: bash
     env:
-      # Pinned BtbN autobuild (master branch build) — never `latest`, which is a moving tag.
+      # Pinned BtbN autobuild (master branch build), never `latest`, which is a moving tag.
       # To bump: pick a newer tag from https://github.com/BtbN/FFmpeg-Builds/releases, download
       # the win64-gpl-shared asset once, and update all three values together.
       BTBN_TAG: autobuild-2026-07-01-13-54
@@ -395,11 +408,11 @@ jobs:
               break
             } catch {
               if ($attempt -eq 3) { throw }
-              Write-Host "Download failed (attempt $attempt): $_ — retrying..."
+              Write-Host "Download failed (attempt $attempt): $_, retrying..."
               Start-Sleep -Seconds (10 * $attempt)
             }
           }
-      # The shared (DLL) mingw build carries include/ + lib/ import libraries — exactly the
+      # The shared (DLL) mingw build carries include/ + lib/ import libraries, exactly the
       # layout FFmpegPaths expects under native-libs/<license>/<target>/. It is the GPL variant
       # (libx264 for the e2e encode), so it lands under the `gpl` flavour and the Gradle calls
       # select it with -Pkitecodec.ffmpeg.license=gpl. CI never redistributes the binaries.

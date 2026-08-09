@@ -1,3 +1,5 @@
+import io.github.yuroyami.kitecodec.buildtools.CheckCinteropCouplingTask
+
 plugins {
     alias(libs.plugins.kotlin.multiplatform).apply(false)
     // Pin the Kotlin Gradle plugin version once at the root so :kitecodec-gradle-plugin can apply
@@ -67,4 +69,16 @@ apiValidation {
     klib {
         enabled = true
     }
+}
+
+/*
+ * The ratchet on kitecodec-core's coupling to FFmpeg's C types. It recomputes the four counts of
+ * native/kitecodec-c/coupling-baseline.txt and fails when any one of them rose. See
+ * CheckCinteropCouplingTask for what each count is and why the deferral needs a ratchet at all.
+ */
+tasks.register<CheckCinteropCouplingTask>("checkCinteropCoupling") {
+    group = "verification"
+    description = "Fails when kitecodec-core's coupling to FFmpeg's C types grew past its baseline."
+    sourceDir.set(layout.projectDirectory.dir("kitecodec-core/src"))
+    baselineFile.set(layout.projectDirectory.file("native/kitecodec-c/coupling-baseline.txt"))
 }

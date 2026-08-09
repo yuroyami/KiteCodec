@@ -4,16 +4,16 @@
 #
 # PREREQUISITES (all must exist before running this workflow):
 #   Secrets:
-#     MAVEN_CENTRAL_USERNAME / MAVEN_CENTRAL_PASSWORD  — Central Portal user token
-#     SIGNING_IN_MEMORY_KEY / SIGNING_IN_MEMORY_KEY_PASSWORD — ASCII-armored GPG key + passphrase
-#     GRADLE_PUBLISH_KEY / GRADLE_PUBLISH_SECRET       — Plugin Portal API key
+#     MAVEN_CENTRAL_USERNAME / MAVEN_CENTRAL_PASSWORD: Central Portal user token
+#     SIGNING_IN_MEMORY_KEY / SIGNING_IN_MEMORY_KEY_PASSWORD: ASCII-armored GPG key + passphrase
+#     GRADLE_PUBLISH_KEY / GRADLE_PUBLISH_SECRET: Plugin Portal API key
 #   Release assets:
 #     The `ffmpeg-<version>` release (created by release-binaries.yml) must exist with the five
 #     stable-target LGPL zips + .sha256 files:
 #       ffmpeg-<version>-lgpl-{macos-arm64,linux-x64,android-arm64,android-arm32,android-x64}.zip
 #
 # VERSIONING: the library version is static in gradle.properties (VERSION=…). The tag is the
-# trigger, not the source of truth — the check-version job asserts `v<VERSION>` == the pushed tag
+# trigger, not the source of truth: the check-version job asserts `v<VERSION>` == the pushed tag
 # (or the workflow_dispatch input) and fails on mismatch, so a stale gradle.properties can never
 # publish under the wrong tag.
 #
@@ -37,7 +37,7 @@ permissions:
 env:
   # FFmpeg release tag whose prebuilt assets kitecodec-core compiles against. Keep in sync with
   # BuildFFmpegTask.DEFAULT_SOURCE_REF (buildSrc) and DEFAULT_FFMPEG_VERSION in
-  # kitecodec-gradle-plugin/…/KiteCodecPlugin.kt — there is no single gradle.properties pin (yet).
+  # kitecodec-gradle-plugin/…/KiteCodecPlugin.kt. There is no single gradle.properties pin (yet).
   FFMPEG_VERSION: n8.0
 
 jobs:
@@ -99,7 +99,7 @@ jobs:
             rm -f "${asset}" "${asset}.sha256"
           done
       # publishAllPublicationsToMavenCentralRepository uploads to the Central Portal but does NOT
-      # auto-release (the build script calls publishToMavenCentral() without automatic release) —
+      # auto-release (the build script calls publishToMavenCentral() without automatic release), so
       # the deployment is finished manually in the portal UI, which is the right amount of caution
       # for the first releases. Switch to publishAndReleaseToMavenCentral to automate later.
       - name: Publish to Maven Central
