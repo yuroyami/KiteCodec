@@ -73,6 +73,27 @@ class CompileKiteCodecCTaskTest {
         assertContains(message, "shared")
     }
 
+    @Test
+    fun theFFmpegVersionHeadersAreTrackedByContent() {
+        // Interlude item I-07. The path STRINGS in ffmpegIncludeDirs survive a brew upgrade that
+        // rewrites every file under them, which was measured to leave this task UP-TO-DATE while
+        // cinterop regenerated, so the two bakings inside one klib disagreed at byte level. The
+        // version headers are therefore declared as content-tracked input files; this case pins
+        // the declaration so it cannot be dropped quietly. The out-of-dateness itself was proved
+        // against the real build in both directions at the interlude (UP-TO-DATE, content change,
+        // EXECUTED, restore, EXECUTED, UP-TO-DATE) and is recorded in the I.4 Execution log entry.
+        val fixture = fixture()
+        val versionHeader = fixture.includeDir.resolve("libavutil/version.h")
+        versionHeader.parentFile.mkdirs()
+        versionHeader.writeText("#define LIBAVUTIL_VERSION_MAJOR 60\n")
+        val task = newTask("macos_arm64", fixture)
+        task.ffmpegVersionHeaders.from(versionHeader)
+        assertTrue(
+            task.inputs.files.files.contains(versionHeader),
+            "ffmpegVersionHeaders is not part of the task's tracked inputs",
+        )
+    }
+
     /**
      * One trivial translation unit plus the directories the task requires. The `.c` includes nothing
      * and is warning clean under `-Wall -Wextra -Werror`, so it compiles for every target the task

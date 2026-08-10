@@ -187,6 +187,14 @@ kotlin {
             sourceDir.set(rootDir.resolve("native/kitecodec-c/src"))
             includeDir.set(rootDir.resolve("native/kitecodec-c/include"))
             ffmpegIncludeDirs.set(listOf(paths.includeDir))
+            // The version headers the archive freezes, tracked by CONTENT (interlude item I-07):
+            // a path string survives a brew upgrade that rewrites every file under it.
+            ffmpegVersionHeaders.from(
+                listOf("libavutil", "libavcodec", "libavformat", "libavfilter", "libswscale", "libswresample")
+                    .flatMap { lib ->
+                        listOf("version.h", "version_major.h").map { "${paths.includeDir}/$lib/$it" }
+                    } + "${paths.includeDir}/libavutil/ffversion.h",
+            )
             /*
              * What this archive was built for, read by the FFmpeg identity gate in
              * native/kitecodec-c/src/kitecodec_abi.c and reported in every rejection and every

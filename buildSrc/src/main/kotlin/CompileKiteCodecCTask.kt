@@ -2,12 +2,14 @@ package io.github.yuroyami.kitecodec.buildtools
 
 import org.gradle.api.DefaultTask
 import org.gradle.api.GradleException
+import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.MapProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputDirectory
+import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.PathSensitive
@@ -85,6 +87,23 @@ abstract class CompileKiteCodecCTask @Inject constructor(
      */
     @get:Input
     abstract val ffmpegIncludeDirs: ListProperty<String>
+
+    /**
+     * The header files whose CONTENT the archive freezes: the six libraries' version headers.
+     * [ffmpegIncludeDirs] above is deliberately a plain `@Input` over the path STRINGS, because
+     * hashing an entire FFmpeg include tree per target per build would be the wrong trade; but a
+     * path string does not change when `brew upgrade ffmpeg` rewrites what it points at, and that
+     * gap was measured at byte level (interlude item I-07): editing LIBAVUTIL_VERSION_MICRO inside
+     * the tree left this task UP-TO-DATE while cinterop re-executed, and the archive kept its old
+     * frozen expectation, one byte different from a forced recompile's truth. These files are what
+     * the frozen `LIB*_VERSION_INT` macros and the identity report actually read, so their content
+     * is a real input; a listed file that does not exist (a library without `version_major.h`)
+     * contributes nothing and is fine. `klib-metadata-diff.sh`'s two-bakings assertion is the
+     * backstop that reads both halves of the built klib and refuses a disagreement.
+     */
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.NAME_ONLY)
+    abstract val ffmpegVersionHeaders: ConfigurableFileCollection
 
     /**
      * Preprocessor defines describing what this archive was built for, passed as `-DNAME="value"`.

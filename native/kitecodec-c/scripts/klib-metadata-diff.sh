@@ -307,6 +307,62 @@ if [ "$DIRECT_ADDED" != "$DIRECT_ADDED_FFKMP" ]; then
     echo "note: $((DIRECT_ADDED - DIRECT_ADDED_FFKMP)) added direct binding(s) are not ffkmp_ helpers."
 fi
 
+# ────────────────────────────────────────────────────────────────────────────────────────────────
+# The two bakings, compared rather than assumed equal (interlude item I-07). One klib holds two
+# independent processings of the same FFmpeg headers: the cinterop metadata, regenerated whenever
+# header content changes through cinterop's own up-to-date check, and the embedded C archive, whose
+# identity gate froze LIB*_VERSION_INT at ITS compile. The interlude measured the two disagreeing
+# at byte level when the C compile was stale. The compile task tracks the version headers by
+# content now, and this assertion is the artifact-level backstop: the constant is read out of the
+# metadata dump, the frozen value is read out of the archive by linking it and asking the report,
+# and a disagreement fails every mode of this script. Host-runnable targets only, which today is
+# exactly the one target this script covers.
+if [ "$TARGET" = "macosArm64" ]; then
+    KLIB_AVUTIL="$(sed -n 's/.*LIBAVUTIL_VERSION_INT: kotlin\/Int \/\* = \([0-9][0-9]*\) \*\/.*/\1/p' "$WORK/current.txt" | head -1)"
+    ARCHIVE="$REPO/kitecodec-core/build/kitecodec-c/macos_arm64/libkitecodec.a"
+    if [ -z "$KLIB_AVUTIL" ]; then
+        echo "klib-metadata-diff.sh: LIBAVUTIL_VERSION_INT not found in the metadata dump" >&2
+        exit 1
+    fi
+    if [ ! -f "$ARCHIVE" ]; then
+        echo "klib-metadata-diff.sh: no shipped archive at $ARCHIVE" >&2
+        echo "  build it first:  ./gradlew :kitecodec-core:cinteropFfmpegMacosArm64" >&2
+        exit 1
+    fi
+    cat > "$WORK/bakings.c" <<'PROBE'
+#include "kitecodec_abi.h"
+#include <stdio.h>
+int main(void) {
+    kc_ffmpeg_report r;
+    kc_ffmpeg_report_get(&r);
+    printf("%d\n", (r.header_major[KC_LIB_AVUTIL] << 16)
+                 | (r.header_minor[KC_LIB_AVUTIL] << 8)
+                 |  r.header_micro[KC_LIB_AVUTIL]);
+    return 0;
+}
+PROBE
+    FFMPEG_PREFIX="${KC_FFMPEG_PREFIX:-/opt/homebrew}"
+    if ! cc -I "$ROOT/include" "$WORK/bakings.c" "$ARCHIVE" \
+         -L "$FFMPEG_PREFIX/lib" -lavformat -lavcodec -lavutil -lavfilter -lswscale -lswresample \
+         -o "$WORK/bakings" 2> "$WORK/bakings.err"; then
+        echo "klib-metadata-diff.sh: could not link the two-bakings probe:" >&2
+        cat "$WORK/bakings.err" >&2
+        exit 1
+    fi
+    ARCHIVE_AVUTIL="$("$WORK/bakings")"
+    echo
+    echo "TWO BAKINGS, avutil version int"
+    echo "  cinterop metadata constant    $KLIB_AVUTIL"
+    echo "  archive's frozen expectation  $ARCHIVE_AVUTIL"
+    if [ "$KLIB_AVUTIL" != "$ARCHIVE_AVUTIL" ]; then
+        echo "klib-metadata-diff.sh: the two bakings inside the klib DISAGREE." >&2
+        echo "  The cinterop metadata and the embedded C archive saw different FFmpeg headers;" >&2
+        echo "  the archive is stale. Rebuild:" >&2
+        echo "    ./gradlew :kitecodec-core:cinteropFfmpegMacosArm64 --rerun-tasks" >&2
+        exit 1
+    fi
+fi
+
 if [ "$CHECK" = 1 ] && [ -s "$WORK/diff.txt" ]; then
     echo
     echo "klib-metadata-diff.sh: the cinterop metadata does not match $BASELINE." >&2

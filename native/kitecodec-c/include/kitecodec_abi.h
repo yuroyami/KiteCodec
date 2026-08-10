@@ -22,10 +22,16 @@
  * a `static inline` function in a def file would give one flag per translation unit, so the gate
  * would run once per consumer of the header rather than once per process, and the expectations it
  * compares against could differ between those copies. The same argument settles where the frozen
- * header numbers come from: kitecodec_abi.c is compiled in the same task, against the same include
- * tree, as every helper unit, so if the compiler baked the struct offsets it also saw these macros.
- * Nothing can recover the header version after the fact, which is why that construction is the only
- * correct one.
+ * header numbers come from: kitecodec_abi.c is compiled in THE C ARCHIVE'S OWN compile, against the
+ * same include tree as every helper unit in that archive, so within the archive the offsets and
+ * these macros came from one set of headers. That sentence describes the archive's internal
+ * consistency and nothing more: the cinterop half of the same klib processes the headers separately,
+ * and the interlude (I-07) measured the two disagreeing when the C compile was stale while cinterop
+ * regenerated. What holds the two halves together is the compile task tracking the version headers
+ * by content, plus klib-metadata-diff.sh's two-bakings assertion, which reads the constant out of
+ * the metadata and the frozen value out of the archive and refuses a mismatch. Nothing can recover
+ * the header version after the fact, which is why freezing at compile time is the only correct
+ * construction.
  */
 
 #ifndef KITECODEC_ABI_H
