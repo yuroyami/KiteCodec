@@ -59,10 +59,14 @@
 /* The provisioning sentence gets its own, larger capacity, and the reason is a measurement rather than
  * caution. On the proving machine it comes out 483 bytes long against a 512 byte field: a provisioning
  * directory thirty characters longer than this one would have truncated the actionable half of the
- * sentence away, and the actionable half is the entire point of it. 1024 leaves the whole sentence room
- * even with a 511 byte directory in the middle of it. tests/test_identity.c asserts it is not truncated,
- * so this cannot go back to being tight without something failing. */
-#define KC_TEXT_SENTENCE 1024
+ * sentence away, and the actionable half is the entire point of it. The bound is arithmetic over the
+ * five embedded fields at their declared capacities (ref 31, dir 511, flavour 31, runtime version 63,
+ * runtime licence 63) plus the fixed text: 1024 was 12 bytes short of that worst case, measured at the
+ * interlude (I-17) by compiling with the build defines at capacity, where the sentence came out 1011
+ * bytes with two runtime fields still 101 bytes below their own caps. 1152 clears the worst case with
+ * margin. tests/test_identity.c asserts the arithmetic bound, not just this machine's instance, so the
+ * capacity cannot go back to being tight without a test failing on every machine. */
+#define KC_TEXT_SENTENCE 1152
 
 /* The overall outcome of the gate. Negative means reject; kc_init() returns exactly this value.
  *
@@ -151,8 +155,9 @@ typedef struct kc_ffmpeg_report {
     char runtime_license[KC_TEXT_NAME];
 
     /* One actionable sentence: what to link, or how to rebuild, plus the bypass and the warning that
-     * it is not a supported configuration. Never empty, and sized so it is never truncated either; see
-     * KC_TEXT_SENTENCE. */
+     * it is not a supported configuration. Never empty. Sized so that even with every embedded field
+     * at its declared capacity the sentence fits untruncated, which is asserted arithmetically by
+     * tests/test_identity.c; see KC_TEXT_SENTENCE for the measured bound. */
     char provisioning[KC_TEXT_SENTENCE];
 } kc_ffmpeg_report;
 

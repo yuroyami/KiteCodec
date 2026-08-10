@@ -152,6 +152,28 @@ int main(void)
         strlen(report.provisioning), sizeof report.provisioning);
     kc_detail("provisioning sentence %zu of %zu bytes",
               strlen(report.provisioning), sizeof report.provisioning);
+    /* Extended at the interlude (I-17): the line above only proves THIS machine's sentence fits,
+     * and at KC_TEXT_SENTENCE 1024 the worst case did not: with the build defines compiled at
+     * their declared capacities the sentence measured 1011 bytes while the two runtime-supplied
+     * fields were still 101 bytes below their own caps, so a long av_version_info() plus a long
+     * provisioning directory dropped the tail, which is the part that records the bypass. The
+     * sentence embeds exactly five variable fields, each exactly once, so the worst case is this
+     * instance plus the headroom every embedded field still has to its capacity. Assert that
+     * arithmetic bound, machine-independently. */
+    {
+        size_t worst = strlen(report.provisioning)
+            + ((sizeof report.build_ffmpeg_ref - 1) - strlen(report.build_ffmpeg_ref))
+            + ((sizeof report.build_provisioning_dir - 1) - strlen(report.build_provisioning_dir))
+            + ((sizeof report.build_license_flavour - 1) - strlen(report.build_license_flavour))
+            + ((sizeof report.runtime_version_info - 1) - strlen(report.runtime_version_info))
+            + ((sizeof report.runtime_license - 1) - strlen(report.runtime_license));
+        KC_CHECKF(
+            worst < sizeof report.provisioning - 1,
+            "with every embedded field at its declared capacity the sentence would be %zu bytes "
+            "against a %zu byte field, so a long enough runtime would truncate it",
+            worst, sizeof report.provisioning);
+        kc_detail("worst-case provisioning sentence %zu of %zu bytes", worst, sizeof report.provisioning);
+    }
     kc_detail("libavutil headers %d.%d.%d runtime %d.%d.%d verdict %s",
               report.header_major[KC_LIB_AVUTIL], report.header_minor[KC_LIB_AVUTIL],
               report.header_micro[KC_LIB_AVUTIL],

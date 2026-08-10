@@ -17,5 +17,5 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 Note: KiteCodec merely binds to FFmpeg; the FFmpeg you link against carries its own
-licence (LGPL-2.1+ minimum; GPL when --enable-gpl is set — effectively GPL-3.0 for
+licence (LGPL-2.1+ minimum; GPL when --enable-gpl is set, effectively GPL-3.0 for
 KiteCodec's GPL build flavour, which also sets --enable-version3). Respect both.

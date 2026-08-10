@@ -2,7 +2,11 @@
 # that can get an FFmpeg toolchain in CI:
 #
 #   - macOS arm64  → Homebrew FFmpeg (8.x), dynamic linking
-#   - Linux x64    → Ubuntu apt FFmpeg (6.x), which also proves the lavc 6.x compat path in ffmpeg.def
+#   - Linux x64    → Ubuntu apt FFmpeg (6.x). The def has held no C since B1.3, so there is no
+#                    "compat path in ffmpeg.def" for this job to prove (a sentence here once
+#                    claimed one); what it actually proves is that the C units and the cinterop
+#                    declarations compile against the oldest supported headers. The measured
+#                    compilation floor is lavc 60.30.100 and lavu 58.7.100.
 #   - Windows x64  → BtbN mingw shared build dropped into native-libs/mingw-x64 (vendored path)
 #   - macOS arm64  → the VENDORED LGPL profile, built from source (see the vendored-lgpl job).
 #                    The three above all link a full GPL system FFmpeg; this one links what the

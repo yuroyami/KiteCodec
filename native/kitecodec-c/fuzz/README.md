@@ -10,8 +10,8 @@ means. Nothing here should be read as "the library was fuzzed" unless the Linux 
 
 | Driver | Where | Instruments | Evidence |
 |---|---|---|---|
-| libFuzzer, `LLVMFuzzerTestOneInput` | `ubuntu-24.04`, the `fuzz-linux` job of `.github/workflows/ci.yml`, five minutes per target | ASan, UBSan, LeakSanitizer, coverage guidance | Level 2. A real search for unknown inputs. |
-| Corpus replay, `replay_main.c` | this machine, `scripts/replay-corpus.sh`, every later gate | ASan, UBSan | Level 2 for the inputs in the corpus and nothing more. A regression test. |
+| libFuzzer, `LLVMFuzzerTestOneInput` | `ubuntu-24.04`, the `fuzz-linux` job of `.github/workflows/ci.yml`, five minutes per target | ASan, UBSan, LeakSanitizer, coverage guidance | Level 8: a declared configuration. The job is written and has never executed, so no search for unknown inputs has happened yet; this row becomes level 2 on the day a run exists and not before. |
+| Corpus replay, `replay_main.c` | this machine, `scripts/replay-corpus.sh`, every later gate | ASan, UBSan | Level 2 for the inputs in the corpus and nothing more. A regression test, and today the only fuzz-shaped evidence that exists. |
 
 **libFuzzer does not exist on this host.** Measured while writing this directory, not quoted from
 the plan:

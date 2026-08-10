@@ -6232,7 +6232,7 @@ library {
       private constructor()
     }
 
-    @kotlinx/cinterop/internal/CStruct(spelling = "struct  { int status; int bypassed; int abi_major; int abi_minor; int header_major[6]; int header_minor[6]; int header_micro[6]; int runtime_major[6]; int runtime_minor[6]; int runtime_micro[6]; int verdict[6]; int configuration_agrees; int configuration_disagreed_count; char configuration_disagreed[128]; char build_ffmpeg_ref[32]; char build_license_flavour[32]; char build_provisioning_dir[512]; char runtime_version_info[64]; char runtime_license[64]; char provisioning[1024]; }")
+    @kotlinx/cinterop/internal/CStruct(spelling = "struct  { int status; int bypassed; int abi_major; int abi_minor; int header_major[6]; int header_minor[6]; int header_micro[6]; int runtime_major[6]; int runtime_minor[6]; int runtime_micro[6]; int verdict[6]; int configuration_agrees; int configuration_disagreed_count; char configuration_disagreed[128]; char build_ffmpeg_ref[32]; char build_license_flavour[32]; char build_provisioning_dir[512]; char runtime_version_info[64]; char runtime_license[64]; char provisioning[1152]; }")
     @kotlinx/cinterop/ExperimentalForeignApi
     public final class ffmpeg/kc_ffmpeg_report : kotlinx/cinterop/CStructVar {
 
@@ -6335,7 +6335,7 @@ library {
       // nested class: Companion
     }
 
-    @kotlinx/cinterop/internal/CStruct.VarType(size = 2048L, align = 4)
+    @kotlinx/cinterop/internal/CStruct.VarType(size = 2176L, align = 4)
     @kotlin/Deprecated(message = "Use sizeOf<T>() or alignOf<T>() instead.", replaceWith = kotlin/ReplaceWith(imports = [], expression = ""), level = kotlin/DeprecationLevel.WARNING)
     public final companion object ffmpeg/kc_ffmpeg_report.Companion : kotlinx/cinterop/CStructVar.Type {
 
@@ -14442,7 +14442,7 @@ library {
         public final get
 
       @kotlinx/cinterop/ExperimentalForeignApi
-      public final const val KC_TEXT_SENTENCE: kotlin/Int /* = 1024 */
+      public final const val KC_TEXT_SENTENCE: kotlin/Int /* = 1152 */
         public final get
 
       @kotlinx/cinterop/ExperimentalForeignApi

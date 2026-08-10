@@ -312,7 +312,7 @@ the same `ffkmp_*` C helpers, and that bridge does not exist yet.
 | Hardware decode, and zero-copy hwframes | Hardware *encode* does work. `h264_videotoolbox` is verified on macOS arm64. Pass `allow_sw` on VMs and CI runners, where the encoder exists but the hardware block does not. |
 | MediaCodec from a plain app | FFmpeg's wrapper needs the app's `JavaVM` through `av_jni_set_java_vm` before the first `*_mediacodec` codec opens, and nothing here makes that call. |
 | `https` in the vendored profile | It needs a TLS backend cross-compiled per target. Use `http`, a local file, or link a system FFmpeg. |
-| A stable API | 0.0.1 is pre-1.0, so a minor version may still break you. `explicitApi()` is on, every public declaration states its visibility and return type, and there is now a committed klib dump under `kitecodec-core/api/` that `apiCheck` verifies in the macOS CI job, so an accidental signature change fails a build. That is a change being visible, not a promise that it will not happen. |
+| A stable API | 0.0.1 is pre-1.0, so a minor version may still break you. `explicitApi()` is on, every public declaration states its visibility and return type, and there is now a committed klib dump under `kitecodec-core/api/` that `apiCheck` verifies in every local gate (a macOS CI job is configured to run it too, and has not run yet), so an accidental signature change fails a build. That is a change being visible, not a promise that it will not happen. |
 
 ## Build and test it here
 
@@ -330,7 +330,7 @@ $KEXE transcode in.mp4 out.mp4 "scale=1280:720" -acopy   # also: info, probe, th
 scripts/e2e.sh "$KEXE"
 ```
 
-There are 85 tests in `kitecodec-core`, plus 3 TestKit functional tests for the
+There are 85 tests in `kitecodec-core`, plus 4 TestKit functional tests for the
 Gradle plugin, of which 2 fail on a clean checkout and are a known defect of the
 plugin's test setup, not of the library. `commonTest` covers the pure logic. `nativeTest` runs against the
 FFmpeg the build actually linked. `PipelineRoundTripTest` needs no media
@@ -352,7 +352,8 @@ cd ../.. && ./gradlew :kitecodec-core:apiCheck checkCinteropCoupling
 
 Four limits of this machine are measured rather than assumed, and they shape all
 of the above: no clang here has a libFuzzer runtime, so coverage-guided fuzzing
-runs only in the Linux CI job; LeakSanitizer is unsupported on macOS arm64, so the
+is assigned to a Linux CI job that is configured and has not run yet, and the
+fuzz-shaped evidence that exists today is the committed-corpus replay; LeakSanitizer is unsupported on macOS arm64, so the
 leak instrument is a Mach-O allocation interposer; cmake is not installed and GNU
 make truncates a path at an unescaped `#`, which this checkout's own path
 contains, so the C build drives clang directly; and only one FFmpeg tree exists
