@@ -41,32 +41,30 @@ ROOT="$(cd "$HERE/.." && pwd)"
 REPO="$(cd "$ROOT/../.." && pwd)"
 OTHER="$(cd "$REPO/../KitePlayer" 2>/dev/null && pwd || true)"
 
-# The 15 names. Kept in step with tools/extract_from_def.py by construction: the extractor refuses
-# to run when a supplied --exclude list is not exactly its DELETED table, and this list is fed to
-# it below.
-DELETED="ffkmp_averror_einval ffkmp_nopts_value ffkmp_frame_ref ffkmp_frame_make_writable \
-ffkmp_packet_ref ffkmp_packet_flags ffkmp_codecpar_video_delay ffkmp_codecctx_sample_fmt \
-ffkmp_codec_name ffkmp_fmt_bit_rate ffkmp_fmt_alloc_output ffkmp_stream_duration \
-ffkmp_stream_nb_frames ffkmp_avseek_flag_byte ffkmp_avseek_flag_frame"
+# The names live in ONE committed data file since the interlude (I-14): deleted-surface.txt,
+# beside this script's parent directory. Before that they were hardcoded in three places (here,
+# verify-lift.sh and the extractor's DELETED table) with no move procedure, so resurrecting a
+# name for a real need had no legal path. Now a resurrection is one status change in that file
+# plus one Execution log sentence, and this script keeps its full power over every name still
+# marked deleted. The file's own integrity is check 4 below.
+SURFACE_FILE="$ROOT/deleted-surface.txt"
+DELETED=""
+RESURRECTED=""
 
 # Files allowed to mention a deleted name in prose, each because it is part of the record of the
-# deletion rather than a use of it: the generator that removes them, the gate that names them, this
-# script, the one generated comment that outlived its subject (src/helpers_format.c still says
-# ffkmp_fmt_alloc_output2 is "Like ffkmp_fmt_alloc_output", because the units are the def body
-# verbatim and rewriting prose would make verify-lift.sh fuzzy), the two test files that record why
-# their cases went, the tree's own README, and KPKMP.md, which is the project's Execution log and so
-# is the primary record of the deletion: its B1.4 entry names all 15 so a later reader can check the
-# list without re-deriving it. Paths are relative to the KiteCodec repository root; a path starting
-# with ../ lives in KitePlayer.
+# deletion rather than a use of it: the data file that IS the list, the two test files that record
+# why their cases went, the tree's own README, and KPKMP.md, which is the project's Execution log
+# and so is the primary record of the deletion: its B1.4 entry names all 15 so a later reader can
+# check the list without re-deriving it. This script itself is deliberately NOT on the list any
+# more: since I-14 it reads the names instead of containing them, so a mention appearing in it
+# again would be a regression worth failing on. Paths are relative to the KiteCodec repository
+# root; a path starting with ../ lives in KitePlayer.
 #
 # KPKMP.md was added by the B1.4 to B1.6 gate run, which this check FAILED on the gate's own log
 # entry. That is the check working rather than the check being wrong: it refused a new prose mention
 # until someone gave a reason, and the reason is the line above.
 ALLOWED_PROSE="
-native/kitecodec-c/tools/extract_from_def.py
-native/kitecodec-c/scripts/verify-lift.sh
-native/kitecodec-c/scripts/check-deleted-surface.sh
-native/kitecodec-c/src/helpers_format.c
+native/kitecodec-c/deleted-surface.txt
 native/kitecodec-c/tests/test_ownership.c
 native/kitecodec-c/tests/test_rescale.c
 native/kitecodec-c/README.md
@@ -92,10 +90,49 @@ fail() {
     status=1
 }
 
-echo "check-deleted-surface.sh: register item B1-08, 15 deleted helpers"
+echo "check-deleted-surface.sh: register item B1-08, the deleted helper surface"
 echo "  KiteCodec   $REPO"
 echo "  KitePlayer  ${OTHER:-not found beside this repository}"
-echo "  names       $(echo $DELETED | wc -w | tr -d ' ')"
+echo "  list        $SURFACE_FILE"
+
+# Check 4 runs FIRST, as the file's integrity pass: everything below trusts what it parses here.
+# Fifteen names total, each exactly once, each with a valid status; a malformed line, a lost line
+# or a typo fails before it can quietly weaken checks 1 to 3.
+echo
+echo "4. deleted-surface.txt parses, holds exactly the 15 known names, and every status is legal"
+if [ ! -f "$SURFACE_FILE" ]; then
+    fail "$SURFACE_FILE does not exist"
+else
+    integrity_before=$status
+    while read -r entry_name entry_status entry_extra; do
+        case "$entry_name" in ''|'#'*) continue ;; esac
+        if [ -n "$entry_extra" ]; then
+            fail "malformed line (more than two fields): $entry_name $entry_status $entry_extra"; continue
+        fi
+        case "$entry_name" in
+            ffkmp_[a-z0-9_]*) ;;
+            *) fail "not a helper name: '$entry_name'"; continue ;;
+        esac
+        case "$entry_status" in
+            deleted)             DELETED="$DELETED $entry_name" ;;
+            resurrected-in-?*)   RESURRECTED="$RESURRECTED $entry_name"
+                                 echo "  note: $entry_name is $entry_status and is exempt from checks 1 to 3" ;;
+            *)                   fail "unknown status '$entry_status' for $entry_name" ;;
+        esac
+    done < "$SURFACE_FILE"
+    TOTAL=$(( $(echo $DELETED | wc -w) + $(echo $RESURRECTED | wc -w) ))
+    if [ "$TOTAL" -ne 15 ]; then
+        fail "the file lists $TOTAL names and the deletion was 15; a lost or added line"
+    fi
+    DUPES="$(echo $DELETED $RESURRECTED | tr ' ' '\n' | sort | uniq -d)"
+    if [ -n "$DUPES" ]; then
+        fail "duplicate name(s): $DUPES"
+    fi
+    if [ "$status" -eq "$integrity_before" ]; then
+        echo "  ok: 15 names, $(echo $DELETED | wc -w | tr -d ' ') deleted, $(echo $RESURRECTED | wc -w | tr -d ' ') resurrected"
+    fi
+fi
+echo "  names checked below: $(echo $DELETED | wc -w | tr -d ' ')"
 echo
 
 echo "0. the archived/ directory is gone, so duplicate definitions cannot mask a reference"
@@ -179,23 +216,9 @@ if [ -s "$WORK/silent.txt" ]; then
 fi
 echo
 
-echo "4. the generator agrees that these are exactly the 15 it deletes"
-if python3 "$ROOT/tools/extract_from_def.py" \
-        --def "$WORK/absent.def" \
-        --exclude "$(echo $DELETED | tr ' ' ',')" \
-        --report >/dev/null 2>"$WORK/generator.txt"; then
-    fail "the generator accepted a def file that does not exist"
-elif grep -q -- "--exclude does not match" "$WORK/generator.txt"; then
-    fail "the generator's DELETED table is not this list:"
-    sed 's|^|          |' "$WORK/generator.txt"
-else
-    echo "  ok: the list matches the generator's DELETED table"
-    echo "      (the run then failed on the absent def file, which is the expected next error)"
-fi
-echo
 
 if [ "$status" -eq 0 ]; then
-    echo "check-deleted-surface.sh: PASS, the 15 helpers are gone and nothing refers to them"
+    echo "check-deleted-surface.sh: PASS, every name marked deleted is gone and nothing refers to it"
 else
     echo "check-deleted-surface.sh: FAILED, see the lines marked FAIL above" >&2
 fi

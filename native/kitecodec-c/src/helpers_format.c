@@ -1,8 +1,10 @@
-/* GENERATED FILE. Do not edit.
- *
- * Extracted from kitecodec-core/src/nativeInterop/cinterop/ffmpeg.def by native/kitecodec-c/tools/extract_from_def.py.
- * scripts/verify-lift.sh re-runs the generator against a git revision of the def and
- * compares the result with this file, so a hand edit fails the gate.
+/* Ordinary maintained source since the interlude (I-12). Lifted at B1.3 from the def body of
+ * kitecodec-core/src/nativeInterop/cinterop/ffmpeg.def as it stood at revision 5364329, and
+ * proved byte for byte faithful to it one last time at 2b4287f; the full verify-lift.sh output
+ * with all eleven digests is recorded in KPKMP.md's I.3 Execution log entry, and the proof
+ * script itself is retired because an anchor no revision can replace forbids every future edit.
+ * Edit this file like any other C file. Its shape is held by the C suites in every variant, the
+ * sanitizers, symbol-audit.sh and the export baseline, not by an extraction proof.
  *
  * The format part of the FFmpeg helper layer: the def's 'AVFormatContext (input + output)' section(s). */
 
@@ -44,8 +46,8 @@ KC_API const char*   ffkmp_fmt_iformat_name(AVFormatContext *c) { return (c && c
 KC_API AVDictionary* ffkmp_fmt_metadata(AVFormatContext *c)     { return c ? c->metadata : NULL; }
 
 /* Output */
-/* Like ffkmp_fmt_alloc_output but with an explicit container short name ("mp4", "matroska");
-   NULL/empty format falls back to extension inference. */
+/* Allocates an output context with an explicit container short name ("mp4", "matroska");
+   NULL/empty format falls back to extension inference from the path. */
 KC_API int  ffkmp_fmt_alloc_output2(AVFormatContext **out, const char *path, const char *format) {
     AVFormatContext *c = NULL;
     int rc = avformat_alloc_output_context2(&c, NULL, (format && format[0]) ? format : NULL, path);

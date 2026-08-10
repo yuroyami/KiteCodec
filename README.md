@@ -344,7 +344,7 @@ Gradle run:
 ```bash
 cd native/kitecodec-c
 ./scripts/build-host.sh plain && ./scripts/run-c-tests.sh plain   # also asan, tsan
-./scripts/verify-lift.sh          # the generated C is exactly what the def produces
+./scripts/check-deleted-surface.sh  # nothing refers to a deleted helper, in either repo
 ./scripts/symbol-audit.sh         # what the archive needs, exports and keeps private
 ./scripts/replay-corpus.sh        # every committed fuzz seed, under ASan and UBSan
 cd ../.. && ./gradlew :kitecodec-core:apiCheck checkCinteropCoupling

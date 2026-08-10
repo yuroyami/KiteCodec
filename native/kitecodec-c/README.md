@@ -17,16 +17,15 @@ symbol is a compatibility promise nobody meant to make (register item B1-08).
 
 | Path | What it is |
 |---|---|
-| `tools/extract_from_def.py` | The committed generator. Turns the def body into the two files below. |
-| `include/kitecodec_helpers.h` | Generated. The 20 includes, the `KC_API` macro, then one declaration per exported helper. |
-| `src/helpers_*.c` | Generated, nine of them. The def body verbatim per subsystem, with the linkage token rewritten. |
+| `include/kitecodec_helpers.h` | The 20 includes, the `KC_API` macro, then one declaration per exported helper. Lifted from the def at B1.3, an ordinary maintained source since the interlude. |
+| `src/helpers_*.c` | Nine units, one per subsystem. Lifted from the def body at B1.3, ordinary maintained sources since the interlude. |
 | `include/kitecodec_abi.h` | HAND WRITTEN. The FFmpeg identity gate's contract. Includes no FFmpeg header and names no FFmpeg type. |
 | `include/kitecodec_ffmpeg_versions.h` | HAND WRITTEN, private. The only place the gate reaches into FFmpeg, and the one file the identity test replaces. |
 | `src/kitecodec_abi.c` | HAND WRITTEN. The gate: the frozen header macros, the runtime comparison, the report, the diagnostic bypass. |
 | `scripts/build-host.sh` | Builds the host test binaries for one variant. |
-| `scripts/verify-lift.sh` | Proves the ten generated files are exactly what the def produces. |
 | `scripts/symbol-audit.sh` | Proves what the compiled archive needs, exports and keeps private. |
-| `scripts/check-deleted-surface.sh` | Proves nothing in either repository refers to the 15 deleted helpers. |
+| `scripts/check-deleted-surface.sh` | Proves nothing in either repository refers to a helper whose status is deleted. |
+| `deleted-surface.txt` | The deleted helper surface: 15 names, one status each. The single copy of the list, and the file to edit when a plan item resurrects one. |
 | `scripts/run-c-tests.sh` | Runs the six suites for one variant. |
 | `scripts/klib-metadata-diff.sh` | The compatibility instrument for the `ffmpeg` cinterop klib, added by B1.3. |
 | `scripts/replay-corpus.sh` | Replays every committed fuzz seed through the replay driver under ASan and UBSan. Added by B1.5. |
@@ -44,13 +43,19 @@ symbol is a compatibility promise nobody meant to make (register item B1-08).
 | `coupling-baseline.txt` | The Kotlin to FFmpeg coupling ratchet's baseline, added by B1.1. |
 | `build/` | Output. Gitignored. |
 
-## The generated files are generated
+## The lifted files are ordinary sources now
 
-Never hand edit `include/kitecodec_helpers.h` or any `src/helpers_*.c`. `verify-lift.sh` re-runs
-the generator against a git revision of the def and compares the result, so a hand edit fails the
-gate rather than surviving quietly. Change the def, or change the generator.
+Until the interlude, `include/kitecodec_helpers.h` and the nine `src/helpers_*.c` were generated:
+an extractor produced them from the def body and `verify-lift.sh` byte-compared the result, so a
+hand edit failed the gate. Both instruments are retired (interlude item I-12): the def has had no
+body since B1.3, so the proof's anchor was a fixed point no revision could replace, and it was
+blocking real fixes to exported code. The lift's faithfulness was proved one final time at
+`2b4287f`, all eleven comparisons matching with the payload digest recorded in KPKMP.md's I.3
+Execution log entry, and that record is permanent. Edit these ten files like any other C source;
+their shape is held by the C suites, the sanitizers, `symbol-audit.sh` and the export baseline.
 
-The extraction rules, all measured against the def at KiteCodec `cdb8ad2`:
+The extraction rules the lift followed, all measured against the def at KiteCodec `cdb8ad2` and
+kept as the record of where the ten files came from:
 
 * The body is def lines 13 to 961, which is 949 lines of C after the `---` separator on line 11.
 * The 20 `#include` lines move to the header. Every unit gets `#include "kitecodec_helpers.h"`
@@ -72,9 +77,6 @@ The extraction rules, all measured against the def at KiteCodec `cdb8ad2`:
   so each lands in the same unit as every one of its callers. The generator re-checks that against
   the unit map on every run and refuses to emit if it stops holding, which is what decides whether
   any of the four has to become `KC_API` instead of staying `static`. At B1.4 none did.
-
-Run `python3 tools/extract_from_def.py --report` to print the measured shape, including the 11
-banner sections, the nine units and how many helpers each holds.
 
 ## KC_API and the nine units
 
@@ -110,8 +112,9 @@ gate below.
 ## The FFmpeg identity gate
 
 `include/kitecodec_abi.h` plus `src/kitecodec_abi.c`, added by B1.6. Register item B1-02. Unlike the
-nine units beside them these two are HAND WRITTEN: there was never an identity gate in the def to
-extract, so `verify-lift.sh` does not compare them against anything and editing them is normal work.
+nine units beside them these two were hand written from the start: there was never an identity
+gate in the def to extract. Since the interlude retired the extraction proof, every file in this
+tree is edited the same way, so the distinction is now historical.
 
 **What it prevents was demonstrated, not argued.** Older FFmpeg headers against a newer runtime link
 cleanly. Every symbol resolves, the static archive has no SONAME to object, and 38 measured struct
@@ -163,17 +166,11 @@ that mistake announces itself rather than passing vacuously.
 
 ## Documented contracts
 
-Some helpers carry a contract that their signature cannot express. Those contracts live in the
-`CONTRACTS` table inside `tools/extract_from_def.py`, and the generator emits each one as a
-comment above the declaration it belongs to.
-
-The table exists because neither of the two obvious places works. A comment written into the
-header by hand is erased by the next generator run and `verify-lift.sh` would fail. A comment in
-the def body ends up in a `src/helpers_*.c` unit, which documents the implementation rather than
-the interface a consumer reads. So the table is the only place a contract survives, and the
-generator refuses to emit if a name in it stops being an exported declaration, or if it documents
-a helper the deletion list removes, which keeps a contract from going missing during a rename and
-from outliving its subject.
+Some helpers carry a contract that their signature cannot express. Those contracts are the
+comments directly above the declarations in `include/kitecodec_helpers.h`, and since the interlude
+that header is where they are edited. (They used to live in a table inside the extractor, because
+while the header was generated a hand written comment would have been erased by the next generator
+run; the extractor is retired and the indirection with it.)
 
 Plan section 15.5 Deferral 2 is why this is not optional. It rejects
 `__attribute__((ownership_returns))`, because clang honours it only in the static analyzer, which
@@ -211,7 +208,6 @@ already had to guard against that hazard. Driving clang directly is the only for
 available and safe under this path.
 
 ```bash
-./scripts/verify-lift.sh                 # defaults to the last revision whose def has the body
 ./scripts/check-deleted-surface.sh
 ./scripts/build-host.sh plain && ./scripts/run-c-tests.sh plain
 ./scripts/build-host.sh asan  && ./scripts/run-c-tests.sh asan
@@ -219,15 +215,11 @@ available and safe under this path.
 ./scripts/symbol-audit.sh --host         # or with no argument, for the shipped archive
 ```
 
-`verify-lift.sh` needs a revision whose def still carries the body. B1.3 deleted it, so from the
-lift onward the revision to use is the lift's parent, which is the script's default and never
-`HEAD`. Since B1.4 it makes three comparisons rather than one: the header byte for byte, each of
-the nine units byte for byte, and the nine committed units concatenated in banner order, with their
-per-unit `#include` line and their `KC_API` tokens stripped, against the whole def body. The third
-one is not implied by the second: a unit map that dropped or duplicated a stretch of the def would
-pass every per-file comparison and fail the concatenation. The 15 deleted helpers are supplied to
-the generator as an explicit exclusion list, and the generator refuses to run if that list is not
-exactly its own, so the gate and the generator cannot drift apart.
+`verify-lift.sh` no longer exists. It proved, three ways, that the committed units were byte for
+byte the def body at the lift revision; that proof ran one final time at `2b4287f`, every
+comparison matched, and the output with both digests is recorded in KPKMP.md's I.3 Execution log
+entry. It was retired because its anchor could never move and it had begun to block real fixes to
+exported code (interlude item I-12).
 
 The cinterop surface has its own instrument, which is not part of the C build and needs a klib
 rather than a host binary:
