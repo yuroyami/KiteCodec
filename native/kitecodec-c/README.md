@@ -26,7 +26,7 @@ symbol is a compatibility promise nobody meant to make (register item B1-08).
 | `scripts/symbol-audit.sh` | Proves what the compiled archive needs, exports and keeps private. |
 | `scripts/check-deleted-surface.sh` | Proves nothing in either repository refers to a helper whose status is deleted. |
 | `deleted-surface.txt` | The deleted helper surface: 15 names, one status each. The single copy of the list, and the file to edit when a plan item resurrects one. |
-| `scripts/run-c-tests.sh` | Runs the six suites for one variant. |
+| `scripts/run-c-tests.sh` | Runs the six suites for one variant, or in the `interpose` mode: the plain binaries with allocation accounting REQUIRED, so a blinded interposer fails instead of recording partials. |
 | `scripts/klib-metadata-diff.sh` | The compatibility instrument for the `ffmpeg` cinterop klib, added by B1.3. |
 | `scripts/replay-corpus.sh` | Replays every committed fuzz seed through the replay driver under ASan and UBSan. Added by B1.5. |
 | `scripts/run-fuzz.sh` | Runs the six libFuzzer targets. Refuses with one sentence on a host whose clang has no fuzzer runtime, which is every clang here. |
@@ -212,8 +212,23 @@ available and safe under this path.
 ./scripts/build-host.sh plain && ./scripts/run-c-tests.sh plain
 ./scripts/build-host.sh asan  && ./scripts/run-c-tests.sh asan
 ./scripts/build-host.sh tsan  && ./scripts/run-c-tests.sh tsan
+./scripts/run-c-tests.sh interpose       # plain binaries, allocation accounting REQUIRED
 ./scripts/symbol-audit.sh --host         # or with no argument, for the shipped archive
 ```
+
+
+## The harness exists twice, and the two copies are a pair
+
+This tree's C test harness and Mach-O allocation interposer have a sibling in KitePlayer's
+`kiteplayer-rt/native/tests/`. The mechanism is the same on both sides (`KC_REQUIRE_ALLOC_ACCOUNTING`
+here, `KPRT_REQUIRE_ALLOC_ACCOUNTING` there, each with an `interpose` run mode), and the rule is
+that a fix to either harness lands in both in the same change. The interlude paid the first cost of
+the fork (item I-08): kiteplayer-rt gained the require mechanism at B1.7 and this tree did not, so
+renaming one word in `interpose_alloc.c`'s section attribute here made the whole ownership gate
+report "39 cases passed, 39 with a property this variant cannot observe" and exit green. With the
+mechanism ported, the same one-word blinding fails all six suites in the `interpose` mode, which was
+proved before this paragraph was written. Whether one copy becomes the source and the other a pinned
+vendored copy is a B4/B5 decision; until then, this rule is the minimum.
 
 `verify-lift.sh` no longer exists. It proved, three ways, that the committed units were byte for
 byte the def body at the lift revision; that proof ran one final time at `2b4287f`, every

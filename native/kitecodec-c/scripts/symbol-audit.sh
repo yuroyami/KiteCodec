@@ -45,6 +45,7 @@ REPO="$(cd "$ROOT/../.." && pwd)"
 TARGET="macos_arm64"
 ARCHIVE=""
 HOST=0
+WRITE_BASELINE=0
 NM="${KC_NM:-/usr/bin/nm}"
 
 while [ $# -gt 0 ]; do
@@ -54,6 +55,7 @@ while [ $# -gt 0 ]; do
         --archive) [ $# -ge 2 ] || { echo "symbol-audit.sh: --archive needs a path" >&2; exit 2; }
                    ARCHIVE="$2"; shift 2 ;;
         --host)    HOST=1; shift ;;
+        --write-baseline) WRITE_BASELINE=1; shift ;;
         -h|--help) sed -n '2,38p' "${BASH_SOURCE[0]}"; exit 0 ;;
         *)         echo "symbol-audit.sh: unknown argument '$1'" >&2; exit 2 ;;
     esac
@@ -303,6 +305,61 @@ else
     echo "$PRINTING_UNITS" | sed 's/^/          /'
 fi
 echo
+
+# ---------------------------------------------------------------------------------------------
+# 6. The exported set equals the COMMITTED baseline (interlude item I-09).
+#
+# Check 3 is a header-against-archive consistency check and not a baseline: declaring a new
+# KC_API function beside its neighbours makes the new export "expected", which was measured at
+# the interlude with a probe export that sailed through every check while nm confirmed the new
+# symbol. This check is the baseline check 3 was mistaken for. The move procedure is in the
+# file's own header and in KPKMP.md section 9's ratchet move table: regenerate deliberately with
+#   ./scripts/symbol-audit.sh --write-baseline
+# in the same commit as the export change, and name every added or removed symbol in the
+# Execution log entry.
+# ---------------------------------------------------------------------------------------------
+BASELINE_FILE="$ROOT/exported-symbols-baseline.txt"
+sed 's/^_//' "$WORK/external.txt" | sort -u > "$WORK/actual_names.txt"
+if [ "$WRITE_BASELINE" = 1 ]; then
+    {
+        echo "# The exported symbol baseline of the KiteCodec C archive (interlude item I-09)."
+        echo "#"
+        echo "# Every external symbol the archive may export, one per line, without the Mach-O"
+        echo "# underscore. symbol-audit.sh check 6 compares the archive against this file, so the"
+        echo "# exported surface cannot grow or shrink silently even when the headers agree with"
+        echo "# the archive (check 3 proves that agreement; it is consistency, not a ceiling)."
+        echo "#"
+        echo "# THE MOVE (also in KPKMP.md section 9's ratchet move table): change the exports"
+        echo "# deliberately, run ./scripts/symbol-audit.sh --write-baseline in the same commit,"
+        echo "# and name every added or removed symbol in the Execution log entry."
+        cat "$WORK/actual_names.txt"
+    } > "$BASELINE_FILE"
+    echo "6. baseline REWRITTEN at $BASELINE_FILE ($(wc -l < "$WORK/actual_names.txt" | tr -d ' ') names)"
+    echo "   commit it with the export change it records, and log every added or removed name"
+    echo
+else
+    echo "6. the exported set equals the committed baseline, name for name"
+    if [ ! -f "$BASELINE_FILE" ]; then
+        fail "$BASELINE_FILE does not exist; create it with: $0 --write-baseline"
+    else
+        grep -v '^#' "$BASELINE_FILE" | grep -v '^$' | sort -u > "$WORK/baseline_names.txt"
+        comm -23 "$WORK/baseline_names.txt" "$WORK/actual_names.txt" > "$WORK/baseline_missing.txt"
+        comm -13 "$WORK/baseline_names.txt" "$WORK/actual_names.txt" > "$WORK/baseline_extra.txt"
+        echo "  baseline lists  $(wc -l < "$WORK/baseline_names.txt" | tr -d ' ') names"
+        echo "  archive exports $(wc -l < "$WORK/actual_names.txt" | tr -d ' ') names"
+        if [ -s "$WORK/baseline_missing.txt" ]; then
+            fail "in the baseline but not exported (a removal nobody recorded):"
+            sed 's/^/          /' "$WORK/baseline_missing.txt"
+        fi
+        if [ -s "$WORK/baseline_extra.txt" ]; then
+            fail "exported but not in the baseline (a growth nobody recorded):"
+            sed 's/^/          /' "$WORK/baseline_extra.txt"
+            echo "        Deliberate? Rerun with --write-baseline in the same commit and log the names."
+        fi
+        [ -s "$WORK/baseline_missing.txt" ] || [ -s "$WORK/baseline_extra.txt" ] ||             echo "  ok: the two sets are equal"
+    fi
+    echo
+fi
 
 if [ "$status" -eq 0 ]; then
     echo "symbol-audit.sh: PASS"

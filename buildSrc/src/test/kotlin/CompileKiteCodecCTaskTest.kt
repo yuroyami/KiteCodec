@@ -73,6 +73,106 @@ class CompileKiteCodecCTaskTest {
         assertContains(message, "shared")
     }
 
+    /**
+     * The producer-side guard is a guard only if the task action CALLS it. The interlude (I-10)
+     * measured that replacing the verifyObjectArchitecture call site with a comment left this
+     * whole suite green at 4 tests, because every case drove the predicate directly. This case
+     * runs the real compile() with a describeFile that lies about the produced object, and the
+     * only thing standing between that lie and a poisoned archive is the call site.
+     */
+    @Test
+    fun compileItselfRefusesAnObjectWhoseDescriptionIsWrong() {
+        val fixture = fixture()
+        val project = ProjectBuilder.builder().build()
+        val task = project.tasks
+            .register("compileWithLyingDescribe", LyingDescribeTask::class.java)
+            .get()
+        task.konanTargetName.set("macos_arm64")
+        task.sourceDir.set(fixture.sourceDir)
+        task.includeDir.set(fixture.includeDir)
+        task.ffmpegIncludeDirs.set(emptyList<String>())
+        task.konanDataDir.set(konanDataDir)
+        task.outputDir.set(fixture.outputRoot.resolve("macos_arm64"))
+
+        val message = assertFails { task.compile() }.message ?: ""
+        assertContains(message, "macos_arm64")
+        assertContains(message, LyingDescribeTask.WRONG_DESCRIPTION)
+        assertContains(message, CompileKiteCodecCTask.expectedObjectDescription("macos_arm64"))
+    }
+
+    /** A task whose `file -b` answer is always wrong, for the call-site case above. */
+    abstract class LyingDescribeTask @javax.inject.Inject constructor(
+        execOperations: org.gradle.process.ExecOperations,
+    ) : CompileKiteCodecCTask(execOperations) {
+        override fun describeFile(file: File): String = WRONG_DESCRIPTION
+        companion object {
+            const val WRONG_DESCRIPTION: String = "Mach-O 64-bit object x86_64 (a lie, planted by the call-site test)"
+        }
+    }
+
+    @Test
+    fun aStaleObjectFromAPreviousRunIsCleared() {
+        // Interlude (I-10): the clearing line in compile() had no test, so deleting it kept the
+        // suite green. A renamed or removed source must not leave its old object behind, where
+        // the CI archive listing and any obj/-globbing tool would read it as current.
+        val fixture = fixture()
+        val task = newTask("macos_arm64", fixture)
+        val stale = fixture.outputRoot.resolve("macos_arm64/obj/stale.o")
+        stale.parentFile.mkdirs()
+        stale.writeText("not an object at all")
+
+        task.compile()
+
+        assertTrue(!stale.exists(), "the stale object survived the compile")
+        val objects = fixture.outputRoot.resolve("macos_arm64/obj").listFiles().orEmpty().map { it.name }
+        assertEquals(listOf("probe.o"), objects, "obj/ must hold exactly the objects of this run")
+    }
+
+    @Test
+    fun theLlvmPackageResolverPrefersTheNamedPackage() {
+        val root = createTempDirectory()
+        val preferred = root.resolve("llvm-21-aarch64-macos-essentials-97/bin")
+        writeExecutable(preferred.resolve("clang"))
+        writeExecutable(root.resolve("llvm-19-aarch64-macos-essentials-79/bin/clang"))
+
+        val resolved = CompileKiteCodecCTask.resolveLlvmBinDir(root, "llvm-21-aarch64-macos-essentials-97")
+        assertEquals(preferred.absolutePath, resolved.absolutePath)
+    }
+
+    @Test
+    fun theLlvmPackageResolverFallsBackNumericallyAndSaysSo() {
+        // Copied across from CompileKiteRtTaskTest at the interlude (I-10) so the two near-twin
+        // tasks are covered identically. Numbers, not text: llvm-9 must not sort above llvm-21,
+        // and essentials-97 must beat essentials-79 within the same LLVM version.
+        val root = createTempDirectory()
+        writeExecutable(root.resolve("llvm-9-aarch64-macos-essentials-99/bin/clang"))
+        writeExecutable(root.resolve("llvm-21-aarch64-macos-essentials-79/bin/clang"))
+        val newest = root.resolve("llvm-21-aarch64-macos-essentials-97/bin")
+        writeExecutable(newest.resolve("clang"))
+
+        val messages = mutableListOf<String>()
+        val resolved = CompileKiteCodecCTask.resolveLlvmBinDir(root, "llvm-22-does-not-exist") { messages += it }
+
+        assertEquals(newest.absolutePath, resolved.absolutePath)
+        assertEquals(1, messages.size, "the substitution must be reported exactly once")
+        assertContains(messages.single(), "llvm-21-aarch64-macos-essentials-97")
+    }
+
+    @Test
+    fun noLlvmPackageAtAllFailsNamingWhatIsMissing() {
+        val root = createTempDirectory()
+        val failure = assertFails {
+            CompileKiteCodecCTask.resolveLlvmBinDir(root, "llvm-21-aarch64-macos-essentials-97")
+        }
+        assertContains(failure.message.orEmpty(), "llvm-21-aarch64-macos-essentials-97")
+    }
+
+    private fun writeExecutable(file: File) {
+        file.parentFile.mkdirs()
+        file.writeText("#!/bin/sh\nexit 0\n")
+        file.setExecutable(true)
+    }
+
     @Test
     fun theFFmpegVersionHeadersAreTrackedByContent() {
         // Interlude item I-07. The path STRINGS in ffmpegIncludeDirs survive a brew upgrade that

@@ -38,6 +38,7 @@ static void close_case(void)
 
 void kc_suite_begin(const char *suite)
 {
+    const char *require;
     suite_name = (suite != NULL && suite[0] != '\0') ? suite : "unnamed";
     /* One line per case is the whole reporting contract, and FFmpeg's own log would drown it
      * the first time a suite drives an error path on purpose. */
@@ -48,6 +49,22 @@ void kc_suite_begin(const char *suite)
     /* Probe the interposer once here, so its own allocation never lands inside a case window
      * and no suite has to remember to warm it up. */
     (void)kc_alloc_active();
+    /* Ported from kiteplayer-rt's harness at the interlude (I-08), where this mechanism existed
+     * first; the two harnesses are a pair and a fix to either lands in both. Without it, every
+     * KC_ALLOC_* assertion degrades to a recorded partial when the interposer is not effective,
+     * and the review measured that one word in interpose_alloc.c's section name makes exactly
+     * that happen with the whole ownership gate still green: "39 cases, 39 passed, 39 with a
+     * property this variant cannot observe". Deferral 2's ownership guarantee is carried by
+     * these assertions, so "cannot observe" must be available as a hard failure: the interpose
+     * gate step sets KC_REQUIRE_ALLOC_ACCOUNTING=1 and a blind interposer fails the suite
+     * instead of hollowing it. */
+    require = getenv("KC_REQUIRE_ALLOC_ACCOUNTING");
+    if (require != NULL && require[0] == '1' && !kc_alloc_active()) {
+        printf("FAIL   %s: KC_REQUIRE_ALLOC_ACCOUNTING=1 but the allocation interposer is not "
+               "effective in this build variant\n", suite_name);
+        fflush(stdout);
+        exit(1);
+    }
 }
 
 int kc_suite_end(void)

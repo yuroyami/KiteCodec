@@ -32,10 +32,13 @@
 # its own differential has been read and accepted. It is a normal commit, exactly like lowering a
 # coupling-ratchet number, and the Execution log entry says which declarations moved.
 #
-# Exit status: 0 when the comparison ran, 2 on a usage error, 1 when the klib or the tooling is
-# missing, and 1 under `--check` when anything differs. Without `--check` a non-empty differential is
-# not a failure; it is the output, because "added" is correct in the sub-phase that adds and wrong in
-# every sub-phase after it. CI uses `--check`, where the committed baseline is meant to match.
+# Exit status: 0 when the klib matches the baseline, 2 on a usage error, 1 when the klib or the
+# tooling is missing, and 1 when anything differs, WITH OR WITHOUT `--check`. The two forms agree
+# since the interlude (I-09): the bare form used to exit 0 on a real mismatch, and the plan's own
+# gate blocks invoked it bare in three places, so a red differential could scroll past a green
+# exit. The bare form still prints the full differential as its output (that is what it is for,
+# in the sub-phase that deliberately changes the surface); it just no longer calls a mismatch
+# success. `--check` remains the documented gate spelling. `--update` exits 0 after rewriting.
 #
 # What B1.3 measured with this script, recorded so the numbers can be checked later. The pre-lift
 # dump, taken at the parent of the lift commit, was 18684 filtered lines,
@@ -363,7 +366,9 @@ PROBE
     fi
 fi
 
-if [ "$CHECK" = 1 ] && [ -s "$WORK/diff.txt" ]; then
+# A mismatch is a failure in BOTH forms since the interlude (I-09): the bare form exiting 0 on a
+# real difference was measured to let the gate read green while the report above said red.
+if [ -s "$WORK/diff.txt" ]; then
     echo
     echo "klib-metadata-diff.sh: the cinterop metadata does not match $BASELINE." >&2
     echo "  Read the report above. If the change is deliberate, re-baseline with --update in the" >&2
