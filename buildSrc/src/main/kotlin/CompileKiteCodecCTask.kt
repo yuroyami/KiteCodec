@@ -171,17 +171,15 @@ abstract class CompileKiteCodecCTask @Inject constructor(
         val llvmBin = resolveLlvmBinDir(dependencies, llvmPackageName.get()) { message ->
             logger.lifecycle("[KiteCodec] $message")
         }
-        val clang = llvmBin.resolve("clang")
-        val archiver = llvmBin.resolve("llvm-ar")
-        listOf(clang, archiver).forEach { tool ->
-            if (!tool.canExecute()) {
-                throw GradleException(
-                    "Cannot compile the FFmpeg helper layer for '$target': no executable at " +
-                        "${tool.absolutePath}. It arrives with the Kotlin/Native distribution, so " +
-                        "a Gradle build that has already compiled Kotlin/Native code has it.",
-                )
-            }
-        }
+        val clang = resolveTool(llvmBin, "clang") ?: throw GradleException(
+            "Cannot compile the FFmpeg helper layer for '$target': no clang (or clang.exe) under " +
+                "${llvmBin.absolutePath}. It arrives with the Kotlin/Native distribution, so a " +
+                "Gradle build that has already compiled Kotlin/Native code has it.",
+        )
+        val archiver = resolveTool(llvmBin, "llvm-ar") ?: throw GradleException(
+            "Cannot compile the FFmpeg helper layer for '$target': no llvm-ar (or llvm-ar.exe) " +
+                "under ${llvmBin.absolutePath}.",
+        )
 
         val sysrootArgs = when {
             spec.appleSdk != null -> listOf("-isysroot", xcrunSdkPath(spec.appleSdk))
@@ -382,15 +380,15 @@ abstract class CompileKiteCodecCTask @Inject constructor(
             )
             "android_arm64" -> CTargetSpec(
                 "aarch64-unknown-linux-android24",
-                konanSysroot = ANDROID_TOOLCHAIN_SYSROOT,
+                konanSysroot = androidToolchainSysroot(),
             )
             "android_arm32" -> CTargetSpec(
                 "armv7a-unknown-linux-androideabi24",
-                konanSysroot = ANDROID_TOOLCHAIN_SYSROOT,
+                konanSysroot = androidToolchainSysroot(),
             )
             "android_x64" -> CTargetSpec(
                 "x86_64-unknown-linux-android24",
-                konanSysroot = ANDROID_TOOLCHAIN_SYSROOT,
+                konanSysroot = androidToolchainSysroot(),
             )
             "mingw_x64" -> CTargetSpec(
                 "x86_64-pc-windows-gnu",
@@ -406,7 +404,32 @@ abstract class CompileKiteCodecCTask @Inject constructor(
          * The Android NDK sysroot, from the toolchain package. Using `target-sysroot-1-android_ndk`
          * instead fails with `'stdlib.h' file not found`.
          */
-        private const val ANDROID_TOOLCHAIN_SYSROOT: String = "target-toolchain-2-osx-android_ndk/sysroot"
+        /**
+         * Resolves a konan LLVM tool by its bare name and then by its `.exe` name (interlude item
+         * I-20): a Windows konan package ships `clang.exe`, so `File("bin/clang").canExecute()`
+         * is false there and every candidate used to be rejected. Null when neither exists.
+         */
+        internal fun resolveTool(binDir: File, name: String): File? =
+            listOf(binDir.resolve(name), binDir.resolve("$name.exe")).firstOrNull { it.canExecute() }
+
+                /**
+         * The konan HOST infix, the word konan itself uses to name per-host dependency packages:
+         * the authoritative konan.properties reads `targetToolchain.linux_x64-android_arm64 =
+         * target-toolchain-2-linux-android_ndk` and `targetToolchain.mingw_x64-... =
+         * target-toolchain-2-windows-...` beside the osx one. Hardcoding `osx` here was interlude
+         * item I-20: on an Ubuntu or Windows runner the osx package never exists, so the C compile
+         * threw before cinterop and four CI jobs could not pass. Parameterised on the os.name so a
+         * test can drive every host shape from one machine.
+         */
+        internal fun konanHostInfix(osName: String = System.getProperty("os.name").orEmpty()): String = when {
+            osName.startsWith("Mac") || osName.startsWith("Darwin") -> "osx"
+            osName.startsWith("Windows") -> "windows"
+            else -> "linux"
+        }
+
+        /** The Android NDK sysroot inside the konan dependencies tree, named after the BUILD host. */
+        internal fun androidToolchainSysroot(osName: String = System.getProperty("os.name").orEmpty()): String =
+            "target-toolchain-2-${konanHostInfix(osName)}-android_ndk/sysroot"
 
         /**
          * What `file -b` must report, as a prefix, for an object built for [konanTargetName]. All
@@ -462,12 +485,12 @@ abstract class CompileKiteCodecCTask @Inject constructor(
             log: (String) -> Unit = {},
         ): File {
             val preferred = dependenciesDir.resolve(preferredPackage)
-            if (preferred.resolve("bin/clang").canExecute()) return preferred.resolve("bin")
+            if (resolveTool(preferred.resolve("bin"), "clang") != null) return preferred.resolve("bin")
 
             val alternative = dependenciesDir.listFiles()
                 .orEmpty()
                 .filter { it.isDirectory && it.name.startsWith("llvm-") }
-                .filter { it.resolve("bin/clang").canExecute() }
+                .filter { resolveTool(it.resolve("bin"), "clang") != null }
                 .maxWithOrNull(LLVM_PACKAGE_ORDER)
                 ?: throw GradleException(
                     "No LLVM package with a usable clang under ${dependenciesDir.absolutePath}. " +

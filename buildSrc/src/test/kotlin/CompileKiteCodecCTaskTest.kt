@@ -167,6 +167,43 @@ class CompileKiteCodecCTaskTest {
         assertContains(failure.message.orEmpty(), "llvm-21-aarch64-macos-essentials-97")
     }
 
+
+    @Test
+    fun aWindowsShapedDependenciesTreeResolvesTheExeNames() {
+        // Interlude item I-20. A Windows konan package ships clang.exe and llvm-ar.exe, and the
+        // review measured File("bin/clang").canExecute() false against a Windows shaped tree, so
+        // every candidate was rejected and the windows-x64 CI job could not pass. Resolution now
+        // tries the bare name and then the .exe name.
+        val root = createTempDirectory()
+        val bin = root.resolve("llvm-21-x86_64-windows-essentials-97/bin")
+        writeExecutable(bin.resolve("clang.exe"))
+        writeExecutable(bin.resolve("llvm-ar.exe"))
+
+        val resolved = CompileKiteCodecCTask.resolveLlvmBinDir(root, "llvm-21-x86_64-windows-essentials-97")
+        assertEquals(bin.absolutePath, resolved.absolutePath)
+        assertEquals("clang.exe", CompileKiteCodecCTask.resolveTool(resolved, "clang")?.name)
+        assertEquals("llvm-ar.exe", CompileKiteCodecCTask.resolveTool(resolved, "llvm-ar")?.name)
+    }
+
+    @Test
+    fun theAndroidToolchainPackageIsNamedAfterTheBuildHost() {
+        // Interlude item I-20. The sysroot path hardcoded the osx infix, and on an Ubuntu runner
+        // the osx package never exists, so the C compile threw before cinterop and the three
+        // android CI jobs could not pass. The infix now follows the host, the way konan's own
+        // konan.properties names the packages.
+        val root = createTempDirectory()
+        val linuxSysroot = root.resolve("target-toolchain-2-linux-android_ndk/sysroot")
+        assertTrue(linuxSysroot.mkdirs())
+
+        assertEquals("osx", CompileKiteCodecCTask.konanHostInfix("Mac OS X"))
+        assertEquals("windows", CompileKiteCodecCTask.konanHostInfix("Windows Server 2022"))
+        assertEquals("linux", CompileKiteCodecCTask.konanHostInfix("Linux"))
+        assertTrue(
+            root.resolve(CompileKiteCodecCTask.androidToolchainSysroot("Linux")).isDirectory,
+            "the Linux shaped tree must resolve on a Linux host name",
+        )
+    }
+
     private fun writeExecutable(file: File) {
         file.parentFile.mkdirs()
         file.writeText("#!/bin/sh\nexit 0\n")
