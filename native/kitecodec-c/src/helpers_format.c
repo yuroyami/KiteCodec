@@ -23,6 +23,10 @@ KC_API void ffkmp_fmt_close_input(AVFormatContext **ctx) {
 KC_API int  ffkmp_fmt_find_stream_info(AVFormatContext *c) { return avformat_find_stream_info(c, NULL); }
 KC_API int  ffkmp_fmt_seek_micros(AVFormatContext *ctx, int stream_index, int64_t micros) {
     if (!ctx) return AVERROR(EINVAL);
+    /* Interlude guard (I-12): an index at or past nb_streams used to index ctx->streams[]
+     * unchecked, reproduced as signal 11 through this exported entry point. -1 keeps its
+     * documented meaning, any stream; every other out of range index is refused. */
+    if (stream_index < -1 || (stream_index >= 0 && (unsigned)stream_index >= ctx->nb_streams)) return AVERROR(EINVAL);
     int64_t target = stream_index < 0 ? micros : av_rescale_q(micros, AV_TIME_BASE_Q, ctx->streams[stream_index]->time_base);
     return av_seek_frame(ctx, stream_index, target, AVSEEK_FLAG_BACKWARD);
 }
@@ -56,7 +60,9 @@ KC_API int  ffkmp_fmt_alloc_output2(AVFormatContext **out, const char *path, con
 }
 /* Muxer private options (movflags, …): AV_OPT_SEARCH_CHILDREN reaches oformat priv_data. */
 KC_API int  ffkmp_fmt_set_opt(AVFormatContext *c, const char *k, const char *v) {
-    if (!c) return AVERROR(EINVAL);
+    /* Interlude guard (I-12): a NULL key used to reach av_opt_set's name comparison and crash,
+     * reproduced as signal 11 through this exported entry point. Refused like a NULL context. */
+    if (!c || !k) return AVERROR(EINVAL);
     return av_opt_set(c, k, v, AV_OPT_SEARCH_CHILDREN);
 }
 KC_API void ffkmp_fmt_free_output(AVFormatContext **ctx) {

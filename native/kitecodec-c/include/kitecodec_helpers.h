@@ -261,6 +261,11 @@ KC_API void ffkmp_fmt_close_input(AVFormatContext **ctx);
  * the caller's.
  */
 KC_API int  ffkmp_fmt_find_stream_info(AVFormatContext *c);
+
+/* Arguments. A NULL context is refused with AVERROR(EINVAL). stream_index -1 means any
+ * stream; 0 to nb_streams-1 seeks in that stream's time base; every other value is refused
+ * with AVERROR(EINVAL) instead of indexing streams[] out of range (interlude guard, I-12).
+ */
 KC_API int  ffkmp_fmt_seek_micros(AVFormatContext *ctx, int stream_index, int64_t micros);
 
 /* Ownership. On success the packet holds a new reference the caller owns. The packet must be
@@ -281,7 +286,10 @@ KC_API AVDictionary* ffkmp_fmt_metadata(AVFormatContext *c);
 KC_API int  ffkmp_fmt_alloc_output2(AVFormatContext **out, const char *path, const char *format);
 
 /* Ownership. The option system copies key and value, so neither string is retained and both
- * may be freed immediately. A NULL context is refused with AVERROR(EINVAL).
+ * may be freed immediately. A NULL context is refused with AVERROR(EINVAL), and so is a NULL
+ * key, which used to crash inside the option lookup (interlude guard, I-12). A NULL value is
+ * passed through and av_opt_set itself answers AVERROR(EINVAL) without crashing, measured at
+ * the interlude for a flags option and an int option alike.
  */
 KC_API int  ffkmp_fmt_set_opt(AVFormatContext *c, const char *k, const char *v);
 

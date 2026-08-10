@@ -611,6 +611,41 @@ static void case_fmt_find_stream_info(int measure)
     OWN_LIVE_EXACTLY(measure, &before, 0, "net");
 }
 
+/* Interlude item I-12. The two argument guards the retired byte-equality proof was blocking.
+ * Before the guards, both of these were reproduced as signal 11 through the public surface. */
+static void case_fmt_set_opt_refuses_a_null_key(int measure)
+{
+    kc_alloc_counts before;
+    AVFormatContext *ctx = NULL;
+    kc_alloc_snapshot(&before);
+    KC_EQ_INT(ffkmp_fmt_alloc_output2(&ctx, out_path, "wav"), 0);
+    KC_NOT_NULL(ctx);
+    /* A NULL key used to reach av_opt_set and crash inside its strcmp. The contract now matches
+     * the context guard beside it: refused with AVERROR(EINVAL), nothing read, nothing stored. */
+    KC_EQ_INT(ffkmp_fmt_set_opt(ctx, NULL, "1"), AVERROR(EINVAL));
+    /* The guard refuses the key alone; a real option through the same call still works. */
+    KC_EQ_INT(ffkmp_fmt_set_opt(ctx, "fflags", "+bitexact"), 0);
+    ffkmp_fmt_free_output(&ctx);
+    OWN_LIVE_EXACTLY(measure, &before, 0, "net");
+}
+
+static void case_fmt_seek_micros_refuses_an_out_of_range_stream(int measure)
+{
+    kc_alloc_counts before;
+    AVFormatContext *in = NULL;
+    kc_alloc_snapshot(&before);
+    KC_EQ_INT(ffkmp_fmt_open_input(&in, wav_path), 0);
+    KC_CHECKF(ffkmp_fmt_find_stream_info(in) >= 0, "find_stream_info failed");
+    /* An index past nb_streams used to index ctx->streams[] unchecked and crash. -1 keeps its
+     * documented meaning, any stream; everything else outside 0..nb_streams-1 is refused. */
+    KC_EQ_INT(ffkmp_fmt_seek_micros(in, 99, 0), AVERROR(EINVAL));
+    KC_EQ_INT(ffkmp_fmt_seek_micros(in, -2, 0), AVERROR(EINVAL));
+    KC_CHECKF(ffkmp_fmt_seek_micros(in, -1, 0) >= 0, "-1, any stream, stopped working");
+    KC_CHECKF(ffkmp_fmt_seek_micros(in, 0, 0) >= 0, "a valid index stopped working");
+    ffkmp_fmt_close_input(&in);
+    OWN_LIVE_EXACTLY(measure, &before, 0, "net");
+}
+
 static void case_fmt_open_input_refuses_a_missing_file(int measure)
 {
     kc_alloc_counts before;
@@ -1043,6 +1078,8 @@ static const own_case cases[] = {
     { "fmt_free_output closes an open pb",                case_fmt_free_output_closes_an_open_pb },
     { "fmt_io_open refuses a bad path",                   case_fmt_io_open_refuses_a_bad_path },
     { "fmt_set_opt value is context owned",               case_fmt_set_opt_is_context_owned },
+    { "fmt_set_opt refuses a NULL key",                   case_fmt_set_opt_refuses_a_null_key },
+    { "fmt_seek_micros refuses an out of range stream",   case_fmt_seek_micros_refuses_an_out_of_range_stream },
     { "fmt_set_metadata is context owned",                case_fmt_set_metadata_is_context_owned },
     { "fmt_new_stream result is parent owned",            case_fmt_new_stream_is_parent_owned },
     { "fmt_write_header, write_frame and write_trailer",  case_fmt_write_session },
