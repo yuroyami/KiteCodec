@@ -19,6 +19,14 @@
 # four numbers were LOWERED at B1.6, which is a normal commit: the identity gate of register item
 # B1-02 moved the six *_version queries and the configuration query behind one report, and the
 # measurement is recorded beside each number below.
+#
+# Re-read and not re-recorded at B1.9, which closes B1. Plan section 15.2 B1.9 step 1 asks for the
+# baseline at its new, lower values; the values did not move, and that is a fact about which
+# repository the last three sub-phases touched rather than an omission. B1.7, B1.8 and B1.9 are the
+# real-time audio work and the words: every line they changed in this repository is documentation.
+# So the deltas across the whole of B1 are the ones already written beside each number, 253 to 246
+# and 21 to 14 with the other two unchanged, and `checkCinteropCoupling` was rerun at the closing
+# gate to prove the four counts still hold.
 
 # grep -rn '^import ffmpeg\.' --include='*.kt' . | grep -v '^[^:]*:[0-9]*:import ffmpeg\.\(kc_\|KC_\)' | wc -l
 #

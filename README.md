@@ -208,6 +208,21 @@ filter `deps="gpl"`, so `hasFilter("eq")` is false in an LGPL build.
 default profile is LGPL. Asking for one there throws `FFmpegException` from
 `addVideoEncoder`, before a single frame is read.
 
+**The runtime is checked against the headers before anything else happens.** The
+first call into KiteCodec compares the six `LIB*_VERSION_INT` values frozen into
+this artifact at compile time against what the linked libraries report, and
+refuses to start on a mismatch that can corrupt memory: a different major, or a
+runtime minor below the header minor, or six libraries that disagree with each
+other about their own configure line. A micro difference is reported and never
+fatal. The refusal is a typed error naming both identities, the two licence
+strings and what to do about it, and it happens before the first allocation
+rather than as a plausible wrong number ten frames later. Older headers against a
+newer runtime is the case that motivates it: every symbol resolves, the link
+succeeds, and struct offsets are silently wrong. Setting
+`KITECODEC_FFMPEG_ABI_BYPASS=1` downgrades the refusal to a warning printed once,
+for diagnosis only; it is not a supported configuration and the diagnostic report
+says it was used.
+
 ### The low-level playback layer
 
 The batch API above fuses demuxing and decoding into one pass, which is right
@@ -256,7 +271,8 @@ Every target claim in the Kite family means one of these tiers and nothing more.
 | T3 and above | Output, OS integration and release qualification. A codec library makes no such claim, so KiteCodec never reports one. |
 
 Against that scale: `macosArm64` is T2, measured on an Apple silicon development
-machine by 72 `kitecodec-core` tests and the e2e script. `linuxX64` and
+machine by 85 `kitecodec-core` tests, six C suites under three sanitizer
+variants, and the e2e script. `linuxX64` and
 `mingwX64` are T2 on CI evidence only, never on a machine you can inspect here.
 The `androidNative*` klibs are T1: they compile per ABI and nothing runs them.
 `iosArm64`, `iosSimulatorArm64`, `iosX64`, `macosX64` and `linuxArm64` are built
@@ -296,7 +312,7 @@ the same `ffkmp_*` C helpers, and that bridge does not exist yet.
 | Hardware decode, and zero-copy hwframes | Hardware *encode* does work. `h264_videotoolbox` is verified on macOS arm64. Pass `allow_sw` on VMs and CI runners, where the encoder exists but the hardware block does not. |
 | MediaCodec from a plain app | FFmpeg's wrapper needs the app's `JavaVM` through `av_jni_set_java_vm` before the first `*_mediacodec` codec opens, and nothing here makes that call. |
 | `https` in the vendored profile | It needs a TLS backend cross-compiled per target. Use `http`, a local file, or link a system FFmpeg. |
-| A stable API | 0.0.1 is pre-1.0. `explicitApi()` is on, so every public declaration states its visibility and return type. The klib binary-compatibility validator is configured, but it has no committed baseline and CI does not run it. Nothing catches an accidental signature change today. |
+| A stable API | 0.0.1 is pre-1.0, so a minor version may still break you. `explicitApi()` is on, every public declaration states its visibility and return type, and there is now a committed klib dump under `kitecodec-core/api/` that `apiCheck` verifies in the macOS CI job, so an accidental signature change fails a build. That is a change being visible, not a promise that it will not happen. |
 
 ## Build and test it here
 
@@ -314,13 +330,35 @@ $KEXE transcode in.mp4 out.mp4 "scale=1280:720" -acopy   # also: info, probe, th
 scripts/e2e.sh "$KEXE"
 ```
 
-There are 72 tests in `kitecodec-core`, plus 3 TestKit functional tests for the
+There are 85 tests in `kitecodec-core`, plus 3 TestKit functional tests for the
 Gradle plugin, of which 2 fail on a clean checkout and are a known defect of the
 plugin's test setup, not of the library. `commonTest` covers the pure logic. `nativeTest` runs against the
 FFmpeg the build actually linked. `PipelineRoundTripTest` needs no media
 fixtures: it synthesizes frames, muxes them through the real pipeline, then reads
 them back. `scripts/e2e.sh` generates a clip with the ffmpeg CLI, runs it through
 the sample binary, and checks the output with ffprobe.
+
+The C helper layer has its own build and its own tests, which are not part of the
+Gradle run:
+
+```bash
+cd native/kitecodec-c
+./scripts/build-host.sh plain && ./scripts/run-c-tests.sh plain   # also asan, tsan
+./scripts/verify-lift.sh          # the generated C is exactly what the def produces
+./scripts/symbol-audit.sh         # what the archive needs, exports and keeps private
+./scripts/replay-corpus.sh        # every committed fuzz seed, under ASan and UBSan
+cd ../.. && ./gradlew :kitecodec-core:apiCheck checkCinteropCoupling
+```
+
+Four limits of this machine are measured rather than assumed, and they shape all
+of the above: no clang here has a libFuzzer runtime, so coverage-guided fuzzing
+runs only in the Linux CI job; LeakSanitizer is unsupported on macOS arm64, so the
+leak instrument is a Mach-O allocation interposer; cmake is not installed and GNU
+make truncates a path at an unescaped `#`, which this checkout's own path
+contains, so the C build drives clang directly; and only one FFmpeg tree exists
+here, so exactly one of the eleven registered targets builds a real archive. What
+each instrument can and cannot prove is written out in
+[native/kitecodec-c/README.md](native/kitecodec-c/README.md).
 
 Every sample command and every build step is written out in
 [Getting started](docs/getting-started.md). The binding design, the `ffkmp_*` C

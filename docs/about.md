@@ -44,7 +44,15 @@ The pragmatic alternative, six separate cinterops (one per library), does not wo
 
 ### The `ffkmp_*` C helpers
 
-The `.def` file also exports 141 small `static inline` C helpers, all prefixed `ffkmp_*`. They exist because some of FFmpeg's surface does not survive cinterop cleanly:
+The binding also carries 157 small C helpers, all prefixed `ffkmp_*`. They live in
+`native/kitecodec-c/`, compiled per Kotlin/Native target into a static archive that the def names and
+cinterop embeds. They used to be `static inline` text inside the def, which meant no translation unit,
+no object file and no test; the move gave them nine translation units, six C test suites, three
+sanitizer variants and six fuzz targets, and a committed generator plus `scripts/verify-lift.sh` proves
+the extracted C is byte for byte what the def body was. The def's declared surface did not change, so
+no Kotlin call site did either.
+
+They exist because some of FFmpeg's surface does not survive cinterop cleanly:
 
 - **Macros that don't survive cinterop.** `av_err2str` is a compound-statement macro; `AVERROR(EAGAIN)` and `AVERROR_EOF` are function-style macros. Each gets a real C function the indexer can actually read.
 - **Struct field accessors.** `ffkmp_stream_codecpar(AVStream*)`, `ffkmp_frame_pts(AVFrame*)`, and similar accessors. Modern FFmpeg marks many fields "do not access directly," and several vary across libav versions. A thin C accessor pins one stable read path per field.
@@ -55,9 +63,15 @@ The `.def` file also exports 141 small `static inline` C helpers, all prefixed `
 ### Source layout
 
 ```
+native/kitecodec-c/                  ← the C helper layer: nine units, its own tests and fuzz targets
+├── include/kitecodec_helpers.h      ← generated from the def body
+├── include/kitecodec_abi.h          ← the FFmpeg identity gate's contract, no FFmpeg header in it
+├── src/helpers_*.c                  ← generated, one per subsystem
+├── src/kitecodec_abi.c              ← the identity gate itself
+├── tests/ fuzz/ scripts/            ← six suites, six fuzz targets, the audit and lift scripts
 kitecodec-core/src/
 ├── nativeInterop/cinterop/
-│   └── ffmpeg.def                   ← unified cinterop + C helpers
+│   └── ffmpeg.def                   ← unified cinterop; names the compiled helper archive
 ├── commonMain/kotlin/io/github/yuroyami/kitecodec/
 │   ├── FFmpeg.kt                    ← capability probing + Versions
 │   ├── MediaSource.kt               ← demuxer + decode flows (expect)

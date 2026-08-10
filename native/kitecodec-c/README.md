@@ -351,9 +351,12 @@ Add a suite by adding its source to `tests/` and its stem to the `TESTS` list in
 
 ## The six suites, and what each one earns
 
-234 cases per variant, 702 case runs across the three. Measured at the B1.4 gate. It was 240 at
-B1.2 and B1.3; the six that went were cases for helpers B1.4 deleted, four in `test_ownership.c`
-and two in `test_rescale.c`, and nothing else changed.
+250 cases per variant, 750 case runs across the three. Measured at the B1 closing gate. The history
+is worth one sentence, because this line disagreed with its own table until that gate: 240 at B1.2
+and B1.3, then 234 at B1.4, when six cases went with the helpers B1.4 deleted, four in
+`test_ownership.c` and two in `test_rescale.c`; then 250 at B1.6, when `test_identity.c` arrived with
+16. B1.6 added the table row and left this line at 234, so the table was right and the prose was
+wrong for two sub-phases.
 
 | Suite | Cases | What it establishes | Register item |
 |---|---|---|---|
@@ -371,13 +374,38 @@ Removing one running-length check in the audio builder gives UBSan `index 2054 o
 type 'char[2048]'`. Weakening any of the four copy bounds by one byte gives an ASan
 `heap-buffer-overflow`. The details are in each suite's own file header.
 
+## What each instrument proves, and what it cannot
+
+Three instruments carry the evidence in this directory, and they are not interchangeable. Plan
+section 2 grades evidence and forbids presenting a weaker instrument as a stronger one, so the table
+is here rather than left to a reader's assumption.
+
+| Instrument | Level | Proves | Cannot prove |
+|---|---|---|---|
+| The allocation interposer | 2 | Exact allocation and free pairing per ownership helper, and that nothing is left live at the end of a case. Every count is a real `malloc`, `calloc`, `realloc`, `free`, `mmap` or `posix_memalign`. | Anything under `asan` or `tsan`, where the sanitizer owns the allocator and the counters read zero; those cases report a partial. And anything about a managed runtime's allocation, which does not go through these functions at all. |
+| ASan with UBSan | 2 | An out of bounds read or write, and a signed overflow, named at the byte and the line. This is the variant that reproduced the stale-header class the identity gate now prevents: a four byte read 36 bytes past a 416 byte region. | A leak, because LeakSanitizer is unsupported here. A race, because it cannot be combined with TSan. |
+| TSan | 2 | A real data race between two threads, which is what keeps `ffkmp_strerror`'s thread affinity honest. | Memory ordering strength. Downgrading a release store to relaxed is still atomic, and TSan says nothing about it; that class needs a source level check or a proof. |
+
+Four limits of this machine shape all of the above, each measured rather than assumed:
+
+* **No libFuzzer.** Apple clang 17 and konan's LLVM 21 both fail with `libclang_rt.fuzzer_osx.a not
+  found`, and Homebrew LLVM is not installed. So `run-fuzz.sh` refuses with one sentence here, the
+  Linux CI job is the only place the fuzzer itself executes, and what runs locally is the corpus
+  replay, which is a regression test over the committed seeds and nothing more.
+* **No LeakSanitizer.** `detect_leaks=1` answers "not supported on this platform", which is why the
+  interposer above exists.
+* **No cmake, and GNU make is unsafe here.** cmake is not installed, and make starts a comment at an
+  unescaped `#`, which this checkout's own path contains. The C build drives clang directly.
+* **One FFmpeg tree.** Ten of the eleven registered targets have no FFmpeg on this machine, so
+  exactly one real archive is built here, for `macos_arm64`.
+
 ## What is not here yet
 
-Not here, by sub-phase: the lock-free C audio ring and the pure C device callback, which are
-KitePlayer's `kiteplayer-rt` and belong to B1.7 and B1.8. Coverage-guided fuzzing does not run on
-this machine either: no clang here has a fuzzer runtime, so `run-fuzz.sh` refuses and the Linux CI
-job is the only place the fuzzer itself executes. What runs here is the corpus replay, which is a
-regression test over the committed seeds and nothing more.
+Not here, and not this directory's job: the lock-free C audio ring and the pure C device callback.
+Those landed in KitePlayer's `kiteplayer-rt` in sub-phases B1.7 and B1.8, with their own eight C
+suites, their own render audit and their own supervised device run. A lock-free audio ring has
+nothing to do with FFmpeg, and putting it here would have made KitePlayer's real-time core a
+transitive consequence of a codec dependency.
 
 Nothing in this directory claims to work on a target whose archive was never built: plan section
 15.3 grades that claim as level 8 and bans it. On this machine one archive is built, for
@@ -396,3 +424,7 @@ with its `--prove-power` mutation check, `run-fuzz.sh`, and the `fuzz-linux` CI 
 Done in B1.6: the FFmpeg header versus runtime identity gate, `include/kitecodec_abi.h`,
 `src/kitecodec_abi.c`, `tests/test_identity.c` against `tests/fake_headers/`, and the
 `ffmpeg-identity-gate` CI job.
+
+Done in B1.9: the words. Nothing in this directory changed except this file and the two documents
+above it, and the coupling baseline was re-read rather than re-recorded, because B1.7 to B1.9 touch
+KitePlayer only and none of the four counts could move. B1 is closed.
