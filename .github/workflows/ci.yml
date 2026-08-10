@@ -50,8 +50,29 @@ jobs:
           key: konan-macos-arm64-${{ hashFiles('gradle/libs.versions.toml') }}
           restore-keys: |
             konan-macos-arm64-
-      - name: Install FFmpeg
-        run: brew install ffmpeg
+      # Pinned at the interlude (I-15). klib-metadata-baseline.txt freezes 24 FFmpeg version
+      # constants down to their micro values, so an unpinned `brew install ffmpeg` turns every
+      # Homebrew version bump into a red metadata check whose cheapest exit is an --update that
+      # could absorb a real surface change in the same commit. Homebrew offers no formula pinned
+      # to this exact release (ffmpeg@8 is an alias of the moving main formula, checked
+      # 2026-08-10), so the pin is an assert: install, then refuse any header tree other than the
+      # exact avutil version the committed baseline froze. When this step goes red, the move is
+      # deliberate: bump the local FFmpeg, re-baseline with klib-metadata-diff.sh --update, update
+      # the version below in the same commit, and paste the script's SUMMARY block into the
+      # Execution log entry (KPKMP.md section 9's ratchet move table).
+      - name: Install FFmpeg (pinned by assert)
+        run: |
+          brew install ffmpeg
+          V="$(awk '/#define LIBAVUTIL_VERSION_(MAJOR|MINOR|MICRO)/ {printf "%s.", $3}' \
+            "$(brew --prefix)/include/libavutil/version.h")"
+          V="${V%.}"
+          if [ "$V" != "60.8.100" ]; then
+            echo "Homebrew installed FFmpeg with libavutil $V; the committed metadata baseline froze 60.8.100."
+            echo "This is the pin from KPKMP.md I-15 firing, not a broken build."
+            echo "Move it deliberately: re-baseline with native/kitecodec-c/scripts/klib-metadata-diff.sh --update,"
+            echo "update the version in this step, and log the SUMMARY block, all in one commit."
+            exit 1
+          fi
       # The two ratchets. apiCheck compares kitecodec-core's klib against the committed dump in
       # kitecodec-core/api, so a public API change fails here instead of shipping.
       # checkCinteropCoupling recounts the Kotlin-to-FFmpeg coupling and fails when it grew.
@@ -61,10 +82,14 @@ jobs:
       # cinterop is skipped, and compileKotlin<Target> then fails on unresolved `ffmpeg` references.
       # The committed dump is therefore a macosArm64 dump, and apiCheck has to be scoped the same
       # way it was produced. Widening it to every target needs an FFmpeg tree per target in CI.
-      - name: Public API baseline + FFmpeg coupling ratchet
+      # check-deleted-surface.sh joined this step at the interlude (I-15): it needs no build
+      # output, only the tree, and it holds the fifteen deleted ffkmp_ names dead in both
+      # repositories. Here it can only scan this one; KitePlayer has no CI yet (B8).
+      - name: Public API baseline + FFmpeg coupling ratchet + deleted surface
         run: |
           ./gradlew :kitecodec-core:apiCheck -Pkitecodec.hostTargetsOnly=true --stacktrace
           ./gradlew checkCinteropCoupling --stacktrace
+          ./native/kitecodec-c/scripts/check-deleted-surface.sh
       # The third ratchet, and the only guard on the cinterop klib: apiCheck covers kitecodec-core's
       # own klib, and the cinterop klib is a separate artifact holding every FFmpeg binding and every
       # ffkmp_ helper. klib-metadata-diff.sh --check dumps its metadata and fails when it differs
