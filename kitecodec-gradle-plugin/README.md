@@ -16,8 +16,9 @@ plugins {
 kitecodec {
     ffmpeg {
         version = "n8.0"                 // pinned FFmpeg release
-        source  = FFmpegSource.Prebuilt  // Prebuilt (default) | System | BuildFromSource
+        source  = FFmpegSource.Prebuilt  // Prebuilt (default) | System | Local | BuildFromSource
         license = FFmpegLicense.LGPL     // REQUIRED, no default. See below
+        // localRoot = layout.projectDirectory.dir("ffmpeg") // required for Local
     }
 }
 ```
@@ -35,6 +36,11 @@ for you and fails configuration with instructions when it is missing.
   (`ffmpeg-<version>-<license>-<triple>.zip`), verifies its SHA-256, and caches it under the Gradle
   user home. Android targets always use the LGPL MediaCodec build.
 - `System`: links a system FFmpeg already installed (Homebrew / apt). Dynamic linking, dev convenience.
+- `Local`: links a complete no-network tree at
+  `<localRoot>/<license>/<target>/{include,lib}`. All six `libav*.a` archives and
+  `include/libavformat/avformat.h` are validated for every wired target. Local mobile Apple permits
+  LGPL only, rejects GPL before tree validation and adds only SDK zlib. Local macOS searches the
+  local tree before the host fallback.
 - `BuildFromSource`: only inside the KiteCodec checkout, which ships the `:buildFFmpegFor<Target>` tasks.
 
 ## Licence flavours

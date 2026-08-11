@@ -1,7 +1,9 @@
 package io.github.yuroyami.kitecodec
 
+import kotlinx.cinterop.toKString
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
+import platform.posix.getenv
 import platform.posix.remove
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -18,8 +20,13 @@ class EncoderRestampTest {
 
     private val tmpFiles = mutableListOf<String>()
 
-    private fun tmp(name: String): String =
-        "build/kitecodec-test-$name".also { tmpFiles += it }
+    private fun tmp(name: String): String {
+        val root = sequenceOf("TMPDIR", "TEMP", "TMP")
+            .mapNotNull { getenv(it)?.toKString() }
+            .firstOrNull { it.isNotBlank() }
+            ?: error("No temporary directory: TMPDIR, TEMP, and TMP are all missing or blank")
+        return "${root.trimEnd('/', '\\')}/kitecodec-test-$name".also { tmpFiles += it }
+    }
 
     @AfterTest
     fun cleanup() {

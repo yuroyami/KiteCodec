@@ -9,7 +9,7 @@ There is one target table for the project and it lives in the [README](https://g
 Two points decide whether KiteCodec is usable for you:
 
 - `nativeMain` is the only implementation source set. Every target is the same eight files of Kotlin compiled N ways; what differs is which FFmpeg gets linked. There is **no JVM target**, no Android AAR, and no `js` or `wasmJs` target of any kind.
-- The published set is five triples: `macosArm64`, `linuxX64`, `androidNativeArm64`, `androidNativeArm32`, `androidNativeX64`. `mingwX64` builds and tests in CI but is not published and has no prebuilt asset; `ios*`, `macosX64` and `linuxArm64` are not built anywhere.
+- The published set is five triples: `macosArm64`, `linuxX64`, `androidNativeArm64`, `androidNativeArm32`, `androidNativeX64`. `mingwX64` builds and tests in CI but is not published and has no prebuilt asset. `iosArm64` and `iosSimulatorArm64` now have a local/private build path on arm64 macOS, with no public artifact or CI claim. `iosX64`, `macosX64` and `linuxArm64` are not qualified.
 
 ## FFmpeg is a prerequisite
 
@@ -52,21 +52,23 @@ git clone --depth 1 --branch n8.0 https://github.com/FFmpeg/FFmpeg vendor/ffmpeg
 ./gradlew :kitecodec-core:buildFFmpegForAll
 ```
 
-The Gradle task cross-compiles a pinned codec and filter set and drops `.a` libraries under `native-libs/<license>/<target>/` (`lgpl` or `gpl`). `FFmpegPaths` notices, compiles the C archive against that tree and switches the final link to the static libraries; the resulting executable carries everything it needs, around 25 MB.
+The Gradle task cross-compiles a pinned codec and filter set and drops `.a` libraries under `native-libs/<license>/<target>/` (`lgpl` or `gpl`). `FFmpegPaths` notices, compiles the C archive against that tree and switches the final link to the static libraries. Desktop size is around 25 MB; no mobile size is claimed before it is measured.
+
+Configure and make never see the checkout path or final output path. The task copies source to a unique hash-free directory under `java.io.tmpdir`, excluding `.git` and every `build` subtree, installs the normalized configure invocation at `lib/kitecodec/ffmpeg-configure.txt`, verifies that record plus the archives and headers there, copies with Java/NIO to a verified sibling staging tree, then replaces the final tree. Packaging reads only that exact single-line evidence. A failure leaves the previous output intact and prints the retained scratch path.
 
 The static profile is **LGPL by default**: no `--enable-gpl`, no libx264 / libx265. That is the App-Store- and closed-source-safe flavor.
 
 The set is deliberately small. If a codec is not listed here, it is not in the artifact. The authoritative list is `sharedCoreArgs()` in [`BuildFFmpegTask.kt`](https://github.com/yuroyami/KiteCodec/blob/main/buildSrc/src/main/kotlin/BuildFFmpegTask.kt); as of `n8.0`:
 
-| | LGPL (default) | GPL (opt-in) | Android (always LGPL) |
-|---|---|---|---|
-| **Video encode** | `mpeg4`, `libsvtav1`, `mjpeg`, `png`, `h264_videotoolbox` / `hevc_videotoolbox` (Apple) | + `libx264`, `libx265` | `mpeg4`, `mjpeg`, `png`, `h264_mediacodec`, `hevc_mediacodec` |
-| **Audio encode** | `aac`, `libopus`, `libmp3lame`, `flac`, `pcm_s16le`/`s24le`/`f32le` | same | `aac`, `flac`, `pcm_*` |
-| **Decode** | h264, hevc, vp8, vp9, av1, mpeg4, aac, mp3, opus, vorbis, flac, pcm, png, mjpeg, webp | same | same + MediaCodec h264/hevc |
-| **Containers** | mp4/mov, matroska/webm (incl. `.mka`), mpegts, mp3, wav, flac, ogg/opus, image2 | same | same |
-| **Protocols** | `file`, `pipe`, `data`, `http`, `tcp` | same | same |
-| **Filters** | scale, pad, overlay, hue, unsharp, vignette, colorbalance, colorlevels, curves, lut, colorchannelmixer, split, trim/setpts, drawtext, and the audio set (volume, atempo, aresample, amix, afade, adelay, atrim, aformat) | + `eq`, `boxblur` | same as LGPL, minus `drawtext` (no freetype) |
-| **Bitstream filters** | `extract_extradata`, `aac_adtstoasc`, `h264_mp4toannexb`, `hevc_mp4toannexb`, `vp9_superframe` | same | same |
+| | Desktop LGPL | Desktop GPL | Mobile Apple LGPL | Android LGPL |
+|---|---|---|---|---|
+| **Video encode** | `mpeg4`, `libsvtav1`, `mjpeg`, `png`, `h264_videotoolbox`, `hevc_videotoolbox` | + `libx264`, `libx265` | `mpeg4`, `mjpeg`, `png` | `mpeg4`, `mjpeg`, `png`, `h264_mediacodec`, `hevc_mediacodec` |
+| **Audio encode** | `aac`, `libopus`, `libmp3lame`, `flac`, `pcm_s16le`/`s24le`/`f32le` | same | `flac`, `pcm_*` | `aac`, `flac`, `pcm_*` |
+| **Decode** | h264, hevc, vp8, vp9, av1, mpeg4, aac, mp3, opus, vorbis, flac, pcm, png, mjpeg, webp | same | same | same + MediaCodec h264/hevc |
+| **Containers** | mp4/mov, matroska/webm (including `.mka`), mpegts, mp3, wav, flac, ogg/opus, image2 | same | same | same |
+| **Protocols** | `file`, `pipe`, `data`, `http`, `tcp` | same | same | same |
+| **Filters** | scale, pad, overlay, hue, unsharp, vignette, colorbalance, colorlevels, curves, lut, colorchannelmixer, split, trim/setpts, drawtext, and the audio set | + `eq`, `boxblur` | shared set without `drawtext`, `eq` or `boxblur` | same as Mobile Apple |
+| **Bitstream filters** | `extract_extradata`, `aac_adtstoasc`, `h264_mp4toannexb`, `hevc_mp4toannexb`, `vp9_superframe` | same | same | same |
 
 `eq` and `boxblur` are marked `deps="gpl"` by FFmpeg itself, which is why they appear only in the GPL column. Use `hue` (it has a brightness parameter `b`), `colorlevels` or `curves` instead. The bitstream filters are never named by KiteCodec. libavformat inserts them during a stream copy, which is a copy of encoded packets with no decode or encode. Without them, a copy between container families produces a *corrupt file* rather than an error.
 
@@ -85,6 +87,25 @@ Want libx264 / libx265? That is the **GPL flavor, and it is opt-in**. It is curr
 ```
 
 See [Licensing](#licensing) below before you ship a GPL-flavor binary.
+
+## Mobile Apple local substrate
+
+On an arm64 Mac, the local phone selector registers exactly `macosArm64`, `iosArm64` and `iosSimulatorArm64`:
+
+```bash
+./gradlew :kitecodec-core:buildFFmpegForMacosArm64 \
+  :kitecodec-core:buildFFmpegForIosArm64 \
+  :kitecodec-core:buildFFmpegForIosSimulatorArm64
+
+./gradlew :kitecodec-core:compileKotlinMacosArm64 \
+  :kitecodec-core:compileKotlinIosArm64 \
+  :kitecodec-core:compileKotlinIosSimulatorArm64 \
+  -Pkitecodec.applePhoneTargetsOnly=true
+```
+
+The mobile Apple profile is the current STANDARD software-playback set from `sharedCoreArgs()`, `--disable-autodetect`, SDK zlib and SDK cross flags. It has no desktop third-party archives, GPL flags, hardware encode or VideoToolbox. Final iOS static link flags are exactly `-lz`. `buildFFmpegForIos*Gpl` tasks do not exist, and repository build/path resolution refuses GPL for every iOS target before tree lookup with `iOS GPL refusal: FFmpegLicense.GPL is unsupported for iOS; use LGPL.`
+
+`-Pkitecodec.applePhoneTargetsOnly=true` is mutually exclusive with the stable and host-only selectors. It is accepted by `publishToMavenLocal` for a private consumer proof and explicitly rejected by every remote publish. Generated `native-libs` trees and Maven-local files are never release evidence.
 
 ## Windows (mingwX64)
 
@@ -136,13 +157,13 @@ The Apache 2.0 license covers KiteCodec's own Kotlin code. The FFmpeg you link a
 
 | Flavor | FFmpeg license | Encoders | Use for |
 |---|---|---|---|
-| **LGPL** (default) | LGPL-2.1+ (no `--enable-gpl`) | Platform hardware (VideoToolbox / MediaCodec) for H.264 / H.265, plus svtav1 / opus / mp3lame software | Commercial / closed-source / App Store distribution (mind the [LGPL obligations](licensing.md)) |
+| **LGPL** (default) | LGPL-2.1+ (no `--enable-gpl`) | Desktop VideoToolbox, Android MediaCodec and desktop svtav1 / opus / mp3lame. The mobile Apple local profile is software playback and does not add VideoToolbox. | Commercial / closed-source / App Store distribution (mind the [LGPL obligations](licensing.md)) |
 | **GPL** (opt-in) | GPL, effectively **GPL-3.0**, since the build also sets `--enable-version3` | Adds libx264 / libx265 for quality-focused software encode | GPL-compatible projects only (open-source apps, server tools, internal use) |
 
 The LGPL flavor is what `buildFFmpegFor<Target>` produces and what the build links by default. The GPL flavor is a loud opt-in: build with `buildFFmpegFor<Target>Gpl` and select it with `-Pkitecodec.ffmpeg.license=gpl`. This GPL opt-in is currently the **only** route to libx264 / libx265 in a vendored build.
 
 !!! warning "GPL is not App-Store-safe"
-    The GPL flavor adds libx264 / libx265 by enabling `--enable-gpl` (and `--enable-version3`, making the effective license GPL-3.0). A binary that links those must not ship through the iOS App Store or any other closed-source / commercial channel. For those, stay on the LGPL flavor and use the hardware encoders.
+    The GPL flavor adds libx264 / libx265 by enabling `--enable-gpl` (and `--enable-version3`, making the effective license GPL-3.0). A binary that links those must not ship through the iOS App Store or any other closed-source / commercial channel. Stay on LGPL; the local mobile Apple profile is software playback only and does not pretend to offer a hardware encoder.
 
 !!! note "`kitecodec-gpl` is planned, not published"
     A separate `kitecodec-gpl` artifact that packages the GPL flavor as a drop-in dependency is planned but does not exist yet. It is a README-only skeleton, commented out of `settings.gradle.kts`. Today the GPL flavor is reached only through the build tasks and the `kitecodec.ffmpeg.license` property described above.
@@ -156,7 +177,7 @@ For distribution obligations (shipping license texts, offering FFmpeg source, th
 === "App-Store-safe (hardware)"
 
     ```kotlin
-    // macOS / iOS: VideoToolbox
+    // macOS desktop profile: VideoToolbox
     VideoEncoderSpec(
         codec = CodecId.H264VideoToolbox,
         width = 1280, height = 720,
@@ -182,7 +203,7 @@ Encoder availability is resolved at runtime. Probe before you commit to a codec:
 
 ```kotlin
 val codec = listOf(
-    CodecId.H264VideoToolbox,   // macOS / iOS, LGPL-safe
+    CodecId.H264VideoToolbox,   // macOS desktop profile, LGPL-safe
     CodecId.H264MediaCodec,     // Android, LGPL-safe
     CodecId.Libx264,            // GPL builds only
     CodecId("mpeg4"),           // always present, every profile

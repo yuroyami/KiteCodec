@@ -3,6 +3,7 @@ package io.github.yuroyami.kitecodec.gradle
 import org.gradle.testkit.runner.GradleRunner
 import java.nio.file.Files
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
@@ -349,6 +350,329 @@ class KiteCodecPluginFunctionalTest {
             )
         } finally {
             projectDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun localSourceRequiresACompleteTreeForEveryWiredTarget() {
+        val repo = requireNotNull(System.getProperty("kitecodec.test.repo"))
+        val pluginVersion = requireNotNull(System.getProperty("kitecodec.test.pluginVersion"))
+        val kotlinVersion = requireNotNull(System.getProperty("kitecodec.test.kotlinVersion"))
+        val projectDir = Files.createTempDirectory("kitecodec-local-incomplete").toFile()
+        val localRoot = projectDir.resolve("local-ffmpeg")
+        try {
+            writeSettings(projectDir, repo)
+            localRoot.resolve("lgpl/ios-arm64/include/libavformat/avformat.h").apply {
+                parentFile.mkdirs()
+                writeText("fixture")
+            }
+            projectDir.resolve("build.gradle.kts").writeText(
+                """
+                import io.github.yuroyami.kitecodec.gradle.FFmpegLicense
+                import io.github.yuroyami.kitecodec.gradle.FFmpegSource
+
+                plugins {
+                    id("org.jetbrains.kotlin.multiplatform") version "$kotlinVersion"
+                    id("io.github.yuroyami.kitecodec") version "$pluginVersion"
+                }
+                kotlin { iosArm64() }
+                kitecodec {
+                    ffmpeg {
+                        source = FFmpegSource.Local
+                        license = FFmpegLicense.LGPL
+                        localRoot = layout.projectDirectory.dir("local-ffmpeg")
+                    }
+                }
+                """.trimIndent(),
+            )
+
+            val result = GradleRunner.create()
+                .withProjectDir(projectDir)
+                .withArguments("help", "--offline", "--stacktrace")
+                .buildAndFail()
+
+            assertTrue(
+                "Local FFmpeg tree is incomplete" in result.output &&
+                    "ios-arm64" in result.output &&
+                    "lib/libavcodec.a" in result.output &&
+                    "<localRoot>/<license.id>/<target-triple>/{include,lib}" in result.output,
+                "Expected an actionable Local layout failure. Output:\n${result.output}",
+            )
+        } finally {
+            projectDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun localSourceRequiresLocalRoot() {
+        val repo = requireNotNull(System.getProperty("kitecodec.test.repo"))
+        val pluginVersion = requireNotNull(System.getProperty("kitecodec.test.pluginVersion"))
+        val kotlinVersion = requireNotNull(System.getProperty("kitecodec.test.kotlinVersion"))
+        val projectDir = Files.createTempDirectory("kitecodec-local-no-root").toFile()
+        try {
+            writeSettings(projectDir, repo)
+            projectDir.resolve("build.gradle.kts").writeText(
+                """
+                import io.github.yuroyami.kitecodec.gradle.FFmpegLicense
+                import io.github.yuroyami.kitecodec.gradle.FFmpegSource
+
+                plugins {
+                    id("org.jetbrains.kotlin.multiplatform") version "$kotlinVersion"
+                    id("io.github.yuroyami.kitecodec") version "$pluginVersion"
+                }
+                kotlin { macosArm64() }
+                kitecodec {
+                    ffmpeg {
+                        source = FFmpegSource.Local
+                        license = FFmpegLicense.LGPL
+                    }
+                }
+                """.trimIndent(),
+            )
+
+            val result = GradleRunner.create()
+                .withProjectDir(projectDir)
+                .withArguments("help", "--offline", "--stacktrace")
+                .buildAndFail()
+
+            assertTrue(
+                "FFmpegSource.Local requires ffmpeg.localRoot" in result.output,
+                "Expected Local to require its root. Output:\n${result.output}",
+            )
+        } finally {
+            projectDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun localGplIsRejectedForIosBeforeTreeResolution() {
+        val repo = requireNotNull(System.getProperty("kitecodec.test.repo"))
+        val pluginVersion = requireNotNull(System.getProperty("kitecodec.test.pluginVersion"))
+        val kotlinVersion = requireNotNull(System.getProperty("kitecodec.test.kotlinVersion"))
+        val projectDir = Files.createTempDirectory("kitecodec-local-gpl-ios").toFile()
+        try {
+            writeSettings(projectDir, repo)
+            projectDir.resolve("build.gradle.kts").writeText(
+                """
+                import io.github.yuroyami.kitecodec.gradle.FFmpegLicense
+                import io.github.yuroyami.kitecodec.gradle.FFmpegSource
+
+                plugins {
+                    id("org.jetbrains.kotlin.multiplatform") version "$kotlinVersion"
+                    id("io.github.yuroyami.kitecodec") version "$pluginVersion"
+                }
+                kotlin { iosSimulatorArm64() }
+                kitecodec {
+                    ffmpeg {
+                        source = FFmpegSource.Local
+                        license = FFmpegLicense.GPL
+                        localRoot = layout.projectDirectory.dir("missing-is-fine-for-this-ordering-proof")
+                    }
+                }
+                """.trimIndent(),
+            )
+
+            val result = GradleRunner.create()
+                .withProjectDir(projectDir)
+                .withArguments("help", "--offline", "--stacktrace")
+                .buildAndFail()
+
+            assertTrue(
+                "iOS GPL refusal: FFmpegLicense.GPL is unsupported for iOS; use LGPL." in result.output &&
+                    "ios-simulator-arm64" in result.output,
+                "Expected the iOS GPL refusal before missing-tree diagnostics. Output:\n${result.output}",
+            )
+        } finally {
+            projectDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun localAppleTargetsUseOnlyTheirValidatedTreesAndPlatformLinkSets() {
+        val repo = requireNotNull(System.getProperty("kitecodec.test.repo"))
+        val pluginVersion = requireNotNull(System.getProperty("kitecodec.test.pluginVersion"))
+        val kotlinVersion = requireNotNull(System.getProperty("kitecodec.test.kotlinVersion"))
+        val projectDir = Files.createTempDirectory("kitecodec-local-apple").toFile()
+        val localRoot = projectDir.resolve("local-ffmpeg")
+        try {
+            writeSettings(projectDir, repo)
+            listOf("macos-arm64", "ios-arm64", "ios-simulator-arm64").forEach { triple ->
+                createCompleteLocalTree(localRoot, "lgpl", triple)
+            }
+            projectDir.resolve("build.gradle.kts").writeText(
+                """
+                import io.github.yuroyami.kitecodec.gradle.FFmpegLicense
+                import io.github.yuroyami.kitecodec.gradle.FFmpegSource
+
+                plugins {
+                    id("org.jetbrains.kotlin.multiplatform") version "$kotlinVersion"
+                    id("io.github.yuroyami.kitecodec") version "$pluginVersion"
+                }
+                kotlin {
+                    macosArm64 { binaries.executable() }
+                    iosArm64 { binaries.framework() }
+                    iosSimulatorArm64 { binaries.framework() }
+                }
+                kitecodec {
+                    ffmpeg {
+                        source = FFmpegSource.Local
+                        license = FFmpegLicense.LGPL
+                        localRoot = layout.projectDirectory.dir("local-ffmpeg")
+                    }
+                }
+                tasks.register("printLocalLinkerOpts") {
+                    doLast {
+                        tasks.getByName("linkDebugExecutableMacosArm64")
+                        tasks.getByName("linkDebugFrameworkIosArm64")
+                        tasks.getByName("linkDebugFrameworkIosSimulatorArm64")
+                        println("mac=" + kotlin.macosArm64().binaries.first { it.name == "debugExecutable" }.linkerOpts.joinToString(" "))
+                        println("ios=" + kotlin.iosArm64().binaries.first { it.name == "debugFramework" }.linkerOpts.joinToString(" "))
+                        println("sim=" + kotlin.iosSimulatorArm64().binaries.first { it.name == "debugFramework" }.linkerOpts.joinToString(" "))
+                    }
+                }
+                """.trimIndent(),
+            )
+
+            val result = GradleRunner.create()
+                .withProjectDir(projectDir)
+                .withArguments(
+                    "printLocalLinkerOpts",
+                    "--offline",
+                    "-Pkitecodec.macos.homebrew.prefix=/test-host",
+                    "--stacktrace",
+                )
+                .build()
+            val mac = requireNotNull(result.output.lineSequence().firstOrNull { it.startsWith("mac=") })
+            val ios = requireNotNull(result.output.lineSequence().firstOrNull { it.startsWith("ios=") })
+            val sim = requireNotNull(result.output.lineSequence().firstOrNull { it.startsWith("sim=") })
+            val localPath = localRoot.canonicalFile.invariantSeparatorsPath
+
+            assertEquals(
+                "mac=-L$localPath/lgpl/macos-arm64/lib -L/test-host/lib " +
+                    listOf(
+                        "-lSvtAv1Enc", "-lvpx", "-laom", "-lopus", "-lmp3lame",
+                        "-lwebpmux", "-lwebp", "-lsharpyuv", "-lass", "-lharfbuzz",
+                        "-lfreetype", "-lfribidi", "-lpng16", "-lgraphite2", "-lz", "-lbz2",
+                        "-liconv", "-lc++", "-framework", "CoreGraphics", "-framework", "CoreText",
+                        "-framework", "CoreFoundation", "-framework", "CoreMedia", "-framework",
+                        "CoreVideo", "-framework", "VideoToolbox", "-framework", "AudioToolbox",
+                    ).joinToString(" "),
+                mac,
+            )
+            assertEquals("ios=-L$localPath/lgpl/ios-arm64/lib -lz", ios)
+            assertEquals("sim=-L$localPath/lgpl/ios-simulator-arm64/lib -lz", sim)
+            assertTrue("fetchFFmpeg" !in result.output, "Local source must execute no fetch task: ${result.output}")
+        } finally {
+            projectDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun localLinuxX64UsesOnlyItsTreeAndTheExactDesktopLinkSet() {
+        val repo = requireNotNull(System.getProperty("kitecodec.test.repo"))
+        val pluginVersion = requireNotNull(System.getProperty("kitecodec.test.pluginVersion"))
+        val kotlinVersion = requireNotNull(System.getProperty("kitecodec.test.kotlinVersion"))
+        val projectDir = Files.createTempDirectory("kitecodec-local-linux").toFile()
+        val localRoot = projectDir.resolve("local-ffmpeg")
+        try {
+            writeSettings(projectDir, repo)
+            createCompleteLocalTree(localRoot, "lgpl", "linux-x64")
+            projectDir.resolve("build.gradle.kts").writeText(
+                """
+                import io.github.yuroyami.kitecodec.gradle.FFmpegLicense
+                import io.github.yuroyami.kitecodec.gradle.FFmpegSource
+
+                plugins {
+                    id("org.jetbrains.kotlin.multiplatform") version "$kotlinVersion"
+                    id("io.github.yuroyami.kitecodec") version "$pluginVersion"
+                }
+                kotlin { linuxX64 { binaries.executable() } }
+                kitecodec {
+                    ffmpeg {
+                        source = FFmpegSource.Local
+                        license = FFmpegLicense.LGPL
+                        localRoot = layout.projectDirectory.dir("local-ffmpeg")
+                    }
+                }
+                tasks.register("printLocalLinuxLinkerOpts") {
+                    doLast {
+                        tasks.getByName("linkDebugExecutableLinuxX64")
+                        val binary = kotlin.linuxX64().binaries.first { it.name == "debugExecutable" }
+                        println("linux=" + binary.linkerOpts.joinToString(" "))
+                    }
+                }
+                """.trimIndent(),
+            )
+
+            val result = GradleRunner.create()
+                .withProjectDir(projectDir)
+                .withArguments(
+                    "printLocalLinuxLinkerOpts",
+                    "--offline",
+                    "-Pkitecodec.macos.homebrew.prefix=/must-not-appear",
+                    "--stacktrace",
+                )
+                .build()
+            val localPath = localRoot.canonicalFile.invariantSeparatorsPath
+            assertEquals(
+                "linux=-L$localPath/lgpl/linux-x64/lib " +
+                    listOf(
+                        "-lSvtAv1Enc", "-lvpx", "-laom", "-lopus", "-lmp3lame",
+                        "-lwebpmux", "-lwebp", "-lsharpyuv", "-lass", "-lharfbuzz",
+                        "-lfreetype", "-lfribidi", "-lpng16", "-lgraphite2", "-lz", "-lbz2",
+                    ).joinToString(" "),
+                result.output.lineSequence().firstOrNull { it.startsWith("linux=") },
+            )
+            assertTrue("-L/must-not-appear/lib" !in result.output)
+            assertTrue(
+                result.task(":fetchFFmpegLinuxX64") == null,
+                "Local source must not put fetchFFmpegLinuxX64 in the task graph: ${result.output}",
+            )
+        } finally {
+            projectDir.deleteRecursively()
+        }
+    }
+
+    private fun writeSettings(projectDir: java.io.File, repo: String) {
+        projectDir.resolve("settings.gradle.kts").writeText(
+            """
+            pluginManagement {
+                repositories {
+                    maven(url = uri("$repo"))
+                    mavenCentral()
+                    gradlePluginPortal()
+                    google()
+                }
+            }
+            dependencyResolutionManagement {
+                repositories {
+                    mavenCentral()
+                    google()
+                }
+            }
+            rootProject.name = "kitecodec-local-consumer"
+            """.trimIndent(),
+        )
+    }
+
+    private fun createCompleteLocalTree(root: java.io.File, license: String, triple: String) {
+        val tree = root.resolve("$license/$triple")
+        tree.resolve("include/libavformat/avformat.h").apply {
+            parentFile.mkdirs()
+            writeText("fixture")
+        }
+        listOf(
+            "libavcodec.a",
+            "libavformat.a",
+            "libavutil.a",
+            "libavfilter.a",
+            "libswscale.a",
+            "libswresample.a",
+        ).forEach { archive ->
+            tree.resolve("lib/$archive").apply {
+                parentFile.mkdirs()
+                writeText("fixture")
+            }
         }
     }
 }

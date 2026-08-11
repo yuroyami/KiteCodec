@@ -3,7 +3,7 @@
 `kitecodec-gradle-plugin` provisions the FFmpeg binaries KiteCodec links against, so consumer projects do not build FFmpeg from source. KiteCodec's published klib contains **no FFmpeg bytes**. The plugin supplies them at your build time. It also keeps the FFmpeg license (LGPL or GPL) separate from KiteCodec's own Apache-2.0 artifact.
 
 !!! warning "Not published, and `Prebuilt` has nothing to fetch"
-    The plugin lives in the KiteCodec repository (`kitecodec-gradle-plugin/`) and is not on the Gradle Plugin Portal yet. Neither are the FFmpeg Release assets that `FFmpegSource.Prebuilt` downloads. The [README's release status](https://github.com/yuroyami/KiteCodec#release-status) is the single place that tracks what exists. Use `FFmpegSource.System` until it says otherwise. The DSL below is the supported surface.
+    The plugin lives in the KiteCodec repository (`kitecodec-gradle-plugin/`) and is not on the Gradle Plugin Portal yet. Neither are the FFmpeg Release assets that `FFmpegSource.Prebuilt` downloads. The [README's release status](https://github.com/yuroyami/KiteCodec#release-status) is the single place that tracks what exists. Use `FFmpegSource.System` on a desktop host or a complete `FFmpegSource.Local` tree after local publication. The DSL below is the supported surface.
 
 ## Apply and configure
 
@@ -28,8 +28,9 @@ kotlin {
 kitecodec {
     ffmpeg {
         version = "n8.0"                 // pinned FFmpeg release
-        source  = FFmpegSource.Prebuilt  // Prebuilt (default) | System | BuildFromSource
+        source  = FFmpegSource.Prebuilt  // Prebuilt (default) | System | Local | BuildFromSource
         license = FFmpegLicense.LGPL     // REQUIRED. There is no default; see below.
+        // localRoot = layout.projectDirectory.dir("ffmpeg") // required for Local
     }
 }
 ```
@@ -50,6 +51,7 @@ Everything lives under `kitecodec { ffmpeg { ... } }`:
 |---|---|---|---|
 | `version` | `String` | `"n8.0"` | FFmpeg release to provision. The value is pinned: the plugin fetches exactly this tag's builds. |
 | `source` | `FFmpegSource` | `Prebuilt` | Where FFmpeg comes from (below). |
+| `localRoot` | `DirectoryProperty` | **none** | Required with `Local`. Root of `<localRoot>/<license.id>/<target-triple>/{include,lib}`. |
 | `license` | `FFmpegLicense` | **none, required** | License flavor for desktop targets. You must set it explicitly, or the build fails. Android targets always use the LGPL MediaCodec build. |
 | `repo` | `String` | `"yuroyami/KiteCodec"` | GitHub `owner/repo` whose Releases host the prebuilt archives. Override it to self-host. |
 | `pinnedSha256` | `MapProperty<String, String>` | empty | SHA-256 per Release asset name, for example `pinnedSha256.put("ffmpeg-n8.0-lgpl-macos-arm64.zip", "<sha256>")`. A pinned value is authoritative: the published `.sha256` is not fetched, and a download that does not match fails the build. |
@@ -58,7 +60,8 @@ Everything lives under `kitecodec { ffmpeg { ... } }`:
 
 - **`Prebuilt`** is the default. It downloads a pinned static build from the configured repo's GitHub Releases and caches it under the Gradle user home. It needs no FFmpeg on the machine. KiteCodec has published no assets yet, so against the default `repo` it currently fails: at configuration time for a target outside the intended five, and with an HTTP 404 for the rest. Point `repo` at your own Releases to use it today.
 - **`System`** links a system FFmpeg that is already installed. That means Homebrew on macOS, where you can override the prefix with the `kitecodec.macos.homebrew.prefix` Gradle property, or the apt-installed libraries on Linux. It links dynamically and is a convenience for development. It fails with a clear error when it finds no system install. It is not available for targets that have no system install path: iOS, Windows and Android.
-- **`BuildFromSource`** is only meaningful inside the KiteCodec checkout itself, which ships the `:buildFFmpegFor<Target>` tasks. In a consumer project it fails with instructions to use `Prebuilt` or `System`.
+- **`Local`** performs no download. It requires `localRoot` and validates `include/libavformat/avformat.h` plus all six `libav*.a` archives under `<localRoot>/<license.id>/<target-triple>/` for every wired target during configuration. A missing target produces one diagnostic naming its exact files. Local macOS searches that tree first, the configured Homebrew `lib` second, and links the desktop static stack. Local iOS links only that tree plus SDK zlib. Local with GPL on any iOS target is rejected before tree validation with `iOS GPL refusal: FFmpegLicense.GPL is unsupported for iOS; use LGPL.`
+- **`BuildFromSource`** is only meaningful inside the KiteCodec checkout itself, which ships the `:buildFFmpegFor<Target>` tasks. In a consumer project it fails with instructions to use `Prebuilt`, `System` or `Local`.
 
 ### `FFmpegLicense`
 

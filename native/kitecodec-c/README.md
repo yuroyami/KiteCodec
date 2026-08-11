@@ -216,7 +216,9 @@ contract nor a case. Nothing here is documented that is not also asserted.
 There is no make, no cmake and no ninja here, and that is not a preference. Register item B1-15:
 cmake is not installed on the proving machine, and GNU make starts a comment at an unescaped `#`
 while both repositories live under a path containing `#Kite`. `buildSrc/BuildFFmpegTask.kt`
-already had to guard against that hazard. Driving clang directly is the only form that is both
+handles that hazard by copying FFmpeg source to a unique hash-free workspace under
+`java.io.tmpdir`; configure and make never see the repository or final output paths. This C harness
+does not need that large staging step, so driving clang directly remains the only form that is both
 available and safe under this path.
 
 ```bash
@@ -418,8 +420,9 @@ Four limits of this machine shape all of the above, each measured rather than as
   interposer above exists.
 * **No cmake, and GNU make is unsafe here.** cmake is not installed, and make starts a comment at an
   unescaped `#`, which this checkout's own path contains. The C build drives clang directly.
-* **One FFmpeg tree.** Ten of the eleven registered targets have no FFmpeg on this machine, so
-  exactly one real archive is built here, for `macos_arm64`.
+* **Local Apple trees are not release evidence.** The arm64 Mac can now build the host,
+  `ios_arm64` and `ios_simulator_arm64` FFmpeg trees through the phone selector. Those generated
+  inputs and the resulting C archives are local proof only, with no public artifact or CI result.
 
 ## What is not here yet
 
@@ -430,8 +433,8 @@ nothing to do with FFmpeg, and putting it here would have made KitePlayer's real
 transitive consequence of a codec dependency.
 
 Nothing in this directory claims to work on a target whose archive was never built: plan section
-15.3 grades that claim as level 8 and bans it. On this machine one archive is built, for
-`macos_arm64`, and the other ten registered targets are skipped for want of an FFmpeg tree.
+15.3 grades that claim as level 8 and bans it. The local phone proof covers `macos_arm64`,
+`ios_arm64` and `ios_simulator_arm64`; every other unbuilt target remains unclaimed.
 
 Done in B1.3: the Gradle compile task (`buildSrc/CompileKiteCodecCTask.kt`) and the def edit that
 make this library the one cinterop consumes.

@@ -12,6 +12,9 @@
 #     are fully self-contained today (same build the CI workflow already runs).
 #   - macos-arm64 and linux-x64 (lgpl + gpl): desktop profiles that need the encoder stack
 #     (x264/x265/svt-av1/...) installed on the runner.
+# ios-arm64 and ios-simulator-arm64 LGPL are locally buildable with the standard software-playback
+# profile, but this workflow has no job for either and makes no release claim for them. ios-x64
+# remains unqualified, and there are no iOS GPL build tasks or release assets.
 #
 # Desktop zips must be SELF-CONTAINED: BuildFFmpegTask copies the static third-party archives into
 # the tree and package-ffmpeg.sh zips them alongside lib/LINK-FLAGS.txt. Both hard-fail naming any
@@ -26,8 +29,9 @@
 #   This is deliberately a loud failure rather than a zip that breaks on a consumer's machine.
 #
 # KNOWN FOLLOW-UPS (left as TODO jobs below, intentionally not faked):
-#   - Cross targets (ios-*, macos-x64, linux-arm64, mingw-x64) need a CROSS-COMPILED third-party
-#     dependency stack; that is a FFmpegKit-grade build chain and lands later.
+#   - Desktop cross targets (macos-x64, linux-arm64, mingw-x64) need a CROSS-COMPILED third-party
+#     dependency stack; that is a FFmpegKit-grade build chain and lands later. ios-x64 remains
+#     unqualified separately; the two locally buildable arm64 iOS LGPL trees are not releases.
 #   - The Linux text stack may additionally need fontconfig/expat/libunibreak behind libass. There
 #     is no vendored-static Linux job yet to prove it; when one exists, read the undefined symbols
 #     and extend all three lists together.
@@ -220,9 +224,9 @@ jobs:
             dist/*.tar.gz
             dist/*.sha256
 
-  # TODO cross targets, each needs a cross-compiled x264/x265/svt-av1/... stack before its
-  # buildFFmpegFor<Target>[Gpl] task can succeed in CI:
-  #   - ios-arm64, ios-simulator-arm64, ios-x64  (build on macos-latest with the iPhoneOS SDK)
-  #   - macos-x64                                 (cross from arm64; Kotlin 2.4 still links it)
-  #   - linux-arm64                               (aarch64-linux-gnu cross toolchain)
-  #   - mingw-x64                                 (x86_64-w64-mingw32 cross toolchain)
+  # TODO desktop cross targets, each needs a cross-compiled x264/x265/svt-av1/... stack before its
+  # buildFFmpegFor<Target>[Gpl] task can succeed in CI. ios-x64 remains unqualified; ios-arm64 and
+  # ios-simulator-arm64 have local LGPL producers but no release job, and no iOS GPL tasks exist:
+  #   - macos-x64    (cross from arm64; Kotlin 2.4 still links it)
+  #   - linux-arm64  (aarch64-linux-gnu cross toolchain)
+  #   - mingw-x64    (x86_64-w64-mingw32 cross toolchain)

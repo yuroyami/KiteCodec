@@ -76,9 +76,10 @@ decode, no encode, timestamp rescale only.
 complete. The binary distribution it depends on is not. `kitecodec-core` and the
 Gradle plugin have never been published, and the FFmpeg release assets the plugin
 downloads do not exist. See [Release status](#release-status) for the blocker.
-Two routes work until it is fixed: build inside the KiteCodec checkout, or build
-a consumer project against `publishToMavenLocal` with `FFmpegSource.System`. CI
-uses the second route.
+Three local routes work until it is fixed: build inside the KiteCodec checkout,
+build a desktop consumer against `publishToMavenLocal` with `FFmpegSource.System`,
+or point `FFmpegSource.Local` at a complete generated tree. CI uses the System
+route. Local trees and Maven-local artifacts are private evidence, not releases.
 
 When the artifacts exist, the script below is all a consumer writes. Three pieces
 are load-bearing and none is optional: the Gradle plugin, the library dependency,
@@ -145,10 +146,14 @@ Android zips are lost with it, and they do build. Two fixes are possible: build
 svt-av1 and graphite2 statically from source in that workflow, or drop libsvtav1
 and harfbuzz's graphite2 backend from the desktop profile.
 
-Two paths work until then. `FFmpegSource.System` links a Homebrew or apt FFmpeg
-on the host's own desktop target. Inside this repository,
+Three local paths work until then. `FFmpegSource.System` links a Homebrew or apt
+FFmpeg on the host's own desktop target. Inside this repository,
 `:kitecodec-core:buildFFmpegFor<Target>` cross-compiles a vendored static tree
-into `native-libs/<license>/<target>/`.
+into `native-libs/<license>/<target>/`, including the exact normalized configure
+invocation at `lib/kitecodec/ffmpeg-configure.txt`. Packaging accepts only that
+single-line installed evidence. After a private local publication,
+`FFmpegSource.Local` reuses that tree without network access and validates all
+six archives plus headers for every wired target.
 
 ## What it does
 
@@ -246,12 +251,12 @@ This layer exists because [KitePlayer](https://github.com/yuroyami/KitePlayer)
 is built on it, and it is public because any real-time consumer needs the same
 things. The safe batch API remains the front door.
 
-| | Desktop LGPL | Desktop GPL | Android |
-|---|---|---|---|
-| Always | `mpeg4`, `mjpeg`, `png`, `aac`, `flac`, `pcm_*` | same | same |
-| Software video | `libsvtav1` | + `libx264`, `libx265` | none |
-| Hardware video | `h264_videotoolbox` / `hevc_videotoolbox`, **macOS and iOS only** | same | `h264_mediacodec`, `hevc_mediacodec` |
-| Audio | + `libopus`, `libmp3lame` | same | none |
+| | Desktop LGPL | Desktop GPL | Mobile Apple LGPL | Android LGPL |
+|---|---|---|---|---|
+| Always | `mpeg4`, `mjpeg`, `png`, `aac`, `flac`, `pcm_*` | same | `mpeg4`, `mjpeg`, `png`, `flac`, `pcm_*` | same as Desktop LGPL |
+| Software video | `libsvtav1` | + `libx264`, `libx265` | playback decoders only | none |
+| Hardware video | `h264_videotoolbox` / `hevc_videotoolbox` | same | none | `h264_mediacodec`, `hevc_mediacodec` |
+| Audio | + `libopus`, `libmp3lame` | same | shared playback decoders | none |
 
 `mpeg4` is the only video encoder guaranteed on every target. A Linux or Windows
 LGPL build has `libsvtav1` and no hardware encoder at all. The full codec,
@@ -275,8 +280,9 @@ machine by 85 `kitecodec-core` tests, seven C suites under three sanitizer
 variants, and the e2e script. `linuxX64` and
 `mingwX64` are T2 on CI evidence only, never on a machine you can inspect here.
 The `androidNative*` klibs are T1: they compile per ABI and nothing runs them.
-`iosArm64`, `iosSimulatorArm64`, `iosX64`, `macosX64` and `linuxArm64` are built
-nowhere, so they carry no tier at all.
+`iosArm64` and `iosSimulatorArm64` now have a local/private build and consumer
+path on this arm64 Mac, but no public or CI tier is inferred from it here.
+`iosX64`, `macosX64` and `linuxArm64` remain unqualified.
 
 | Target | Published | Built and tested in CI | FFmpeg comes from |
 |---|---|---|---|
@@ -284,7 +290,8 @@ nowhere, so they carry no tier at all.
 | `linuxX64` | yes | unit tests, native tests and an e2e transcode, against whatever 6.x FFmpeg Ubuntu 24.04 ships. This is what exercises the lavc-6 compatibility path. | apt, vendored, or a prebuilt asset |
 | `androidNativeArm64` / `Arm32` / `X64` | yes | the klib compiles, per ABI. No tests run on Android. | NDK cross-compile of the LGPL MediaCodec profile |
 | `mingwX64` | no | native tests and an e2e transcode | a pinned BtbN `win64-gpl-shared` zip. The CI job unpacks it by hand into `native-libs/gpl/mingw-x64`. No discovery, no prebuilt asset. |
-| `iosArm64`, `iosSimulatorArm64`, `iosX64` | no | not built anywhere | `buildFFmpegForIos*` tasks exist and target the iOS SDKs. The desktop profile they use needs svt-av1, vpx, aom, opus, lame and the freetype/harfbuzz/libass text stack cross-built for iOS. Homebrew ships those for macOS only, so the task cannot succeed on a stock machine. |
+| `iosArm64`, `iosSimulatorArm64` | no | no CI claim; local arm64-Mac proof only | LGPL STANDARD software-playback build from source, with SDK zlib, no desktop third-party stack, GPL or VideoToolbox; consumable through `FFmpegSource.Local` |
+| `iosX64` | no | not qualified | the same mobile profile is coded for the simulator SDK, but this stage does not build or consume it |
 | `macosX64` | no | not built | Kotlin deprecated the target |
 | `linuxArm64` | no | not built | needs an arm64 runner with Kotlin/Native host support |
 
@@ -294,7 +301,10 @@ return 404 mid-build. A remote publication of `kitecodec-core` requires
 `-Pkitecodec.stableTargetsOnly=true` and a real FFmpeg tree for every configured
 target, so it cannot silently drop one. `publishToMavenLocal` also accepts
 `-Pkitecodec.hostTargetsOnly=true`, which publishes the host's own desktop target
-alone. That is the CI smoke path, not a release path.
+alone. On an arm64 Mac it accepts the mutually exclusive
+`-Pkitecodec.applePhoneTargetsOnly=true` for exactly macosArm64, iosArm64 and
+iosSimulatorArm64. Every remote publish explicitly refuses the phone selector.
+Both exceptions are local smoke paths, not release paths.
 
 **Android here means `androidNative*` klibs, not an AAR.** A normal Android app
 runs Kotlin/JVM and cannot depend on these. Reaching it needs a JNI bridge over
@@ -356,8 +366,9 @@ is assigned to a Linux CI job that is configured and has not run yet, and the
 fuzz-shaped evidence that exists today is the committed-corpus replay; LeakSanitizer is unsupported on macOS arm64, so the
 leak instrument is a Mach-O allocation interposer; cmake is not installed and GNU
 make truncates a path at an unescaped `#`, which this checkout's own path
-contains, so the C build drives clang directly; and only one FFmpeg tree exists
-here, so exactly one of the eleven registered targets builds a real archive. What
+contains, so the C harness drives clang directly while BuildFFmpegTask stages
+FFmpeg in a hash-free temporary tree; and the Apple phone trees are generated
+local inputs rather than committed or released artifacts. What
 each instrument can and cannot prove is written out in
 [native/kitecodec-c/README.md](native/kitecodec-c/README.md).
 

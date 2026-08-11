@@ -1,6 +1,7 @@
 package io.github.yuroyami.kitecodec.gradle
 
 import org.gradle.api.Action
+import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.model.ObjectFactory
 import org.gradle.api.provider.MapProperty
 import org.gradle.api.provider.Property
@@ -38,11 +39,18 @@ abstract class FFmpegSpec {
     abstract val source: Property<FFmpegSource>
 
     /**
-     * Licence flavour for desktop targets. **No default**: the flavour decides the consumer's
+     * Root of a no-network [FFmpegSource.Local] tree. Its fixed layout is
+     * `<localRoot>/<license.id>/<target-triple>/{include,lib}`.
+     */
+    abstract val localRoot: DirectoryProperty
+
+    /**
+     * Licence flavour for non-Android targets. **No default**: the flavour decides the consumer's
      * legal obligations, so it must be set explicitly; the plugin fails the build otherwise
      * (unless every wired target is Android, which always uses the LGPL MediaCodec build
-     * regardless of this value). Selecting [FFmpegLicense.GPL] logs a warning describing the
-     * GPL-3.0 obligations it places on the whole application.
+     * regardless of this value). Local iOS accepts only [FFmpegLicense.LGPL]. Selecting
+     * [FFmpegLicense.GPL] elsewhere logs a warning describing the GPL-3.0 obligations it places
+     * on the whole application.
      */
     abstract val license: Property<FFmpegLicense>
 

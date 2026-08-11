@@ -6,6 +6,7 @@ import ffmpeg.ffkmp_frame_set_pts
 import ffmpeg.ffkmp_packet_alloc
 import ffmpeg.ffkmp_packet_set_dts
 import ffmpeg.ffkmp_packet_set_pts
+import kotlinx.cinterop.toKString
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.toList
@@ -13,6 +14,7 @@ import kotlinx.coroutines.runBlocking
 import platform.posix.fclose
 import platform.posix.fileno
 import platform.posix.fopen
+import platform.posix.getenv
 import platform.posix.remove
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -46,8 +48,13 @@ class PlayerSurfaceTest {
 
     private val tmpFiles = mutableListOf<String>()
 
-    private fun tmp(name: String): String =
-        "build/kitecodec-test-$name".also { tmpFiles += it }
+    private fun tmp(name: String): String {
+        val root = sequenceOf("TMPDIR", "TEMP", "TMP")
+            .mapNotNull { getenv(it)?.toKString() }
+            .firstOrNull { it.isNotBlank() }
+            ?: error("No temporary directory: TMPDIR, TEMP, and TMP are all missing or blank")
+        return "${root.trimEnd('/', '\\')}/kitecodec-test-$name".also { tmpFiles += it }
+    }
 
     @AfterTest
     fun cleanup() {

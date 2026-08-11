@@ -16,11 +16,10 @@
 # Android NDK targets get compile checks: each ABI builds its (self-contained, cached) LGPL
 # FFmpeg and compiles the klib.
 #
-# Not covered (yet): iOS targets need a cross-compiled vendored FFmpeg, and the LGPL/GPL desktop
-# profile links third-party encoder libs (svt-av1/vpx/aom/...) that brew only ships for macOS,
-# so :buildFFmpegForIos* cannot succeed on a stock runner and without it the ffmpeg cinterop
-# (and thus compileKotlinIos*) cannot configure; linuxArm64 needs an arm64 runner with K/N host
-# support; macosX64 is deprecated by Kotlin 2.3.20.
+# Not covered (yet): iosArm64 and iosSimulatorArm64 LGPL are locally buildable with the standard
+# software-playback profile, but this workflow has no job for either and makes no CI claim for
+# them. iosX64 remains unqualified, and there are no iOS GPL build tasks. linuxArm64 needs an arm64
+# runner with K/N host support; macosX64 is deprecated by Kotlin 2.3.20.
 name: CI
 
 on:

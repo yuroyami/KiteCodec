@@ -53,8 +53,9 @@ object StaticLinkFlags {
         return when (target) {
             TargetTriple.MacosArm64, TargetTriple.MacosX64,
             TargetTriple.LinuxX64, TargetTriple.LinuxArm64,
-            TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64, TargetTriple.IosX64,
             -> true
+            // Mobile Apple uses only FFmpeg's shared software profile and SDK zlib.
+            TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64, TargetTriple.IosX64,
             TargetTriple.MingwX64,
             TargetTriple.AndroidArm64, TargetTriple.AndroidArm32, TargetTriple.AndroidX64,
             -> false
@@ -98,7 +99,7 @@ object StaticLinkFlags {
         target == TargetTriple.MacosArm64 || target == TargetTriple.MacosX64 -> listOf("-L$hostPrefix/lib")
         target == TargetTriple.LinuxX64 -> listOf("-L/usr/lib/x86_64-linux-gnu", "-L/usr/lib", "-L/usr/local/lib")
         target == TargetTriple.LinuxArm64 -> listOf("-L/usr/lib/aarch64-linux-gnu", "-L/usr/lib", "-L/usr/local/lib")
-        // iOS has no host prefix to fall back on. Its stack must be cross-built and bundled.
+        // Mobile Apple deliberately has no desktop stack or host fallback.
         else -> emptyList()
     }
 
@@ -108,12 +109,15 @@ object StaticLinkFlags {
         license: FFmpegLicense,
         isStaticVendored: Boolean,
     ): List<String> {
+        if (
+            isStaticVendored &&
+            target in setOf(TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64, TargetTriple.IosX64)
+        ) {
+            return listOf("-lz")
+        }
         if (!needsStaticStack(target, isStaticVendored)) return emptyList()
 
-        val isApple = target in setOf(
-            TargetTriple.MacosArm64, TargetTriple.MacosX64,
-            TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64, TargetTriple.IosX64,
-        )
+        val isApple = target == TargetTriple.MacosArm64 || target == TargetTriple.MacosX64
         return buildList {
             addAll(DESKTOP_LGPL.map { "-l$it" })
             if (license == FFmpegLicense.GPL) addAll(DESKTOP_GPL_EXTRA.map { "-l$it" })

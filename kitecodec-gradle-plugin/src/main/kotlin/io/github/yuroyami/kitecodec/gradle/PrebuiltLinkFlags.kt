@@ -2,7 +2,7 @@ package io.github.yuroyami.kitecodec.gradle
 
 /**
  * The extra `-l` linker flags a consumer's final link needs when linking one of KiteCodec's
- * PREBUILT desktop FFmpeg zips.
+ * PREBUILT desktop FFmpeg zips or a validated [FFmpegSource.Local] desktop tree.
  *
  * The desktop zips bundle the static third-party encoder/text libs (svt-av1, vpx, aom, opus,
  * mp3lame, webp, freetype/harfbuzz/fribidi/ass; the set BuildFFmpegTask's desktop profile links)
@@ -14,9 +14,10 @@ package io.github.yuroyami.kitecodec.gradle
  * than read from LINK-FLAGS.txt) because linkerOpts are fixed at configuration time, before the
  * fetch task has downloaded the zip.
  *
- * Only [FFmpegSource.Prebuilt] desktop targets get flags: the Android assets are self-contained
- * (no third-party libs; MediaCodec is a platform service), and System mode links shared libav*
- * libs that resolve their own dependencies.
+ * [FFmpegSource.Prebuilt] and desktop [FFmpegSource.Local] targets get these flags. Android assets
+ * are self-contained (no third-party libs; MediaCodec is a platform service), mobile Apple Local
+ * uses only SDK zlib, and System mode links shared libav* libraries that resolve their own
+ * dependencies.
  */
 internal object PrebuiltLinkFlags {
 

@@ -11,6 +11,16 @@ Most build-time problems have one cause: KiteCodec links against an FFmpeg **you
 
 Note the `<license>` path segment: if you built the GPL flavor (`buildFFmpegFor<Target>Gpl` → `native-libs/gpl/<target>/`) but did not pass `-Pkitecodec.ffmpeg.license=gpl`, the build looks under `native-libs/lgpl/` and misses your libraries. Flavor and property must match.
 
+## "Local FFmpeg tree is incomplete"
+
+The consumer plugin's `FFmpegSource.Local` accepts one layout only:
+`<localRoot>/<license.id>/<target-triple>/{include,lib}`. Every wired target must contain
+`include/libavformat/avformat.h` and `libavcodec.a`, `libavformat.a`, `libavutil.a`,
+`libavfilter.a`, `libswscale.a` and `libswresample.a`. The configuration error lists every missing
+file. Point `localRoot` at the directory above `lgpl/` or finish the producer build first. Local
+never downloads a missing file. Local with GPL on any iOS target is refused before tree validation
+with `iOS GPL refusal: FFmpegLicense.GPL is unsupported for iOS; use LGPL.`
+
 ## macOS: Homebrew in a non-standard prefix
 
 On macOS the build probes `/opt/homebrew` (Apple Silicon) and `/usr/local` (Intel) for `include/libavformat/avformat.h`. If your Homebrew is elsewhere, or you want to point at a custom FFmpeg prefix, set the override in `gradle.properties`:
@@ -64,6 +74,18 @@ brew install x264 x265
 ```
 
 On Debian/Ubuntu the equivalents are the `-dev` packages (`libsvtav1-dev`, `libvpx-dev`, `libaom-dev`, `libopus-dev`, `libmp3lame-dev`, `libwebp-dev`, `libfreetype-dev`, `libharfbuzz-dev`, `libfribidi-dev`, `libass-dev`, plus `libx264-dev` / `libx265-dev` for GPL).
+
+The iOS arm64 and arm64-simulator builds do not use those desktop packages. They use the shared
+STANDARD software-playback profile, `--disable-autodetect`, SDK zlib and the selected Apple SDK.
+There is no iOS GPL task and no VideoToolbox addition in this profile.
+
+**Path safety.** A checkout or final output path may contain `#`. Configure, make and install run
+only in a unique hash-free workspace under `java.io.tmpdir`; source copying excludes `.git` and
+every `build` subtree. After install, the normalized configure invocation is written as exactly one
+line at `lib/kitecodec/ffmpeg-configure.txt`; verification and packaging require that record, and
+packaging does not consult a vendor build log. On success, the verified install is copied to a
+sibling staging directory and replaces the output. On failure, the old output remains and the
+retained scratch path is printed for diagnosis.
 
 **4. Idempotence.** The task skips when `native-libs/<license>/<target>/lib/libavformat.a` already exists. To force a rebuild, delete that directory.
 

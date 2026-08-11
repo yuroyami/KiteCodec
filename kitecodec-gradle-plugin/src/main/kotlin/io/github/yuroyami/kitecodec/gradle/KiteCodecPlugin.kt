@@ -10,6 +10,21 @@ import java.io.File
 
 internal const val DEFAULT_FFMPEG_VERSION = "n8.0"
 internal const val DEFAULT_RELEASE_REPO = "yuroyami/KiteCodec"
+private const val IOS_GPL_REFUSAL =
+    "iOS GPL refusal: FFmpegLicense.GPL is unsupported for iOS; use LGPL."
+private val IOS_TARGETS = setOf(
+    KiteCodecTarget.IosArm64,
+    KiteCodecTarget.IosSimulatorArm64,
+    KiteCodecTarget.IosX64,
+)
+private val REQUIRED_LOCAL_ARCHIVES = listOf(
+    "libavcodec.a",
+    "libavformat.a",
+    "libavutil.a",
+    "libavfilter.a",
+    "libswscale.a",
+    "libswresample.a",
+)
 
 /**
  * Provisions the FFmpeg binaries KiteCodec links against, so consumers do not have to build FFmpeg
@@ -48,8 +63,55 @@ class KiteCodecPlugin : Plugin<Project> {
             // checks below would talk about assets for a release these artifacts cannot use.
             validateFFmpegVersion(ext)
             validateLicenseChoice(project, ext, wiredTriples.filterNot { it.android }.toSet())
+            validateLocalTrees(ext, wiredTriples)
             validatePrebuiltAvailability(ext, wiredTriples)
             validateSystemFFmpegMajors(project, ext)
+        }
+    }
+
+    /** Validates every wired Local tree at configuration time without registering network work. */
+    private fun validateLocalTrees(ext: KiteCodecExtension, wiredTriples: Set<KiteCodecTarget>) {
+        if (ext.ffmpeg.source.get() != FFmpegSource.Local) return
+        if (!ext.ffmpeg.localRoot.isPresent) {
+            throw GradleException(
+                "kitecodec: source = FFmpegSource.Local requires ffmpeg.localRoot. Expected " +
+                    "<localRoot>/<license.id>/<target-triple>/{include,lib}.",
+            )
+        }
+
+        val nonAndroidLicense = ext.ffmpeg.license.orNull
+        val gplIos = wiredTriples.filter { it in IOS_TARGETS && nonAndroidLicense == FFmpegLicense.GPL }
+        if (gplIos.isNotEmpty()) {
+            throw GradleException(
+                "$IOS_GPL_REFUSAL Local targets: " +
+                    gplIos.joinToString { it.triple } +
+                    ". Mobile Apple uses the LGPL standard software-playback profile.",
+            )
+        }
+
+        val root = ext.ffmpeg.localRoot.asFile.get()
+        val incomplete = wiredTriples.sortedBy { it.triple }.mapNotNull { triple ->
+            val license = if (triple.android) FFmpegLicense.LGPL else requireNotNull(nonAndroidLicense)
+            val tree = root.resolve("${license.id}/${triple.triple}")
+            val missing = buildList {
+                if (!tree.resolve("include/libavformat/avformat.h").isFile) {
+                    add("include/libavformat/avformat.h")
+                }
+                REQUIRED_LOCAL_ARCHIVES.forEach { archive ->
+                    if (!tree.resolve("lib/$archive").isFile) add("lib/$archive")
+                }
+            }
+            missing.takeIf { it.isNotEmpty() }?.let {
+                "  ${triple.triple}: $tree is missing ${it.joinToString()}"
+            }
+        }
+        if (incomplete.isNotEmpty()) {
+            throw GradleException(
+                "kitecodec: Local FFmpeg tree is incomplete. Expected only " +
+                    "<localRoot>/<license.id>/<target-triple>/{include,lib}:\n" +
+                    incomplete.joinToString("\n") +
+                    "\nBuild each missing target tree first or point ffmpeg.localRoot at a complete tree.",
+            )
         }
     }
 
@@ -168,8 +230,8 @@ class KiteCodecPlugin : Plugin<Project> {
                 |    kitecodec {
                 |        ffmpeg {
                 |            license = FFmpegLicense.LGPL
-                |            // LGPL: closed-source-friendly. No x264/x265; hardware encoders
-                |            //       (VideoToolbox/MediaCodec) + svtav1/opus/mp3lame instead.
+                |            // LGPL: closed-source-friendly. No x264/x265; desktop VideoToolbox
+                |            //       and software stack, Android MediaCodec, iOS software playback.
                 |            // GPL:  adds x264/x265, but your entire app becomes GPL-3.0.
                 |            //       You must open-source it if you distribute it.
                 |        }
@@ -223,6 +285,8 @@ class KiteCodecPlugin : Plugin<Project> {
             |GitHub Releases, which currently cover: ${KiteCodecTarget.entries.filter { it.hasPrebuiltAsset }.joinToString { it.triple }}.
             |
             |Options:
+            |  - source = FFmpegSource.Local uses a complete no-network tree at
+            |    localRoot/<license>/<target>.
             |  - source = FFmpegSource.System links a system FFmpeg (brew/apt) where one exists
             |    for the target. Desktop hosts only.
             |  - Self-host the asset: build FFmpeg for the target yourself, publish
@@ -283,22 +347,31 @@ class KiteCodecPlugin : Plugin<Project> {
             task.onlyIf("kitecodec.ffmpeg.source is Prebuilt") { source.get() == FFmpegSource.Prebuilt }
         }
 
-        val libDir: Provider<File> = source.zip(cacheDir) { src, cache ->
+        val localTree: Provider<File> = ext.ffmpeg.localRoot.asFile.zip(license) { root, selected ->
+            root.resolve("${selected.id}/${triple.triple}")
+        }
+        val libDir: Provider<File> = source.flatMap { src ->
             when (src) {
-                FFmpegSource.Prebuilt -> cache.resolve("lib")
+                FFmpegSource.Prebuilt -> cacheDir.map { it.resolve("lib") }
 
-                FFmpegSource.System -> systemLibDir(homebrewPrefix.orNull, triple)
-                    ?: error(
-                        "kitecodec: source = System but no system FFmpeg was found for ${triple.triple}. " +
-                            "Install it (brew install ffmpeg / apt install the libav* dev packages) or " +
-                            "switch to FFmpegSource.Prebuilt.",
+                FFmpegSource.Local -> localTree.map { it.resolve("lib") }
+
+                FFmpegSource.System -> providers.provider {
+                    systemLibDir(homebrewPrefix.orNull, triple)
+                        ?: error(
+                            "kitecodec: source = System but no system FFmpeg was found for ${triple.triple}. " +
+                                "Install it (brew install ffmpeg / apt install the libav* dev packages), " +
+                                "or switch to FFmpegSource.Prebuilt or FFmpegSource.Local.",
+                        )
+                }
+
+                FFmpegSource.BuildFromSource -> providers.provider {
+                    error(
+                        "kitecodec: source = BuildFromSource is only available inside the KiteCodec " +
+                            "checkout, which ships the :buildFFmpegFor<Target> tasks. In a consumer " +
+                            "project use Prebuilt (the default), System or Local.",
                     )
-
-                FFmpegSource.BuildFromSource -> error(
-                    "kitecodec: source = BuildFromSource is only available inside the KiteCodec checkout, " +
-                        "which ships the :buildFFmpegFor<Target> tasks. In a consumer project use Prebuilt " +
-                        "(the default) or System.",
-                )
+                }
             }
         }
 
@@ -313,7 +386,18 @@ class KiteCodecPlugin : Plugin<Project> {
                     link.dependsOn(fetch)
                 }
                 binary.linkerOpts("-L${libDir.get().absolutePath}")
-                if (source.get() == FFmpegSource.Prebuilt) {
+                if (source.get() == FFmpegSource.Local) {
+                    if (triple == KiteCodecTarget.MacosArm64 || triple == KiteCodecTarget.MacosX64) {
+                        val defaultPrefix = if (triple == KiteCodecTarget.MacosArm64) "/opt/homebrew" else "/usr/local"
+                        val hostLib = File(homebrewPrefix.orNull ?: defaultPrefix, "lib")
+                        binary.linkerOpts("-L${hostLib.absolutePath}")
+                        binary.linkerOpts(PrebuiltLinkFlags.extraLinkerOpts(triple, license.get()))
+                    } else if (triple in IOS_TARGETS) {
+                        binary.linkerOpts("-lz")
+                    } else {
+                        binary.linkerOpts(PrebuiltLinkFlags.extraLinkerOpts(triple, license.get()))
+                    }
+                } else if (source.get() == FFmpegSource.Prebuilt) {
                     // Desktop prebuilt zips bundle the third-party static encoder/text libs; the
                     // final link must name them explicitly (the klib's .def only names libav*).
                     binary.linkerOpts(PrebuiltLinkFlags.extraLinkerOpts(triple, license.get()))

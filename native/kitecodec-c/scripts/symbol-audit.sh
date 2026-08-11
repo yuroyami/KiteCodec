@@ -26,7 +26,9 @@
 # The default archive is the SHIPPED one, built per konan target by
 # :kitecodec-core:compileKiteCodecCFor<Target> and embedded in the cinterop klib. That is the
 # archive whose exported set a consumer sees. The host archive from scripts/build-host.sh is
-# compiled with the same -fvisibility=hidden and answers the same way; `--host` points there.
+# compiled with the same -fvisibility=hidden and answers the same way; `--host` points there. The
+# local Apple proof produces three FFmpeg trees and corresponding helper archives: macos_arm64,
+# ios_arm64 and ios_simulator_arm64. The default remains the macos_arm64 archive.
 #
 # Usage:
 #   ./scripts/symbol-audit.sh                     the shipped macos_arm64 archive
@@ -40,8 +42,8 @@
 # Environment:
 #   KC_NM   the nm to use, default /usr/bin/nm. Mach-O archives are read by the system nm; an ELF
 #           archive needs a cross nm, and the Android toolchain package ships one that runs on
-#           macOS (aarch64-linux-android-nm). Only macos_arm64 has an FFmpeg tree on the proving
-#           machine, so only that archive exists here.
+#           macOS (aarch64-linux-android-nm). The proving machine has FFmpeg trees and C archives
+#           for macos_arm64, ios_arm64 and ios_simulator_arm64; no other target is inferred.
 #
 set -euo pipefail
 

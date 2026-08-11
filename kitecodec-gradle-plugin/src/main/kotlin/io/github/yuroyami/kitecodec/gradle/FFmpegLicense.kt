@@ -24,6 +24,12 @@ enum class FFmpegSource {
     System,
 
     /**
+     * Use a complete local tree at `localRoot/<license.id>/<target-triple>/{include,lib}`.
+     * Never downloads anything.
+     */
+    Local,
+
+    /**
      * Build from source. Only available inside the KiteCodec checkout, which ships the
      * `:buildFFmpegFor<Target>` tasks. Not usable from a consumer project.
      */

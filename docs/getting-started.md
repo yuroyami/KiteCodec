@@ -4,7 +4,7 @@ Learn how to install FFmpeg, wire the module, probe what your build can do, insp
 
 !!! warning "Before you start"
 
-    KiteCodec is **Kotlin/Native only**. There is no JVM target, no Android AAR, and no web target. Nothing is published yet, so this guide uses the in-repository path. You build against an FFmpeg you install, or against a vendored static build the Gradle tasks produce. The consumer-project build script and the [release status](https://github.com/yuroyami/KiteCodec#release-status) are in the README. The [target table](https://github.com/yuroyami/KiteCodec#targets) records what CI verifies.
+    KiteCodec is **Kotlin/Native only**. There is no JVM target, no Android AAR, and no web target. Nothing is publicly published yet, so this guide uses the in-repository path or a private `publishToMavenLocal` proof. You build against an FFmpeg you install, a vendored static build the Gradle tasks produce, or that same complete tree through the plugin's no-network `FFmpegSource.Local`. The consumer-project build script and the [release status](https://github.com/yuroyami/KiteCodec#release-status) are in the README. The [target table](https://github.com/yuroyami/KiteCodec#targets) records what CI verifies.
 
 ## Step 1: Get FFmpeg
 
@@ -40,13 +40,27 @@ KiteCodec links against FFmpeg's libav* libraries. You need them present before 
     ./gradlew :kitecodec-core:buildFFmpegForAll
     ```
 
-    You also need FFmpeg's usual build prerequisites on the machine: `make`, a C toolchain, `nasm`/`yasm` for the x86 assembly, `pkg-config`, and the third-party encoder libraries the profile enables: svt-av1, libvpx, aom, opus, lame, webp, freetype, harfbuzz, fribidi, and libass. On macOS run `brew install nasm pkg-config svt-av1 libvpx aom opus lame webp freetype harfbuzz fribidi libass`. See [Troubleshooting](troubleshooting.md#vendored-build-prerequisites) if configure fails.
+    Configure, make and install run in a unique hash-free directory under `java.io.tmpdir`. The task installs the normalized configure invocation as the single-line `lib/kitecodec/ffmpeg-configure.txt` provenance record, requires it during verification, copies the verified install to a sibling staging directory and only then replaces `native-libs`. A failed build preserves the last good tree even when the checkout path contains `#`; packaging reads only that installed record.
+
+    The desktop profile also needs FFmpeg's usual build prerequisites and third-party encoder/text libraries: `make`, a C toolchain, `nasm`/`yasm`, `pkg-config`, svt-av1, libvpx, aom, opus, lame, webp, freetype, harfbuzz, fribidi, and libass. On macOS run `brew install nasm pkg-config svt-av1 libvpx aom opus lame webp freetype harfbuzz fribidi libass`. The iOS arm64 and arm64-simulator tasks deliberately do not use that desktop stack. They build the shared STANDARD software-playback set with SDK zlib, no GPL libraries and no VideoToolbox. See [Troubleshooting](troubleshooting.md#vendored-build-prerequisites) if configure fails.
 
     The default flavor is **LGPL** (no libx264 / libx265). For the GPL flavor, run the `Gpl` task variants (for example `buildFFmpegForMacosArm64Gpl`) and build with `-Pkitecodec.ffmpeg.license=gpl`. The resulting executable carries everything it needs (around 25 MB).
 
 !!! tip "Android"
 
     Android uses a different FFmpeg profile (LGPL only, MediaCodec hardware codecs). Cross-compile it with the NDK before building the klib. See [Platform support](platforms.md) for the `buildFFmpegForAndroidArm64` flow.
+
+!!! tip "Mobile Apple local trees"
+
+    On an arm64 Mac, build the host, device and simulator trees in one producer invocation:
+
+    ```bash
+    ./gradlew :kitecodec-core:buildFFmpegForMacosArm64 \
+      :kitecodec-core:buildFFmpegForIosArm64 \
+      :kitecodec-core:buildFFmpegForIosSimulatorArm64
+    ```
+
+    Generated trees remain untracked. iOS has no GPL task; `buildFFmpegForIos*Gpl` is deliberately not registered. Repository build/path resolution refuses GPL for every iOS target before tree lookup with `iOS GPL refusal: FFmpegLicense.GPL is unsupported for iOS; use LGPL.`
 
 ## Step 2: Wire the module
 
@@ -75,7 +89,9 @@ Nothing is published, so there are two routes.
 
     A composite build substitutes the dependency with the included project, so the version is omitted deliberately. Your FFmpeg comes from KiteCodec's own `FFmpegPaths` resolution (Step 1), not from the Gradle plugin.
 
-Once `kitecodec-core` and the [Gradle plugin](gradle-plugin.md) are published, the consumer build script replaces all of this. It is written out in full in the [README](https://github.com/yuroyami/KiteCodec#install); the short version is that the plugin is mandatory (the klib's `ffmpeg.def` carries no `-L`, so the coordinate alone will not link) and so is the `license` choice.
+For a private consumer proof, publish the three Apple variants locally in a separate invocation with `./gradlew publishToMavenLocal -Pkitecodec.applePhoneTargetsOnly=true`. Then configure the consumer plugin with `source = FFmpegSource.Local`, `license = FFmpegLicense.LGPL` and `localRoot` pointing at this checkout's absolute `native-libs` directory. Its fixed layout is `<localRoot>/<license.id>/<target-triple>/{include,lib}`. The plugin validates every wired tree and performs no download. This selector is local-only; any remote `publish` task refuses it during configuration.
+
+Once `kitecodec-core` and the [Gradle plugin](gradle-plugin.md) are publicly published, the consumer build script replaces the composite build. It is written out in full in the [README](https://github.com/yuroyami/KiteCodec#install); the short version is that the plugin is mandatory (the klib's `ffmpeg.def` carries no `-L`, so the coordinate alone will not link) and so is the `license` choice.
 
 !!! note "`kitecodec-gpl` does not exist"
 
@@ -164,7 +180,7 @@ fun main() = runBlocking {
 
     ```kotlin
     val codec = listOf(
-        CodecId.H264VideoToolbox,   // macOS / iOS, LGPL-safe
+        CodecId.H264VideoToolbox,   // macOS desktop profile, LGPL-safe
         CodecId.H264MediaCodec,     // Android, LGPL-safe
         CodecId.Libx264,            // GPL builds only
         CodecId("mpeg4"),           // always present

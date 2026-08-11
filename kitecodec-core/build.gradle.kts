@@ -6,6 +6,7 @@ import io.github.yuroyami.kitecodec.buildtools.FFmpegLicense
 import io.github.yuroyami.kitecodec.buildtools.FFmpegPaths
 import io.github.yuroyami.kitecodec.buildtools.StaticLinkFlags
 import io.github.yuroyami.kitecodec.buildtools.TargetTriple
+import io.github.yuroyami.kitecodec.buildtools.IOS_GPL_REFUSAL
 import org.gradle.api.tasks.PathSensitivity
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 // Named explicitly because inside a Gradle Kotlin script `java` resolves to the java extension,
@@ -48,12 +49,29 @@ kotlin {
      *                                        (macosArm64 on an arm64 Mac, linuxX64 on x64 Linux).
      *                                        Used exclusively by the CI consumer-e2e smoke job to
      *                                        publishToMavenLocal with just a system FFmpeg present.
-     *                                        Takes precedence over stableTargetsOnly.
+     *                                        Mutually exclusive with every other target scope.
+     *   -Pkitecodec.applePhoneTargetsOnly=true
+     *                                        Register macosArm64, iosArm64 and
+     *                                        iosSimulatorArm64 on an arm64 Mac. Local publication
+     *                                        only; remote publication always refuses this scope.
      */
     val stableTargetsOnly = providers.gradleProperty("kitecodec.stableTargetsOnly")
         .map { it.toBoolean() }.getOrElse(false)
     val hostTargetsOnly = providers.gradleProperty("kitecodec.hostTargetsOnly")
         .map { it.toBoolean() }.getOrElse(false)
+    val applePhoneTargetsOnly = providers.gradleProperty("kitecodec.applePhoneTargetsOnly")
+        .map { it.toBoolean() }.getOrElse(false)
+    val selectedTargetScopes = listOf(
+        "kitecodec.stableTargetsOnly" to stableTargetsOnly,
+        "kitecodec.hostTargetsOnly" to hostTargetsOnly,
+        "kitecodec.applePhoneTargetsOnly" to applePhoneTargetsOnly,
+    ).filter { it.second }.map { it.first }
+    if (selectedTargetScopes.size > 1) {
+        throw GradleException(
+            "KiteCodec target-set properties are mutually exclusive; selected: " +
+                selectedTargetScopes.joinToString(),
+        )
+    }
 
     /*
      * Publish guard. Publishing kitecodec-core (anything whose task name starts with "publish",
@@ -64,8 +82,9 @@ kotlin {
      *   (b) an FFmpeg tree for EVERY configured target, enforced below by treating a publish
      *       run as if kitecodec.requireAllTargets=true, so a publication can never silently
      *       drop a target.
-     * Exception: publishToMavenLocal also accepts -Pkitecodec.hostTargetsOnly=true (the CI
-     * consumer-e2e smoke path); remote publishes never do.
+     * Exceptions: publishToMavenLocal also accepts -Pkitecodec.hostTargetsOnly=true (the CI
+     * consumer-e2e smoke path) or the arm64-Mac applePhoneTargetsOnly scope. Remote publishes
+     * never accept either experimental scope.
      * Checked against gradle.startParameter.taskNames, which is simple and configuration-cache safe.
      */
     val corePublishTaskNames = gradle.startParameter.taskNames.filter { name ->
@@ -77,7 +96,18 @@ kotlin {
     }
     val corePublishRequested = corePublishTaskNames.isNotEmpty()
     val onlyLocalPublishes = corePublishRequested && corePublishTaskNames.all { it.contains("MavenLocal") }
-    if (corePublishRequested && !stableTargetsOnly && !(hostTargetsOnly && onlyLocalPublishes)) {
+    if (corePublishRequested && applePhoneTargetsOnly && !onlyLocalPublishes) {
+        throw GradleException(
+            "Experimental phone selector refusal: -Pkitecodec.applePhoneTargetsOnly=true may only " +
+                "be used with publishToMavenLocal; remote publication is forbidden.",
+        )
+    }
+    if (
+        corePublishRequested &&
+        !stableTargetsOnly &&
+        !(hostTargetsOnly && onlyLocalPublishes) &&
+        !(applePhoneTargetsOnly && onlyLocalPublishes)
+    ) {
         throw GradleException(
             """
             |kitecodec-core: publishing requested (${corePublishTaskNames.joinToString()}) without the release target scope.
@@ -97,13 +127,28 @@ kotlin {
             |-Pkitecodec.stableTargetsOnly=true with all five stable FFmpeg trees present under
             |native-libs/lgpl/ (or system installs for the desktop ones). For a host-only local
             |smoke publish, -Pkitecodec.hostTargetsOnly=true is accepted for publishToMavenLocal.
+            |On an arm64 Mac, -Pkitecodec.applePhoneTargetsOnly=true is accepted only for a local
+            |macOS/iPhone/simulator proof and only with publishToMavenLocal.
             """.trimMargin(),
         )
     }
 
     // Every Kotlin/Native target gets the same single consolidated cinterop. Each resolves its
     // own FFmpeg install via FFmpegPaths.resolve(...): vendored static if available, else system.
-    val knTargetMap: Map<KotlinNativeTarget, TargetTriple> = if (hostTargetsOnly) {
+    val knTargetMap: Map<KotlinNativeTarget, TargetTriple> = if (applePhoneTargetsOnly) {
+        val osName = System.getProperty("os.name").lowercase()
+        val osArch = System.getProperty("os.arch").lowercase()
+        if ("mac" !in osName || osArch !in setOf("aarch64", "arm64")) {
+            throw GradleException(
+                "kitecodec.applePhoneTargetsOnly=true requires an arm64 Mac; found $osName/$osArch.",
+            )
+        }
+        mapOf(
+            macosArm64() to TargetTriple.MacosArm64,
+            iosArm64() to TargetTriple.IosArm64,
+            iosSimulatorArm64() to TargetTriple.IosSimulatorArm64,
+        )
+    } else if (hostTargetsOnly) {
         // Consumer-e2e smoke scope: just the host's own desktop target.
         val osName = System.getProperty("os.name").lowercase()
         val osArch = System.getProperty("os.arch").lowercase()
@@ -149,6 +194,17 @@ kotlin {
         } else {
             FFmpegLicense.LGPL
         }
+
+    if (
+        selectedLicense == FFmpegLicense.GPL &&
+        knTargetMap.values.any {
+            it == TargetTriple.IosArm64 ||
+                it == TargetTriple.IosSimulatorArm64 ||
+                it == TargetTriple.IosX64
+        }
+    ) {
+        throw GradleException(IOS_GPL_REFUSAL)
+    }
 
     // Targets whose FFmpeg is missing are skipped with a warning by default; releases/publishing
     // must not silently drop targets, so -Pkitecodec.requireAllTargets=true makes it fail instead.
@@ -342,8 +398,11 @@ fun registerBuildFFmpeg(triple: TargetTriple, flavour: FFmpegLicense) =
 TargetTriple.entries.forEach { triple ->
     // LGPL flavour for every target (the default).
     registerBuildFFmpeg(triple, FFmpegLicense.LGPL)
-    // GPL flavour (libx264 / libx265) for desktop targets only, since Android has no GPL build.
-    if (!triple.isAndroid) {
+    // GPL flavour (libx264 / libx265) for desktop targets only; Android and iOS are LGPL-only.
+    if (
+        !triple.isAndroid &&
+        triple !in setOf(TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64, TargetTriple.IosX64)
+    ) {
         registerBuildFFmpeg(triple, FFmpegLicense.GPL)
     }
 }
@@ -357,7 +416,12 @@ tasks.register("buildFFmpegForAll") {
 tasks.register("buildFFmpegForAllGpl") {
     group = "kitecodec"
     description = "Cross-compile the GPL FFmpeg (x264 / x265) for every desktop target."
-    dependsOn(TargetTriple.entries.filterNot { it.isAndroid }.map { "buildFFmpegFor${it.gradleSuffix}Gpl" })
+    dependsOn(
+        TargetTriple.entries
+            .filterNot { it.isAndroid }
+            .filterNot { it in setOf(TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64, TargetTriple.IosX64) }
+            .map { "buildFFmpegFor${it.gradleSuffix}Gpl" },
+    )
 }
 
 /*

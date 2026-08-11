@@ -45,6 +45,29 @@ if ! grep -q "FFMPEG_VERSION \"${version}" "${ffversion_h}" \
   exit 1
 fi
 
+# BuildFFmpegTask installs the normalized configure invocation with the tree it describes. This
+# installed record is the only provenance source: a vendor checkout may contain an unrelated or
+# stale ffbuild/config.log, especially when packaging a cross-compiled tree.
+configure_record="${src}/lib/kitecodec/ffmpeg-configure.txt"
+if [ ! -f "${configure_record}" ]; then
+  echo "::error::missing installed configure evidence ${configure_record}" >&2
+  exit 1
+fi
+configure_line="$(cat "${configure_record}")"
+configure_line_count="$(wc -l < "${configure_record}" | tr -d '[:space:]')"
+if [ ! -s "${configure_record}" ] \
+  || [ "${configure_line_count}" != "1" ] \
+  || ! grep -q '[^[:space:]]' "${configure_record}" \
+  || [[ "${configure_line}" == *$'\n'* ]] \
+  || [[ "${configure_line}" == *$'\r'* ]]; then
+  echo "::error::installed configure evidence ${configure_record} must contain exactly one nonblank LF-terminated line" >&2
+  exit 1
+fi
+if [[ "${configure_line}" == "(unavailable"* ]]; then
+  echo "::error::installed configure evidence ${configure_record} contains the obsolete unavailable fallback" >&2
+  exit 1
+fi
+
 # --- stage the license texts + build info ---------------------------------------------------
 if [ ! -d "${ffmpeg_src}" ]; then
   echo "::error::FFmpeg source tree not found at ${ffmpeg_src} (needed for license texts + build info)" >&2
@@ -67,18 +90,6 @@ for f in "${legal_files[@]}"; do
 done
 
 commit="$(git -C "${ffmpeg_src}" rev-parse HEAD 2>/dev/null || echo "unknown")"
-
-# The full ./configure invocation is the first line of ffbuild/config.log. BuildFFmpegTask
-# configures out-of-tree under <src>/build/<license>/<triple>, so look there first, then fall
-# back to an in-tree configure. (<prefix>/share/ffmpeg does not exist for these static builds,
-# so config.log is the reliable source.)
-configure_line="(unavailable: no ffbuild/config.log found)"
-for log in "${ffmpeg_src}/build/${license}/${triple}/ffbuild/config.log" "${ffmpeg_src}/ffbuild/config.log"; do
-  if [ -f "${log}" ]; then
-    configure_line="$(head -n 1 "${log}" | sed 's/^# *//')"
-    break
-  fi
-done
 
 cat > "${stage}/BUILD-INFO.txt" <<EOF
 FFmpeg build info: KiteCodec vendored binaries

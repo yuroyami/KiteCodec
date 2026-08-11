@@ -4,6 +4,14 @@ import org.gradle.api.GradleException
 import org.gradle.api.Project
 import java.io.File
 
+const val IOS_GPL_REFUSAL =
+    "iOS GPL refusal: FFmpegLicense.GPL is unsupported for iOS; use LGPL."
+
+private val TargetTriple.isIos: Boolean
+    get() = this == TargetTriple.IosArm64 ||
+        this == TargetTriple.IosSimulatorArm64 ||
+        this == TargetTriple.IosX64
+
 /**
  * Resolves where libav* headers and link libraries live for a given Kotlin/Native target.
  *
@@ -15,7 +23,8 @@ import java.io.File
  *
  *   - **Vendored static**: for releases. We expect a directory tree like
  *     `<repoRoot>/native-libs/<license>/<targetTriple>/{include,lib}` populated by the
- *     `:buildFFmpegFor<Target>[Gpl]` tasks (see `BuildFFmpegTask.kt`). The resulting binaries fully
+ *     `:buildFFmpegFor<Target>` tasks (and desktop-only `Gpl` variants; see `BuildFFmpegTask.kt`).
+ *     iOS supports only the LGPL standard software-playback profile. The resulting binaries fully
  *     embed FFmpeg. The `<license>` segment (`lgpl` / `gpl`) keeps the two flavours from colliding.
  *
  * Layered: vendored static wins if present; otherwise fall back to the system install.
@@ -31,6 +40,9 @@ data class FFmpegPaths(
             target: TargetTriple,
             license: FFmpegLicense = FFmpegLicense.LGPL,
         ): FFmpegPaths {
+            if (target.isIos && license == FFmpegLicense.GPL) {
+                throw GradleException(IOS_GPL_REFUSAL)
+            }
             val vendored = project.rootDir.resolve("native-libs/${license.dirName}/${target.dirName}")
             if (vendored.resolve("include").isDirectory && vendored.resolve("lib").isDirectory) {
                 return FFmpegPaths(
@@ -117,14 +129,14 @@ data class FFmpegPaths(
 /**
  * Which FFmpeg license profile a vendored build was produced under.
  *
- *   - [LGPL] is the default: no `--enable-gpl`, no x264 / x265. Hardware encoders (VideoToolbox /
- *     MediaCodec) plus permissive software encoders (svtav1, vpx, aom, opus, mp3lame). Safe for the
- *     App Store and closed-source distribution.
- *   - [GPL] adds libx264 / libx265 for quality-focused software encode. Open-source / server use
- *     only; it makes the linked binary GPL.
+ *   - [LGPL] is the default: no `--enable-gpl`, no x264 / x265. Desktop builds include their
+ *     permissive encoder/text stack, Android uses MediaCodec, and iOS uses the standard software
+ *     playback core plus SDK zlib. Safe for the App Store and closed-source distribution.
+ *   - [GPL] is desktop-only and adds libx264 / libx265 for quality-focused software encode.
+ *     Open-source / server use only; it makes the linked binary GPL. iOS rejects it.
  *
  * The [dirName] segment keeps the two flavours apart under `native-libs/`; [taskSuffix] disambiguates
- * the `:buildFFmpegFor<Target>` Gradle tasks.
+ * the desktop `:buildFFmpegFor<Target>Gpl` Gradle tasks.
  */
 enum class FFmpegLicense(val dirName: String, val taskSuffix: String) {
     LGPL("lgpl", ""),

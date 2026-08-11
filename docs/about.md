@@ -32,7 +32,7 @@ The two things a reader most often needs from it:
 - **Android AAR**: a JNI substrate so `androidTarget` (regular Android apps on Kotlin/JVM) gets the same API, over the same `ffkmp_*` C helpers. FFmpegKit's retirement left that niche empty.
 - **Bitstream filters** (h264 to/from Annex B) so stream copy reaches MPEG-TS.
 - **Hardware decode and full hwframes pipelines**: zero-copy VideoToolbox / CUDA.
-- **iOS**: nothing in this repository can cross-build an FFmpeg for iOS today, so the iOS targets compile only against a tree you produce yourself. That build chain comes first, CI verification after.
+- **iOS qualification**: the repository now has an LGPL mobile Apple FFmpeg build and local-consumption path for `iosArm64` and `iosSimulatorArm64`. It is a private/local substrate, not a public artifact or CI claim. Runtime and application qualification belong to the consuming player stages.
 
 ## Architecture
 
@@ -118,7 +118,7 @@ KiteCodec follows `ffmpeg.c`'s own rules at every stage:
 
 ## FFmpeg sourcing
 
-KiteCodec links against an FFmpeg you provide. In a consumer project the [Gradle plugin](gradle-plugin.md) does the providing; inside this repository there are two modes:
+KiteCodec links against an FFmpeg you provide. Inside this repository it either discovers a host system install or builds a vendored tree. A consumer plugin has a third, no-network Local mode for reusing a complete generated tree.
 
 === "Dynamic (default)"
 
@@ -139,6 +139,12 @@ KiteCodec links against an FFmpeg you provide. In a consumer project the [Gradle
     ./gradlew :kitecodec-core:buildFFmpegForMacosArm64   # or :buildFFmpegForAll
     ```
 
+    The build copies source to a unique hash-free temporary workspace, configures and installs there, records the normalized configure invocation at `lib/kitecodec/ffmpeg-configure.txt`, verifies that record plus all six archives and headers, stages a Java/NIO copy beside the declared output and only then replaces the old tree. Packaging reads only that installed single-line record. The mobile Apple tasks use the shared STANDARD software-playback profile plus SDK zlib. They do not use the desktop third-party stack, GPL, VideoToolbox or hardware encode.
+
+=== "Local consumer tree"
+
+    After a private `publishToMavenLocal`, set `source = FFmpegSource.Local` and point `localRoot` at the absolute `native-libs` directory. The plugin requires `<localRoot>/<license.id>/<target-triple>/{include,lib}` for every wired target and never downloads. Local iOS is LGPL-only and links SDK zlib; local macOS searches its tree before the host fallback and uses the desktop static link set. Nothing about this mode implies a public artifact or CI result.
+
 See [Platform support](platforms.md) for the per-target detail.
 
 ## License
@@ -147,7 +153,7 @@ KiteCodec's own code is licensed under the **Apache License 2.0**. You can freel
 
 The FFmpeg you link against carries its own license, separate from KiteCodec's. It is **LGPL-2.1+** when FFmpeg is built without `--enable-gpl`, and **GPL** with it. KiteCodec's GPL build flavor also sets `--enable-version3`, so its effective license is **GPL-3.0**. The default flavor is LGPL and is commercial- and App-Store-safe (with the usual [LGPL distribution obligations](licensing.md)). A `kitecodec-gpl` module that would package the GPL flavor (libx264 / libx265) as a drop-in artifact does not exist: it is a README and nothing else, with no `build.gradle.kts`, commented out of `settings.gradle.kts`.
 
-When you build a vendored static FFmpeg, the license flavor is a build-time choice: `buildFFmpegFor<Target>` produces the LGPL default, `buildFFmpegFor<Target>Gpl` the GPL opt-in (selected with `-Pkitecodec.ffmpeg.license=gpl`). Stay on the LGPL default if you ship through a GPL-hostile distribution channel such as the iOS App Store. Full compliance guidance lives in the [Licensing guide](licensing.md).
+When you build a vendored static FFmpeg, the license flavor is a build-time choice: `buildFFmpegFor<Target>` produces the LGPL default and desktop `buildFFmpegFor<Target>Gpl` tasks produce the GPL opt-in (selected with `-Pkitecodec.ffmpeg.license=gpl`). There are no iOS GPL tasks, and repository build/path resolution refuses GPL for every iOS target before tree lookup with `iOS GPL refusal: FFmpegLicense.GPL is unsupported for iOS; use LGPL.` The consumer plugin applies the same refusal to Local iOS trees. Stay on the LGPL default if you ship through a GPL-hostile distribution channel such as the iOS App Store. Full compliance guidance lives in the [Licensing guide](licensing.md).
 
 ## Acknowledgments
 

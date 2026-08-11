@@ -10,14 +10,28 @@ import org.gradle.api.tasks.Optional
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.TaskAction
 import java.io.File
+import java.nio.charset.StandardCharsets.UTF_8
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.FileVisitResult
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.SimpleFileVisitor
+import java.nio.file.StandardCopyOption
+import java.nio.file.attribute.BasicFileAttributes
+import java.util.UUID
 import javax.inject.Inject
+
+private val TargetTriple.isIos: Boolean
+    get() = this == TargetTriple.IosArm64 ||
+        this == TargetTriple.IosSimulatorArm64 ||
+        this == TargetTriple.IosX64
 
 /**
  * Cross-compiles a minimal FFmpeg from source for one [target] under one [license] and writes the
  * resulting static archives + headers into `native-libs/<license>/<target.dirName>/{include,lib}`.
  * The Kotlin cinterop step picks them up via [FFmpegPaths].
  *
- * Desktop targets (macOS / iOS / Linux / mingw) build in one of two licence flavours:
+ * Desktop targets (macOS / Linux / mingw) build in one of two licence flavours:
  *
  *   - [FFmpegLicense.LGPL] (default): no `--enable-gpl`, no x264 / x265. VideoToolbox hardware
  *     encode plus a permissive software stack (svtav1, vpx, aom, mp3lame, opus, webp, freetype /
@@ -30,6 +44,8 @@ import javax.inject.Inject
  * native software decoders and aac encoder. Cross-compiled with the NDK toolchain (env
  * `ANDROID_NDK_HOME` / `ANDROID_NDK_ROOT` / `ANDROID_NDK_LATEST_HOME`, falling back to the SDK's
  * newest `ndk/<version>`).
+ * The **iOS** profile is also LGPL-only: the shared software playback core plus SDK zlib, with no
+ * desktop encoder/text stack and no VideoToolbox profile.
  *
  * Every flavour shares the same demuxer/decoder/filter core: the editor-relevant subset, ~75%
  * smaller than a "full" build (25 MB vs 110 MB per ABI).
@@ -46,7 +62,7 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
     @get:Input
     abstract val target: Property<TargetTriple>
 
-    /** Licence flavour. Android always builds LGPL; only desktop targets honour [FFmpegLicense.GPL]. */
+    /** Licence flavour. Android and iOS are LGPL-only; only desktop targets honour [FFmpegLicense.GPL]. */
     @get:Input
     abstract val license: Property<FFmpegLicense>
 
@@ -105,56 +121,69 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
             "Android uses the LGPL MediaCodec profile only; there is no GPL Android build " +
                 "(libx264 / libx265 are not part of the Android profile)."
         }
+        require(!(target.isIos && license == FFmpegLicense.GPL)) {
+            IOS_GPL_REFUSAL
+        }
         require(sourceDir.exists()) {
             "FFmpeg source not found at $sourceDir. Run:\n" +
                 "  git clone --depth 1 --branch ${sourceRef.get()} https://github.com/FFmpeg/FFmpeg vendor/ffmpeg\n" +
                 "(or add it as a git submodule for reproducible builds)"
         }
-        // FFmpeg builds with GNU make, and make starts a COMMENT at an unescaped '#'. A checkout
-        // under a path containing one configures fine and then installs nothing: `prefix` is
-        // silently truncated at the '#', `libdir` comes out empty, and `make install` still exits
-        // 0. Catch it here rather than let the build "succeed" into an empty output directory.
-        listOf(sourceDir.absolutePath, outputDir.absolutePath).forEach { path ->
-            require('#' !in path) {
-                "FFmpeg cannot be built under a path containing '#': $path\n" +
-                    "GNU make treats it as a comment, so the install prefix is truncated and " +
-                    "`make install` writes nothing while still reporting success. Move the " +
-                    "checkout (and vendor/ffmpeg) to a path without '#'."
-            }
-        }
-        outputDir.mkdirs()
-        val buildDir = sourceDir.resolve("build/${license.dirName}/${target.dirName}").also { it.mkdirs() }
+        val scratch = createScratchWorkspace(Path.of(System.getProperty("java.io.tmpdir")))
+        var succeeded = false
+        try {
+            val scratchSource = scratch.resolve("source")
+            val scratchBuild = scratch.resolve("build").also(Files::createDirectories)
+            val scratchInstall = scratch.resolve("install")
+            copySourceTree(sourceDir.toPath(), scratchSource)
 
-        val licenseArgs = if (target.isAndroid) {
-            androidArgs(target)
-        } else {
-            desktopBaseArgs() +
+            val configureArgs = configureArguments(
+                target = target,
+                license = license,
+                installPrefix = scratchInstall.toAbsolutePath().toString(),
+            )
+            val env = configureEnv(target)
+            runIn(
+                scratchBuild.toFile(),
+                listOf(scratchSource.resolve("configure").toAbsolutePath().toString()) + configureArgs,
+                env,
+            )
+            runIn(scratchBuild.toFile(), listOf("make", "-j${Runtime.getRuntime().availableProcessors()}"), env)
+            runIn(scratchBuild.toFile(), listOf("make", "install"), env)
+
+            writeConfigureEvidence(scratchBuild.resolve("ffbuild/config.log"), scratchInstall)
+            verifyInstall(scratchInstall)
+            bundleThirdPartyArchives(target, license, scratchInstall.toFile())
+            verifyInstall(scratchInstall)
+            replaceOutputTree(scratchInstall, outputDir.toPath())
+            succeeded = true
+            logger.lifecycle(
+                "[KiteCodec] FFmpeg ${sourceRef.get()} (${license.dirName}) installed into $outputDir",
+            )
+        } catch (failure: Throwable) {
+            logger.error("[KiteCodec] FFmpeg scratch retained after failure: $scratch")
+            throw failure
+        } finally {
+            if (succeeded) scratch.toFile().deleteRecursively()
+        }
+    }
+
+    internal fun configureArguments(
+        target: TargetTriple,
+        license: FFmpegLicense,
+        installPrefix: String,
+        sdkPath: (String) -> String = ::xcrunSdkPath,
+    ): List<String> {
+        require(!(target.isAndroid && license == FFmpegLicense.GPL))
+        require(!(target.isIos && license == FFmpegLicense.GPL)) { IOS_GPL_REFUSAL }
+        val profileArgs = when {
+            target.isAndroid -> androidArgs(target)
+            target.isIos -> mobileAppleArgs(target, sdkPath)
+            else -> desktopBaseArgs() +
                 (if (license == FFmpegLicense.GPL) desktopGplArgs() else emptyList()) +
                 desktopTargetArgs(target)
         }
-        val configureArgs = sharedCoreArgs() + licenseArgs +
-            listOf("--prefix=${outputDir.absolutePath}")
-        val env = configureEnv(target)
-        runIn(buildDir, listOf(sourceDir.resolve("configure").absolutePath) + configureArgs, env)
-        runIn(buildDir, listOf("make", "-j${Runtime.getRuntime().availableProcessors()}"), env)
-        runIn(buildDir, listOf("make", "install"), env)
-
-        // `make install` exiting 0 is not proof it installed anything. FFmpeg's install rules are
-        // driven by variables from config.mak, and a prefix make cannot parse yields a silent
-        // no-op. An empty output directory here would then fall through to FFmpegPaths' system
-        // lookup, which is exactly the "publication silently drops a target" failure the publish
-        // guard exists to prevent. Verify the artefacts instead of trusting the exit code.
-        val missing = REQUIRED_LIBS.filterNot { outputDir.resolve("lib/$it.a").isFile }
-        check(missing.isEmpty()) {
-            "FFmpeg reported a successful install but $outputDir is missing " +
-                "${missing.joinToString { "lib/$it.a" }}. Check the configure/make output above; " +
-                "the install prefix may not have been honoured."
-        }
-        check(outputDir.resolve("include/libavformat/avformat.h").isFile) {
-            "FFmpeg installed libraries into $outputDir but no headers; cinterop needs both."
-        }
-        bundleThirdPartyArchives(target, license, outputDir)
-        logger.lifecycle("[KiteCodec] FFmpeg ${sourceRef.get()} (${license.dirName}) installed into $outputDir")
+        return sharedCoreArgs() + profileArgs + listOf("--prefix=$installPrefix")
     }
 
     /**
@@ -212,9 +241,7 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
 
     /** Where the host package manager keeps the static archives, most specific first. */
     private fun thirdPartySearchDirs(target: TargetTriple): List<File> = when (target) {
-        TargetTriple.MacosArm64, TargetTriple.MacosX64,
-        TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64, TargetTriple.IosX64,
-        -> {
+        TargetTriple.MacosArm64, TargetTriple.MacosX64 -> {
             val prefix = File(hostPrefix.getOrElse(DEFAULT_HOMEBREW_PREFIX))
             // Homebrew symlinks into <prefix>/lib, but keg-only formulas stay under opt/<name>/lib.
             listOf(prefix.resolve("lib")) +
@@ -350,7 +377,7 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
     )
 
     /**
-     * VideoToolbox hardware encode on Apple targets.
+     * VideoToolbox hardware encode on macOS desktop targets.
      *
      * `--enable-videotoolbox` alone only turns on the framework dependency. Under
      * `--disable-everything` every encoder must additionally be named in `--enable-encoder=`, or
@@ -375,33 +402,6 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
             "--cc=clang -arch x86_64",
             "--enable-cross-compile",
         ) + appleHardwareArgs() + macosPrefixArgs()
-        TargetTriple.IosArm64 -> {
-            val sdk = xcrunSdkPath("iphoneos")
-            listOf(
-                "--arch=arm64", "--target-os=darwin",
-                "--cc=clang -arch arm64 -isysroot $sdk -mios-version-min=14.0",
-                "--enable-cross-compile",
-                "--disable-asm",
-            ) + appleHardwareArgs()
-        }
-        TargetTriple.IosSimulatorArm64 -> {
-            val sdk = xcrunSdkPath("iphonesimulator")
-            listOf(
-                "--arch=arm64", "--target-os=darwin",
-                "--cc=clang -arch arm64 -isysroot $sdk -mios-simulator-version-min=14.0",
-                "--enable-cross-compile",
-                "--disable-asm",
-            )
-        }
-        TargetTriple.IosX64 -> {
-            val sdk = xcrunSdkPath("iphonesimulator")
-            listOf(
-                "--arch=x86_64", "--target-os=darwin",
-                "--cc=clang -arch x86_64 -isysroot $sdk -mios-simulator-version-min=14.0",
-                "--enable-cross-compile",
-                "--disable-asm",
-            )
-        }
         TargetTriple.LinuxX64 -> listOf("--arch=x86_64", "--target-os=linux", "--cc=clang")
         TargetTriple.LinuxArm64 -> listOf(
             "--arch=aarch64", "--target-os=linux",
@@ -414,6 +414,41 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
             "--enable-cross-compile",
         )
         else -> error("desktopTargetArgs called for non-desktop target $target")
+    }
+
+    /** Mobile Apple playback profile: shared software codecs plus SDK zlib, and no desktop stack. */
+    private fun mobileAppleArgs(target: TargetTriple, sdkPath: (String) -> String): List<String> {
+        val crossArgs = when (target) {
+            TargetTriple.IosArm64 -> {
+                val sdk = sdkPath("iphoneos")
+                listOf(
+                    "--arch=arm64", "--target-os=darwin",
+                    "--cc=clang -arch arm64 -isysroot $sdk -mios-version-min=14.0",
+                    "--enable-cross-compile",
+                    "--disable-asm",
+                )
+            }
+            TargetTriple.IosSimulatorArm64 -> {
+                val sdk = sdkPath("iphonesimulator")
+                listOf(
+                    "--arch=arm64", "--target-os=darwin",
+                    "--cc=clang -arch arm64 -isysroot $sdk -mios-simulator-version-min=14.0",
+                    "--enable-cross-compile",
+                    "--disable-asm",
+                )
+            }
+            TargetTriple.IosX64 -> {
+                val sdk = sdkPath("iphonesimulator")
+                listOf(
+                    "--arch=x86_64", "--target-os=darwin",
+                    "--cc=clang -arch x86_64 -isysroot $sdk -mios-simulator-version-min=14.0",
+                    "--enable-cross-compile",
+                    "--disable-asm",
+                )
+            }
+            else -> error("mobileAppleArgs called for non-iOS target $target")
+        }
+        return listOf("--disable-autodetect", "--enable-zlib") + crossArgs
     }
 
     /** Resolves an Apple SDK sysroot via `xcrun`, so the path tracks the installed Xcode. */
@@ -613,5 +648,144 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
             "libavcodec", "libavformat", "libavutil",
             "libavfilter", "libswscale", "libswresample",
         )
+
+        /** Stable installed provenance path consumed by packaging and release evidence. */
+        const val CONFIGURE_EVIDENCE_RELATIVE_PATH = "lib/kitecodec/ffmpeg-configure.txt"
+
+        /** Creates the unique hash-free workspace that is the only path configure and make see. */
+        internal fun createScratchWorkspace(temporaryRoot: Path): Path {
+            Files.createDirectories(temporaryRoot)
+            val workspace = Files.createTempDirectory(temporaryRoot, "kitecodec-ffmpeg-")
+            require('#' !in workspace.toAbsolutePath().toString()) {
+                "java.io.tmpdir must resolve to a path without '#': $workspace"
+            }
+            return workspace
+        }
+
+        /** Copies FFmpeg source while excluding repository metadata and every stale build subtree. */
+        internal fun copySourceTree(source: Path, destination: Path) {
+            copyTree(source, destination, excludeBuildState = true)
+        }
+
+        private fun copyTree(source: Path, destination: Path, excludeBuildState: Boolean) {
+            Files.walkFileTree(
+                source,
+                object : SimpleFileVisitor<Path>() {
+                    override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult {
+                        if (
+                            dir != source &&
+                            excludeBuildState &&
+                            (dir.fileName.toString() == ".git" || dir.fileName.toString() == "build")
+                        ) {
+                            return FileVisitResult.SKIP_SUBTREE
+                        }
+                        Files.createDirectories(destination.resolve(source.relativize(dir)))
+                        return FileVisitResult.CONTINUE
+                    }
+
+                    override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
+                        val target = destination.resolve(source.relativize(file))
+                        Files.createDirectories(target.parent)
+                        Files.copy(
+                            file,
+                            target,
+                            StandardCopyOption.REPLACE_EXISTING,
+                            StandardCopyOption.COPY_ATTRIBUTES,
+                            java.nio.file.LinkOption.NOFOLLOW_LINKS,
+                        )
+                        return FileVisitResult.CONTINUE
+                    }
+                },
+            )
+        }
+
+        /**
+         * Installs the first configure invocation recorded by FFmpeg into the output tree.
+         *
+         * FFmpeg prefixes that line with `# ` in `ffbuild/config.log`; only that exact marker is
+         * removed. The command itself is otherwise byte-for-byte stable and the installed record
+         * is always one UTF-8 line terminated by exactly one newline.
+         */
+        internal fun writeConfigureEvidence(configLog: Path, install: Path) {
+            check(Files.isRegularFile(configLog)) {
+                "FFmpeg configure provenance is missing: $configLog"
+            }
+            val firstLine = Files.newBufferedReader(configLog, UTF_8).use { reader -> reader.readLine() }
+                ?.removePrefix("# ")
+            check(!firstLine.isNullOrBlank()) {
+                "FFmpeg configure provenance has no nonblank first line: $configLog"
+            }
+            val evidence = install.resolve(CONFIGURE_EVIDENCE_RELATIVE_PATH)
+            Files.createDirectories(evidence.parent)
+            Files.writeString(evidence, "$firstLine\n", UTF_8)
+        }
+
+        internal fun verifyInstall(install: Path) {
+            val missing = REQUIRED_LIBS.filterNot { Files.isRegularFile(install.resolve("lib/$it.a")) }
+            check(missing.isEmpty()) {
+                "FFmpeg reported a successful install but $install is missing " +
+                    "${missing.joinToString { "lib/$it.a" }}. Check the configure/make output; " +
+                    "the scratch install prefix may not have been honoured."
+            }
+            check(Files.isRegularFile(install.resolve("include/libavformat/avformat.h"))) {
+                "FFmpeg installed libraries into $install but no headers; cinterop needs both."
+            }
+            val evidence = install.resolve(CONFIGURE_EVIDENCE_RELATIVE_PATH)
+            check(Files.isRegularFile(evidence)) {
+                "FFmpeg installed libraries into $install but no configure provenance record at " +
+                    CONFIGURE_EVIDENCE_RELATIVE_PATH + "."
+            }
+            val evidenceText = Files.readString(evidence, UTF_8)
+            check(
+                evidenceText.endsWith('\n') &&
+                    evidenceText.count { it == '\n' } == 1 &&
+                    '\r' !in evidenceText &&
+                    evidenceText.removeSuffix("\n").isNotBlank()
+            ) {
+                "FFmpeg configure provenance at $evidence must be one nonblank UTF-8 line " +
+                    "terminated by exactly one newline."
+            }
+        }
+
+        /** Verifies a sibling staging copy before swapping it into the declared output location. */
+        internal fun replaceOutputTree(scratchInstall: Path, output: Path) {
+            val absoluteOutput = output.toAbsolutePath().normalize()
+            val parent = requireNotNull(absoluteOutput.parent) {
+                "FFmpeg output has no parent directory: $output"
+            }
+            Files.createDirectories(parent)
+            val nonce = UUID.randomUUID().toString()
+            val staging = parent.resolve(".${absoluteOutput.fileName}.staging-$nonce")
+            val backup = parent.resolve(".${absoluteOutput.fileName}.backup-$nonce")
+            var movedOldOutput = false
+            try {
+                copyTree(scratchInstall, staging, excludeBuildState = false)
+                verifyInstall(staging)
+                if (Files.exists(absoluteOutput)) {
+                    moveDirectory(absoluteOutput, backup)
+                    movedOldOutput = true
+                }
+                try {
+                    moveDirectory(staging, absoluteOutput)
+                } catch (failure: Throwable) {
+                    if (movedOldOutput) moveDirectory(backup, absoluteOutput)
+                    throw failure
+                }
+                if (movedOldOutput) backup.toFile().deleteRecursively()
+            } finally {
+                staging.toFile().deleteRecursively()
+                if (!Files.exists(absoluteOutput) && movedOldOutput && Files.exists(backup)) {
+                    moveDirectory(backup, absoluteOutput)
+                }
+            }
+        }
+
+        private fun moveDirectory(source: Path, destination: Path) {
+            try {
+                Files.move(source, destination, StandardCopyOption.ATOMIC_MOVE)
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(source, destination)
+            }
+        }
     }
 }
