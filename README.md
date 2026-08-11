@@ -271,7 +271,7 @@ Every target claim in the Kite family means one of these tiers and nothing more.
 | T3 and above | Output, OS integration and release qualification. A codec library makes no such claim, so KiteCodec never reports one. |
 
 Against that scale: `macosArm64` is T2, measured on an Apple silicon development
-machine by 85 `kitecodec-core` tests, six C suites under three sanitizer
+machine by 85 `kitecodec-core` tests, seven C suites under three sanitizer
 variants, and the e2e script. `linuxX64` and
 `mingwX64` are T2 on CI evidence only, never on a machine you can inspect here.
 The `androidNative*` klibs are T1: they compile per ABI and nothing runs them.

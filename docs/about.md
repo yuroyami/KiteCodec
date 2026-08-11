@@ -44,13 +44,16 @@ The pragmatic alternative, six separate cinterops (one per library), does not wo
 
 ### The `ffkmp_*` C helpers
 
-The binding also carries 157 small C helpers, all prefixed `ffkmp_*`. They live in
+Kotlin currently consumes 157 legacy C helpers, all prefixed `ffkmp_*`. They live in
 `native/kitecodec-c/`, compiled per Kotlin/Native target into a static archive that the def names and
-cinterop embeds. They used to be `static inline` text inside the def, which meant no translation unit,
-no object file and no test; the move gave them nine translation units, six C test suites, three
-sanitizer variants and six fuzz targets, and a committed generator plus `scripts/verify-lift.sh` proves
-the extracted C is byte for byte what the def body was. The def's declared surface did not change, so
-no Kotlin call site did either.
+cinterop embeds. ABI 1.1 exports twelve more compatible but dormant `ffkmp_` functions, seven wrappers
+and five media-type accessors, for 169 `ffkmp_` exports in all. Kotlin does not call those additions;
+it stays on the legacy surface until S1.a.8 changes the header, def and Kotlin signatures together.
+
+The helpers used to be `static inline` text inside the def, which meant no translation unit, no object
+file and no test. The C layer now has nine translation units, seven C test suites, three sanitizer
+variants and six fuzz targets. Its historical extraction was byte-compared before the generator and
+`scripts/verify-lift.sh` were retired; the proof remains in the execution record.
 
 They exist because some of FFmpeg's surface does not survive cinterop cleanly:
 
@@ -68,7 +71,7 @@ native/kitecodec-c/                  ← the C helper layer: nine units, its own
 ├── include/kitecodec_abi.h          ← the FFmpeg identity gate's contract, no FFmpeg header in it
 ├── src/helpers_*.c                  ← generated, one per subsystem
 ├── src/kitecodec_abi.c              ← the identity gate itself
-├── tests/ fuzz/ scripts/            ← six suites, six fuzz targets, the audit and lift scripts
+├── tests/ fuzz/ scripts/            ← seven suites, six fuzz targets, the audit and lift scripts
 kitecodec-core/src/
 ├── nativeInterop/cinterop/
 │   └── ffmpeg.def                   ← unified cinterop; names the compiled helper archive

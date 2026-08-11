@@ -27,7 +27,11 @@ ffkmp_codecctx_from_par
 ffkmp_codecctx_height
 ffkmp_codecctx_open
 ffkmp_codecctx_pix_fmt
+ffkmp_codecctx_receive_frame
+ffkmp_codecctx_receive_packet
 ffkmp_codecctx_sample_rate
+ffkmp_codecctx_send_frame
+ffkmp_codecctx_send_packet
 ffkmp_codecctx_set_audio
 ffkmp_codecctx_set_full_range
 ffkmp_codecctx_set_global_header
@@ -57,7 +61,10 @@ ffkmp_disposition_default
 ffkmp_disposition_forced
 ffkmp_disposition_hearing_impaired
 ffkmp_disposition_visual_impaired
+ffkmp_filter_exists
 ffkmp_find_decoder_by_id
+ffkmp_find_decoder_by_name
+ffkmp_find_encoder_by_name
 ffkmp_fmt_alloc_output2
 ffkmp_fmt_avoid_negative_ts
 ffkmp_fmt_close_input
@@ -128,6 +135,11 @@ ffkmp_graph_free
 ffkmp_graph_receive
 ffkmp_graph_send
 ffkmp_image_get_buffer_size
+ffkmp_media_type_attachment
+ffkmp_media_type_audio
+ffkmp_media_type_data
+ffkmp_media_type_subtitle
+ffkmp_media_type_video
 ffkmp_oformat_global_header
 ffkmp_packet_alloc
 ffkmp_packet_data

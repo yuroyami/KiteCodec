@@ -11,6 +11,10 @@
 #include "kitecodec_helpers.h"
 /* ════════════ Filter graphs (single-input video / audio) ════════════ */
 
+KC_API int ffkmp_filter_exists(const char *name) {
+    return (name && avfilter_get_by_name(name)) ? 1 : 0;
+}
+
 /* Shared tail of graph construction: wire a configured src/sink pair around the parsed
    `description` chain, then config the whole graph. Frees the graph on any failure. */
 static int ffkmp_graph_finish_(
@@ -38,7 +42,9 @@ KC_API int ffkmp_graph_build_video(
     int width, int height, int pix_fmt,
     int tb_num, int tb_den, int fr_num, int fr_den, int sar_num, int sar_den
 ) {
+    if (!out_graph || !out_src || !out_sink) return AVERROR(EINVAL);
     *out_graph = NULL; *out_src = NULL; *out_sink = NULL;
+    if (!description) return AVERROR(EINVAL);
     AVFilterGraph *graph = avfilter_graph_alloc();
     if (!graph) return AVERROR(ENOMEM);
     const AVFilter *src = avfilter_get_by_name("buffer");
@@ -84,6 +90,7 @@ KC_API int ffkmp_graph_build_audio(
        option names were renamed across FFmpeg 7→8, the filter-string syntax never changes. */
     int out_sample_fmt, int out_sample_rate, int out_channels
 ) {
+    if (!out_graph || !out_src || !out_sink) return AVERROR(EINVAL);
     *out_graph = NULL; *out_src = NULL; *out_sink = NULL;
     AVFilterGraph *graph = avfilter_graph_alloc();
     if (!graph) return AVERROR(ENOMEM);
@@ -195,8 +202,12 @@ KC_API int ffkmp_graph_build_video_multi(
     const int *fr_nums, const int *fr_dens,
     const int *sar_nums, const int *sar_dens
 ) {
+    if (!out_graph || !out_srcs || !out_sink) return AVERROR(EINVAL);
     *out_graph = NULL; *out_sink = NULL;
-    if (n <= 0) return AVERROR(EINVAL);
+    if (!description || n <= 0 || !widths || !heights || !pix_fmts ||
+        !tb_nums || !tb_dens || !fr_nums || !fr_dens || !sar_nums || !sar_dens) {
+        return AVERROR(EINVAL);
+    }
     AVFilterGraph *graph = avfilter_graph_alloc();
     if (!graph) return AVERROR(ENOMEM);
     const AVFilter *src = avfilter_get_by_name("buffer");
@@ -234,8 +245,12 @@ KC_API int ffkmp_graph_build_audio_multi(
     const int *tb_nums, const int *tb_dens,
     int out_sample_fmt, int out_sample_rate, int out_channels
 ) {
+    if (!out_graph || !out_srcs || !out_sink) return AVERROR(EINVAL);
     *out_graph = NULL; *out_sink = NULL;
-    if (n <= 0) return AVERROR(EINVAL);
+    if (n <= 0 || !sample_rates || !sample_fmts || !channels || !tb_nums || !tb_dens) {
+        return AVERROR(EINVAL);
+    }
+    if ((!description || !description[0]) && n != 1) return AVERROR(EINVAL);
     AVFilterGraph *graph = avfilter_graph_alloc();
     if (!graph) return AVERROR(ENOMEM);
     const AVFilter *src = avfilter_get_by_name("abuffer");
@@ -266,17 +281,16 @@ KC_API int ffkmp_graph_build_audio_multi(
 
     /* Same aformat pinning trick as the single-input audio builder, and the same rule about
        checking the running length after every append. See that builder for why. */
+    int generated_default = !description || !description[0];
     char full_desc[2048];
     int len = snprintf(full_desc, sizeof(full_desc), "%s",
-                       (description && description[0]) ? description : "anull");
+                       generated_default ? "[in0]anull" : description);
     if (len < 0 || len >= (int)sizeof(full_desc)) { avfilter_graph_free(&graph); return AVERROR(EINVAL); }
     if (out_sample_fmt >= 0 || out_sample_rate > 0 || out_channels > 0) {
-        /* The pinned chain must hang off [out]'s producer; description already routes to [out],
-           so splice aformat between. Renaming the caller's terminal label would be intrusive,
-           so instead we rely on the sink accepting anything and pin via aformat appended INSIDE
-           the chain only when the description has no explicit [out] label. With an explicit
-           [out] the caller controls formats; Transcoder always appends its own aformat before
-           [out]. */
+        /* The pinned chain must hang off [out]'s producer. Renaming a caller's terminal label
+           would be intrusive, so an explicit [out] means the caller controls formats; Transcoder
+           always appends its own aformat before [out]. The generated default deliberately has no
+           [out] yet, allowing requested pins to be appended before the label is closed below. */
         if (!strstr(full_desc, "[out]")) {
             int first = 1;
             len += snprintf(full_desc + len, sizeof(full_desc) - len, ",aformat=");
@@ -299,6 +313,10 @@ KC_API int ffkmp_graph_build_audio_multi(
             }
         }
     }
+    if (generated_default) {
+        len += snprintf(full_desc + len, sizeof(full_desc) - len, "[out]");
+        if (len < 0 || len >= (int)sizeof(full_desc)) { avfilter_graph_free(&graph); return AVERROR(EINVAL); }
+    }
 
     rc = ffkmp_graph_finish_multi_(graph, out_srcs, n, sink_ctx, full_desc);
     if (rc < 0) { avfilter_graph_free(&graph); return rc; }
@@ -308,10 +326,11 @@ KC_API int ffkmp_graph_build_audio_multi(
 
 KC_API void ffkmp_graph_free(AVFilterGraph **g) { if (g && *g) avfilter_graph_free(g); }
 KC_API int  ffkmp_graph_send(AVFilterContext *src, AVFrame *frame) {
-    return av_buffersrc_add_frame_flags(src, frame, AV_BUFFERSRC_FLAG_KEEP_REF);
+    return src ? av_buffersrc_add_frame_flags(src, frame, AV_BUFFERSRC_FLAG_KEEP_REF)
+               : AVERROR(EINVAL);
 }
 KC_API int  ffkmp_graph_receive(AVFilterContext *sink, AVFrame *frame) {
-    return av_buffersink_get_frame(sink, frame);
+    return (sink && frame) ? av_buffersink_get_frame(sink, frame) : AVERROR(EINVAL);
 }
 /* Fixed-frame-size pull: AAC & friends require exactly frame_size samples per encode call.
    Setting this makes the buffersink chunk its output accordingly (last frame may be short). */
@@ -325,4 +344,3 @@ KC_API void ffkmp_buffersink_time_base(AVFilterContext *sink, int *n, int *d) {
     AVRational tb = av_buffersink_get_time_base(sink);
     *n = tb.num; *d = tb.den ? tb.den : 1;
 }
-

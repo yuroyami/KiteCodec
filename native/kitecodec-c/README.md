@@ -13,11 +13,17 @@ the shape: nine translation units, one per subsystem; `KC_API` on the 157 helper
 and the 15 that nothing imported deleted outright, because in a versioned library a dead exported
 symbol is a compatibility promise nobody meant to make (register item B1-08).
 
+ABI 1.1 adds the compatible half of the opaque C surface: eleven forward-declared handle aliases,
+seven wrapper functions and five media-type accessors. The twelve new `ffkmp_` functions are
+exported but deliberately dormant from Kotlin. Kotlin still consumes the legacy 157 helpers until
+S1.a.8 changes the header, def and Kotlin signatures together.
+
 ## Layout
 
 | Path | What it is |
 |---|---|
-| `include/kitecodec_helpers.h` | The 20 includes, the `KC_API` macro, then one declaration per exported helper. Lifted from the def at B1.3, an ordinary maintained source since the interlude. |
+| `include/kitecodec_helpers.h` | The original 20 standard and FFmpeg includes plus `kitecodec_handles.h`, the `KC_API` macro, then one declaration per exported helper. Lifted from the def at B1.3, an ordinary maintained source since the interlude. |
+| `include/kitecodec_handles.h` | ABI 1.1's compatible handle surface: eleven forward-declared opaque aliases and no FFmpeg includes. Kotlin does not adopt them until S1.a.8. |
 | `src/helpers_*.c` | Nine units, one per subsystem. Lifted from the def body at B1.3, ordinary maintained sources since the interlude. |
 | `include/kitecodec_abi.h` | HAND WRITTEN. The FFmpeg identity gate's contract. Includes no FFmpeg header and names no FFmpeg type. |
 | `include/kitecodec_ffmpeg_versions.h` | HAND WRITTEN, private. The only place the gate reaches into FFmpeg, and the one file the identity test replaces. |
@@ -26,7 +32,7 @@ symbol is a compatibility promise nobody meant to make (register item B1-08).
 | `scripts/symbol-audit.sh` | Proves what the compiled archive needs, exports and keeps private. |
 | `scripts/check-deleted-surface.sh` | Proves nothing in either repository refers to a helper whose status is deleted. |
 | `deleted-surface.txt` | The deleted helper surface: 15 names, one status each. The single copy of the list, and the file to edit when a plan item resurrects one. |
-| `scripts/run-c-tests.sh` | Runs the six suites for one variant, or in the `interpose` mode: the plain binaries with allocation accounting REQUIRED, so a blinded interposer fails instead of recording partials. |
+| `scripts/run-c-tests.sh` | Runs the seven suites for one variant, or in the `interpose` mode: the plain binaries with allocation accounting REQUIRED, so a blinded interposer fails instead of recording partials. |
 | `scripts/klib-metadata-diff.sh` | The compatibility instrument for the `ffmpeg` cinterop klib, added by B1.3. |
 | `scripts/replay-corpus.sh` | Replays every committed fuzz seed through the replay driver under ASan and UBSan. Added by B1.5. |
 | `scripts/run-fuzz.sh` | Runs the six libFuzzer targets. Refuses with one sentence on a host whose clang has no fuzzer runtime, which is every clang here. |
@@ -38,7 +44,7 @@ symbol is a compatibility promise nobody meant to make (register item B1-08).
 | `fuzz/README.md` | What is fuzzed, what is deliberately not, and what B8 inherits. |
 | `tests/harness.h`, `tests/harness.c` | The assertion and reporting API every suite uses. |
 | `tests/interpose_alloc.c` | The allocation interposer, the local leak instrument. |
-| `tests/test_*.c` | The six suites of plan section 15.3. |
+| `tests/test_*.c` | The seven suites of plan section 15.3 and S1.a.7. |
 | `tests/fake_headers/` | Five doctored shim include trees, one per identity verdict, plus the symbol renamer they share. |
 | `coupling-baseline.txt` | The Kotlin to FFmpeg coupling ratchet's baseline, added by B1.1. |
 | `build/` | Output. Gitignored. |
@@ -106,8 +112,9 @@ governs the dynamic symbol table and not static linking: an unmarked helper stil
 the link that embeds the archive. So `KC_API` is not what makes the cinterop work. It is what makes
 the exported set a decision instead of an accident, and `symbol-audit.sh` is what checks the
 decision, by comparing the archive's external symbols with the header's `KC_API` declarations and
-finding them equal at 163: the 157 `ffkmp_` helpers plus the six `kc_` functions of the identity
-gate below.
+finding them equal at 175: 169 `ffkmp_` helpers plus the six `kc_` functions of the identity gate
+below. Of the 169 `ffkmp_` exports, Kotlin already consumes the legacy 157; ABI 1.1's seven wrappers
+and five media-type accessors are twelve compatible additions that remain dormant until S1.a.8.
 
 ## The FFmpeg identity gate
 
@@ -226,9 +233,9 @@ that a fix to either harness lands in both in the same change. The interlude pai
 the fork (item I-08): kiteplayer-rt gained the require mechanism at B1.7 and this tree did not, so
 renaming one word in `interpose_alloc.c`'s section attribute here made the whole ownership gate
 report "39 cases passed, 39 with a property this variant cannot observe" and exit green. With the
-mechanism ported, the same one-word blinding fails all six suites in the `interpose` mode, which was
-proved before this paragraph was written. Whether one copy becomes the source and the other a pinned
-vendored copy is a B4/B5 decision; until then, this rule is the minimum.
+mechanism ported, the same one-word blinding fails the six then-existing suites in the `interpose`
+mode, which was proved before this paragraph was written. Whether one copy becomes the source and
+the other a pinned vendored copy is a B4/B5 decision; until then, this rule is the minimum.
 
 `verify-lift.sh` no longer exists. It proved, three ways, that the committed units were byte for
 byte the def body at the lift revision; that proof ran one final time at `2b4287f`, every
@@ -356,23 +363,25 @@ int main(void) {
 Add a suite by adding its source to `tests/` and its stem to the `TESTS` list in
 `build-host.sh` and the `ALL_SUITES` list in `run-c-tests.sh`. The two lists must agree.
 
-## The six suites, and what each one earns
+## The seven suites, and what each one earns
 
-250 cases per variant, 750 case runs across the three. Measured at the B1 closing gate. The history
-is worth one sentence, because this line disagreed with its own table until that gate: 240 at B1.2
-and B1.3, then 234 at B1.4, when six cases went with the helpers B1.4 deleted, four in
-`test_ownership.c` and two in `test_rescale.c`; then 250 at B1.6, when `test_identity.c` arrived with
-16. B1.6 added the table row and left this line at 234, so the table was right and the prose was
-wrong for two sub-phases.
+274 cases per variant, 822 case runs across plain, ASan and TSan. Before S1.a.7, the historical
+six-suite gate recorded 240 cases at B1.2 and B1.3, then 234 at B1.4, when six cases went with the
+helpers B1.4 deleted, four in `test_ownership.c` and two in `test_rescale.c`, then 250 at B1.6, when
+`test_identity.c` arrived with 16. I-12 added the NULL-key and out-of-range-stream guard cases to
+`test_ownership.c`, bringing the same six suites to 252; S1.a.7 adds `test_args.c`'s 22 cases to
+reach 274. B1.6 added the identity table row and left the prose at 234, so the table was right and
+the prose was wrong for two sub-phases.
 
 | Suite | Cases | What it establishes | Register item |
 |---|---|---|---|
-| `test_ownership.c` | 39 | Exact allocation pairing for all 39 ownership helpers under the interposer, including the parent-owned stream, the per call `SwsContext` and the conditional `pb` close. Every case ends with `live=0`. | B1-14 |
+| `test_ownership.c` | 41 | Exact allocation pairing for all 39 ownership helpers under the interposer, including the parent-owned stream, the per call `SwsContext` and the conditional `pb` close, plus I-12's NULL-key and out-of-range-stream guard cases. Every ownership case ends with `live=0`. | B1-14, I-12 |
 | `test_buffers.c` | 32 | All 12 buffer declaration sites and all 4 size-taking copy helpers, at the limit and one past it, under ASan and UBSan. | B1-10 |
 | `test_rescale.c` | 114 | The 13 arithmetic helpers at the D9 overflow vectors, and `AV_CEIL_RSHIFT` plane heights over a 7 format by 6 height table. | D9 |
 | `test_strerror_thread.c` | 24 | Both halves of the thread affinity contract, over 4 threads and 256 rendezvous-synchronised rounds, clean under TSan. | B1-09 |
 | `test_convert.c` | 25 | Conversion correctness against an independently computed oracle, and the per call allocation cost as a number. | B1-23 |
 | `test_identity.c` | 16 | One case per identity verdict against five doctored header trees, the true build, and all three conditions the diagnostic bypass has to satisfy. | B1-02, B1-21 |
+| `test_args.c` | 22 | One invalid vector for each of the 16 newly guarded entry points, plus six positive controls for arguments whose NULL meaning is part of FFmpeg's contract. | R-B2-guards, S1.a.7 |
 
 Each suite proved load bearing by mutation against copies of the helper sources in a
 scratch directory, never against the files in the repository. Dropping `sws_freeContext` from the

@@ -15,6 +15,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include "kitecodec_handles.h"
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
 #include <libavfilter/avfilter.h>
@@ -96,7 +97,8 @@ KC_API void     ffkmp_frame_set_nb_samples(AVFrame *f, int v);
 
 /* Ownership. Allocates data buffers from the frame's width, height, format and, for audio,
  * nb_samples and ch_layout, all of which must be set first. The frame owns the buffers and
- * ffkmp_frame_unref or ffkmp_frame_free releases them.
+ * ffkmp_frame_unref or ffkmp_frame_free releases them. A NULL frame is refused with
+ * AVERROR(EINVAL).
  */
 KC_API int      ffkmp_frame_get_buffer(AVFrame *f, int align);
 
@@ -168,6 +170,11 @@ KC_API void      ffkmp_packet_rescale_ts(AVPacket *p, int sn, int sd, int dn, in
 
 /* AVCodecParameters */
 KC_API int     ffkmp_codecpar_codec_type(AVCodecParameters *p);
+KC_API int     ffkmp_media_type_video(void);
+KC_API int     ffkmp_media_type_audio(void);
+KC_API int     ffkmp_media_type_subtitle(void);
+KC_API int     ffkmp_media_type_data(void);
+KC_API int     ffkmp_media_type_attachment(void);
 KC_API int     ffkmp_codecpar_codec_id(AVCodecParameters *p);
 KC_API int64_t ffkmp_codecpar_bit_rate(AVCodecParameters *p);
 KC_API int     ffkmp_codecpar_width(AVCodecParameters *p);
@@ -178,13 +185,14 @@ KC_API int     ffkmp_codecpar_channels(AVCodecParameters *p);
 KC_API void    ffkmp_codecpar_sample_aspect_ratio(AVCodecParameters *p, int *num, int *den);
 
 /* Ownership. Fills the parameters from the context, freeing and replacing any extradata the
- * parameters already held. The parameters stay owned by whoever holds them.
+ * parameters already held. The parameters stay owned by whoever holds them. A NULL parameters
+ * object or context is refused with AVERROR(EINVAL).
  */
 KC_API int ffkmp_codecpar_from_context(AVCodecParameters *par, AVCodecContext *ctx);
 
 /* Ownership. Replaces the destination's contents with a copy of the source, freeing what the
  * destination held, then clears codec_tag so the muxer picks its own. The destination stays
- * owned by its stream.
+ * owned by its stream. A NULL destination or source is refused with AVERROR(EINVAL).
  */
 KC_API int ffkmp_codecpar_copy_for_mux(AVCodecParameters *dst, const AVCodecParameters *src);
 
@@ -203,14 +211,36 @@ KC_API void  ffkmp_codecctx_free(AVCodecContext *c);
 
 /* Ownership. Allocates the codec's internal state onto the context. Failure leaves nothing
  * extra to undo, because ffkmp_codecctx_free releases the context either way. Never call
- * it twice on one context.
+ * it twice on one context. A NULL context is refused with AVERROR(EINVAL), while a NULL codec
+ * is passed through so a context that remembers its codec can be opened.
  */
 KC_API int   ffkmp_codecctx_open(AVCodecContext *c, const AVCodec *codec);
 
 /* Ownership. Copies the parameters into the context, taking a private copy of extradata.
- * The parameters stay owned by whoever holds them, normally an AVStream.
+ * The parameters stay owned by whoever holds them, normally an AVStream. A NULL context or
+ * parameters object is refused with AVERROR(EINVAL).
  */
 KC_API int   ffkmp_codecctx_from_par(AVCodecContext *c, AVCodecParameters *p);
+
+/* The def's header removal forces this raw-int wrapper before the typed outcome model lands
+ * later; a NULL packet is passed through to flush, while a NULL context is refused.
+ */
+KC_API int ffkmp_codecctx_send_packet(kc_codec_ctx *ctx, const kc_packet *packet);
+
+/* The def's header removal forces this raw-int wrapper before the typed outcome model lands
+ * later; a NULL context or output frame is refused.
+ */
+KC_API int ffkmp_codecctx_receive_frame(kc_codec_ctx *ctx, kc_frame *frame);
+
+/* The def's header removal forces this raw-int wrapper before the typed outcome model lands
+ * later; a NULL frame is passed through to flush, while a NULL context is refused.
+ */
+KC_API int ffkmp_codecctx_send_frame(kc_codec_ctx *ctx, const kc_frame *frame);
+
+/* The def's header removal forces this raw-int wrapper before the typed outcome model lands
+ * later; a NULL context or output packet is refused.
+ */
+KC_API int ffkmp_codecctx_receive_packet(kc_codec_ctx *ctx, kc_packet *packet);
 KC_API void  ffkmp_codecctx_set_video(
     AVCodecContext *c, int width, int height, int pix_fmt,
     int fr_num, int fr_den, int tb_num, int tb_den, int64_t bit_rate, int gop_size
@@ -237,6 +267,16 @@ KC_API void  ffkmp_codecctx_set_global_header(AVCodecContext *c);
 KC_API int   ffkmp_codecctx_set_opt(AVCodecContext *c, const char *key, const char *value);
 KC_API void  ffkmp_codecctx_set_full_range(AVCodecContext *c);
 KC_API const AVCodec* ffkmp_find_decoder_by_id(int id);
+
+/* The def's header removal forces this pointer wrapper before the typed outcome model lands
+ * later; a NULL name returns NULL.
+ */
+KC_API const kc_codec* ffkmp_find_encoder_by_name(const char *name);
+
+/* The def's header removal forces this pointer wrapper before the typed outcome model lands
+ * later; a NULL name returns NULL.
+ */
+KC_API const kc_codec* ffkmp_find_decoder_by_name(const char *name);
 KC_API const char* ffkmp_codec_id_name(int id);
 KC_API int ffkmp_codecctx_pix_fmt(AVCodecContext *c);
 KC_API int ffkmp_codecctx_width(AVCodecContext *c);
@@ -246,7 +286,7 @@ KC_API int ffkmp_codecctx_height(AVCodecContext *c);
 
 /* Ownership. On success *out is a new AVFormatContext the caller owns and must release with
  * ffkmp_fmt_close_input, never with ffkmp_fmt_free_output. On failure *out is set to NULL
- * and nothing is left allocated.
+ * and nothing is left allocated. A NULL out pointer or path is refused with AVERROR(EINVAL).
  */
 KC_API int  ffkmp_fmt_open_input(AVFormatContext **out, const char *path);
 
@@ -258,7 +298,7 @@ KC_API void ffkmp_fmt_close_input(AVFormatContext **ctx);
 
 /* Ownership. Allocates per stream parsing state, and may probe and buffer packets. All of
  * it belongs to the context and is released when the context is closed. Nothing becomes
- * the caller's.
+ * the caller's. A NULL context is refused with AVERROR(EINVAL).
  */
 KC_API int  ffkmp_fmt_find_stream_info(AVFormatContext *c);
 
@@ -270,7 +310,8 @@ KC_API int  ffkmp_fmt_seek_micros(AVFormatContext *ctx, int stream_index, int64_
 
 /* Ownership. On success the packet holds a new reference the caller owns. The packet must be
  * blank on entry, and must be unreferenced before it is filled again, or the reference
- * leaks. On failure the packet is left blank.
+ * leaks. On failure the packet is left blank. A NULL context or packet is refused with
+ * AVERROR(EINVAL).
  */
 KC_API int  ffkmp_fmt_read_frame(AVFormatContext *c, AVPacket *p);
 KC_API int64_t       ffkmp_fmt_duration(AVFormatContext *c);
@@ -281,7 +322,9 @@ KC_API const char*   ffkmp_fmt_iformat_name(AVFormatContext *c);
 KC_API AVDictionary* ffkmp_fmt_metadata(AVFormatContext *c);
 
 /* Ownership. On success *out is a new muxer context the caller owns and must release with
- * ffkmp_fmt_free_output, never with ffkmp_fmt_close_input. On failure *out is set to NULL.
+ * ffkmp_fmt_free_output, never with ffkmp_fmt_close_input. On failure *out is set to NULL. A
+ * NULL out pointer, or no nonempty format and no nonempty path, is refused with AVERROR(EINVAL);
+ * either selector may be NULL when the other one is present.
  */
 KC_API int  ffkmp_fmt_alloc_output2(AVFormatContext **out, const char *path, const char *format);
 
@@ -320,7 +363,7 @@ KC_API int ffkmp_fmt_write_header(AVFormatContext *ctx);
 
 /* Ownership. Takes over the packet's reference. On success and on failure alike the packet
  * is blank afterwards and must not be unreferenced again. A NULL packet flushes the
- * interleaving queue.
+ * interleaving queue. A NULL context is refused with AVERROR(EINVAL).
  */
 KC_API int ffkmp_fmt_write_frame(AVFormatContext *ctx, AVPacket *p);
 
@@ -347,10 +390,16 @@ KC_API void ffkmp_stream_set_time_base(AVStream *s, int n, int d);
 
 /* Filter graphs (single-input video / audio) */
 
+/* The def's header removal forces this boolean wrapper before the typed outcome model lands
+ * later; a NULL or unknown name returns 0 and a known filter returns 1.
+ */
+KC_API int ffkmp_filter_exists(const char *name);
+
 /* Ownership. On success the caller owns the graph through *out_graph and releases it with
  * ffkmp_graph_free; the two filter contexts belong to the graph and must never be freed
  * separately. On every failure path the graph is freed inside the call and all three out
- * parameters are left NULL.
+ * parameters are left NULL. NULL output slots or a NULL description are refused with
+ * AVERROR(EINVAL).
  */
 KC_API int ffkmp_graph_build_video(
     AVFilterGraph **out_graph, AVFilterContext **out_src, AVFilterContext **out_sink,
@@ -362,7 +411,8 @@ KC_API int ffkmp_graph_build_video(
 /* Ownership. On success the caller owns the graph through *out_graph and releases it with
  * ffkmp_graph_free; the two filter contexts belong to the graph and must never be freed
  * separately. On every failure path the graph is freed inside the call and all three out
- * parameters are left NULL.
+ * parameters are left NULL. NULL output slots are refused with AVERROR(EINVAL), while a NULL
+ * description selects `anull`.
  */
 KC_API int ffkmp_graph_build_audio(
     AVFilterGraph **out_graph, AVFilterContext **out_src, AVFilterContext **out_sink,
@@ -379,7 +429,8 @@ KC_API int ffkmp_graph_build_audio(
  * ffkmp_graph_free; the sink and the n source contexts belong to the graph and must never be
  * freed separately. On failure the graph is freed inside the call and *out_graph and
  * *out_sink are NULL, but out_srcs is NOT cleared and its filled entries point into the
- * freed graph. Read out_srcs only when the call returned 0.
+ * freed graph. Read out_srcs only when the call returned 0. NULL output slots, a NULL
+ * description, nonpositive n or a NULL parameter array are refused with AVERROR(EINVAL).
  */
 KC_API int ffkmp_graph_build_video_multi(
     AVFilterGraph **out_graph, AVFilterContext **out_srcs, AVFilterContext **out_sink,
@@ -394,7 +445,9 @@ KC_API int ffkmp_graph_build_video_multi(
  * ffkmp_graph_free; the sink and the n source contexts belong to the graph and must never be
  * freed separately. On failure the graph is freed inside the call and *out_graph and
  * *out_sink are NULL, but out_srcs is NOT cleared and its filled entries point into the
- * freed graph. Read out_srcs only when the call returned 0.
+ * freed graph. Read out_srcs only when the call returned 0. NULL output slots, nonpositive n
+ * or a NULL parameter array are refused with AVERROR(EINVAL). With one input a NULL or empty
+ * description selects `anull`; multiple inputs require an explicit graph.
  */
 KC_API int ffkmp_graph_build_audio_multi(
     AVFilterGraph **out_graph, AVFilterContext **out_srcs, AVFilterContext **out_sink,
@@ -412,13 +465,15 @@ KC_API void ffkmp_graph_free(AVFilterGraph **g);
 
 /* Ownership. Sends the frame with AV_BUFFERSRC_FLAG_KEEP_REF, so the graph takes its own
  * reference and the caller keeps and must still release the frame it passed in. Without
- * that flag the frame would be consumed, which is why the flag is part of the contract.
+ * that flag the frame would be consumed, which is why the flag is part of the contract. A
+ * NULL source is refused with AVERROR(EINVAL), while a NULL frame signals EOF.
  */
 KC_API int  ffkmp_graph_send(AVFilterContext *src, AVFrame *frame);
 
 /* Ownership. On success the frame holds a new reference the caller owns. The frame must be
  * blank on entry and must be unreferenced before it is filled again. AVERROR(EAGAIN) and
- * AVERROR_EOF leave it blank and are not failures.
+ * AVERROR_EOF leave it blank and are not failures. A NULL sink or frame is refused with
+ * AVERROR(EINVAL).
  */
 KC_API int  ffkmp_graph_receive(AVFilterContext *sink, AVFrame *frame);
 KC_API void ffkmp_buffersink_set_frame_size(AVFilterContext *sink, unsigned n);

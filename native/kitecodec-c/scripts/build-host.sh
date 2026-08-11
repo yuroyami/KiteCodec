@@ -121,8 +121,8 @@ mkdir -p "$OBJ" "$LIB" "$BIN"
 HELPER_LIB="$LIB/libkitecodec_helpers_host.a"
 INTERPOSE_LIB="$LIB/libkc_interpose_alloc.dylib"
 
-# The six suites of plan section 15.3. Keep this list and run-c-tests.sh in agreement.
-TESTS="test_ownership test_buffers test_rescale test_strerror_thread test_convert test_identity"
+# The seven suites of plan section 15.3. Keep this list and run-c-tests.sh in agreement.
+TESTS="test_ownership test_buffers test_rescale test_strerror_thread test_convert test_identity test_args"
 
 # The doctored copies of the identity gate, one directory per case under tests/fake_headers/. Each is
 # src/kitecodec_abi.c compiled again with that directory FIRST on the include path, so its shim

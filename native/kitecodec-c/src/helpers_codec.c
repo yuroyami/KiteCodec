@@ -13,8 +13,24 @@
 
 KC_API AVCodecContext* ffkmp_codecctx_alloc(const AVCodec *c) { return avcodec_alloc_context3(c); }
 KC_API void  ffkmp_codecctx_free(AVCodecContext *c) { if (c) { AVCodecContext *q = c; avcodec_free_context(&q); } }
-KC_API int   ffkmp_codecctx_open(AVCodecContext *c, const AVCodec *codec) { return avcodec_open2(c, codec, NULL); }
-KC_API int   ffkmp_codecctx_from_par(AVCodecContext *c, AVCodecParameters *p) { return avcodec_parameters_to_context(c, p); }
+KC_API int   ffkmp_codecctx_open(AVCodecContext *c, const AVCodec *codec) {
+    return c ? avcodec_open2(c, codec, NULL) : AVERROR(EINVAL);
+}
+KC_API int   ffkmp_codecctx_from_par(AVCodecContext *c, AVCodecParameters *p) {
+    return (c && p) ? avcodec_parameters_to_context(c, p) : AVERROR(EINVAL);
+}
+KC_API int ffkmp_codecctx_send_packet(kc_codec_ctx *ctx, const kc_packet *packet) {
+    return ctx ? avcodec_send_packet(ctx, packet) : AVERROR(EINVAL);
+}
+KC_API int ffkmp_codecctx_receive_frame(kc_codec_ctx *ctx, kc_frame *frame) {
+    return (ctx && frame) ? avcodec_receive_frame(ctx, frame) : AVERROR(EINVAL);
+}
+KC_API int ffkmp_codecctx_send_frame(kc_codec_ctx *ctx, const kc_frame *frame) {
+    return ctx ? avcodec_send_frame(ctx, frame) : AVERROR(EINVAL);
+}
+KC_API int ffkmp_codecctx_receive_packet(kc_codec_ctx *ctx, kc_packet *packet) {
+    return (ctx && packet) ? avcodec_receive_packet(ctx, packet) : AVERROR(EINVAL);
+}
 KC_API void  ffkmp_codecctx_set_video(
     AVCodecContext *c, int width, int height, int pix_fmt,
     int fr_num, int fr_den, int tb_num, int tb_den, int64_t bit_rate, int gop_size
@@ -99,6 +115,12 @@ KC_API void  ffkmp_codecctx_set_full_range(AVCodecContext *c) {
     if (c) c->color_range = AVCOL_RANGE_JPEG;
 }
 KC_API const AVCodec* ffkmp_find_decoder_by_id(int id) { return avcodec_find_decoder((enum AVCodecID)id); }
+KC_API const kc_codec* ffkmp_find_encoder_by_name(const char *name) {
+    return name ? avcodec_find_encoder_by_name(name) : NULL;
+}
+KC_API const kc_codec* ffkmp_find_decoder_by_name(const char *name) {
+    return name ? avcodec_find_decoder_by_name(name) : NULL;
+}
 /* The CODEC's canonical name ("av1", "opus", "mov_text"), independent of which decoder
    implementation this build happens to register for it; avcodec_find_decoder would answer
    "libdav1d"/"libopus" and would answer NOTHING at all for streams with no decoder compiled
@@ -107,4 +129,3 @@ KC_API const char* ffkmp_codec_id_name(int id) { return avcodec_get_name((enum A
 KC_API int ffkmp_codecctx_pix_fmt(AVCodecContext *c) { return c ? (int)c->pix_fmt : -1; }
 KC_API int ffkmp_codecctx_width(AVCodecContext *c)   { return c ? c->width : 0; }
 KC_API int ffkmp_codecctx_height(AVCodecContext *c)  { return c ? c->height : 0; }
-

@@ -11,9 +11,10 @@
 #      stdout inside a library; an `av_log` would mean it writes to FFmpeg's log inside a library;
 #      an `objc_msgSend` or a `dispatch_` would mean C that looked portable has quietly become
 #      Apple-only.
-#   2. What does it export? Exactly the 157 helpers the Kotlin side imports, plus the six kc_
-#      functions of the identity gate, and nothing else. That set is a compatibility promise, which
-#      is the whole reason B1.4 deleted the 15 helpers no Kotlin file imported (register item B1-08).
+#   2. What does it export? The 157 legacy helpers the Kotlin side imports, the twelve compatible
+#      helpers added at S1.a.7, plus the six kc_ functions of the identity gate, and nothing else.
+#      That set is a compatibility promise, which is the whole reason B1.4 deleted the 15 helpers
+#      no Kotlin file imported (register item B1-08).
 #   3. What does it keep to itself? The four trailing-underscore helpers, which are `static` and
 #      must never appear as external symbols.
 #   4. Does anything print? Nothing but the identity gate's diagnostic bypass warning, which plan

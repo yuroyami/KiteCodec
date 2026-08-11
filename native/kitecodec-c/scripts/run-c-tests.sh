@@ -8,7 +8,7 @@
 #         not effective FAILS instead of recording every ownership property as partial
 #         (interlude item I-08; the mechanism is kiteplayer-rt's, ported, and the two harnesses
 #         are a pair: a fix to either lands in both)
-#         suite names are the file stems, for example test_buffers. With none given, all six
+#         suite names are the file stems, for example test_buffers. With none given, all seven
 #         run, which is what a gate does.
 #
 # Build first: ./scripts/build-host.sh <variant>. This script never builds, so a gate cannot
@@ -34,8 +34,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 BIN="$ROOT/build/$VARIANT/bin"
 
-# The six suites of plan section 15.3. Keep this list and build-host.sh in agreement.
-ALL_SUITES="test_ownership test_buffers test_rescale test_strerror_thread test_convert test_identity"
+# The seven suites of plan section 15.3. Keep this list and build-host.sh in agreement.
+ALL_SUITES="test_ownership test_buffers test_rescale test_strerror_thread test_convert test_identity test_args"
 SUITES="${*:-$ALL_SUITES}"
 
 [ -d "$BIN" ] || {

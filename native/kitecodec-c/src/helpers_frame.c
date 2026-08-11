@@ -29,7 +29,9 @@ KC_API void     ffkmp_frame_set_width(AVFrame *f, int v)         { if (f) f->wid
 KC_API void     ffkmp_frame_set_height(AVFrame *f, int v)        { if (f) f->height = v; }
 KC_API void     ffkmp_frame_set_sample_rate(AVFrame *f, int v)   { if (f) f->sample_rate = v; }
 KC_API void     ffkmp_frame_set_nb_samples(AVFrame *f, int v)    { if (f) f->nb_samples = v; }
-KC_API int      ffkmp_frame_get_buffer(AVFrame *f, int align)    { return av_frame_get_buffer(f, align); }
+KC_API int      ffkmp_frame_get_buffer(AVFrame *f, int align)    {
+    return f ? av_frame_get_buffer(f, align) : AVERROR(EINVAL);
+}
 KC_API void     ffkmp_frame_set_ch_layout_default(AVFrame *f, int ch) {
     if (!f) return;
     av_channel_layout_uninit(&f->ch_layout);
@@ -146,4 +148,3 @@ KC_API AVDictionaryEntry* ffkmp_dict_get(AVDictionary *d, AVDictionaryEntry *pre
 }
 KC_API const char* ffkmp_dict_entry_key(AVDictionaryEntry *e)   { return e ? e->key   : NULL; }
 KC_API const char* ffkmp_dict_entry_value(AVDictionaryEntry *e) { return e ? e->value : NULL; }
-

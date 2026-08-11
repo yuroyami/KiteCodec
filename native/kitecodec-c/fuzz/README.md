@@ -153,9 +153,11 @@ failure paths (`avfilter_graph_alloc` returning NULL, `avfilter_inout_alloc` ret
 filter registry to fail, and provoking those needs fault injection rather than a different string.
 Three of the missing branches in `ffkmp_graph_finish_` are the same shape.
 
-The other helper units read near zero and that is correct rather than a gap. These six targets exist
-for the six string entry points; `tests/test_*.c` is what covers the other 151 helpers, and pointing
-a fuzz target at a getter would add coverage numbers and no evidence.
+The other helper units read near zero and that is correct rather than a gap. At B1.5, these six
+targets existed for the six string entry points and `tests/test_*.c` covered the other 151 helpers
+in that historical 157-helper surface. ABI 1.1 later added twelve compatible, dormant functions;
+the B1.5 coverage measurement predates them and makes no claim that the fuzz corpus reaches them.
+Pointing a fuzz target at a getter would add coverage numbers and no evidence.
 
 Reproducing it is a one-off measurement and deliberately not a committed script: nothing in the gate
 depends on a coverage number, and a coverage script that nobody runs is worse than none. The

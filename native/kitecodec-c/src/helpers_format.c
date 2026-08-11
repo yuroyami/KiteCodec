@@ -12,15 +12,20 @@
 /* ════════════ AVFormatContext (input + output) ════════════ */
 
 KC_API int  ffkmp_fmt_open_input(AVFormatContext **out, const char *path) {
+    if (!out) return AVERROR(EINVAL);
+    *out = NULL;
+    if (!path) return AVERROR(EINVAL);
     AVFormatContext *c = NULL;
     int rc = avformat_open_input(&c, path, NULL, NULL);
-    if (rc < 0) { *out = NULL; return rc; }
+    if (rc < 0) return rc;
     *out = c; return 0;
 }
 KC_API void ffkmp_fmt_close_input(AVFormatContext **ctx) {
     if (ctx && *ctx) { AVFormatContext *p = *ctx; avformat_close_input(&p); *ctx = NULL; }
 }
-KC_API int  ffkmp_fmt_find_stream_info(AVFormatContext *c) { return avformat_find_stream_info(c, NULL); }
+KC_API int  ffkmp_fmt_find_stream_info(AVFormatContext *c) {
+    return c ? avformat_find_stream_info(c, NULL) : AVERROR(EINVAL);
+}
 KC_API int  ffkmp_fmt_seek_micros(AVFormatContext *ctx, int stream_index, int64_t micros) {
     if (!ctx) return AVERROR(EINVAL);
     /* Interlude guard (I-12): an index at or past nb_streams used to index ctx->streams[]
@@ -30,7 +35,9 @@ KC_API int  ffkmp_fmt_seek_micros(AVFormatContext *ctx, int stream_index, int64_
     int64_t target = stream_index < 0 ? micros : av_rescale_q(micros, AV_TIME_BASE_Q, ctx->streams[stream_index]->time_base);
     return av_seek_frame(ctx, stream_index, target, AVSEEK_FLAG_BACKWARD);
 }
-KC_API int  ffkmp_fmt_read_frame(AVFormatContext *c, AVPacket *p) { return av_read_frame(c, p); }
+KC_API int  ffkmp_fmt_read_frame(AVFormatContext *c, AVPacket *p) {
+    return (c && p) ? av_read_frame(c, p) : AVERROR(EINVAL);
+}
 
 KC_API int64_t       ffkmp_fmt_duration(AVFormatContext *c)   { return c ? c->duration : 0; }
 /* Where the media's timeline BEGINS, in microseconds (AV_TIME_BASE units), i.e. the earliest
@@ -53,9 +60,12 @@ KC_API AVDictionary* ffkmp_fmt_metadata(AVFormatContext *c)     { return c ? c->
 /* Allocates an output context with an explicit container short name ("mp4", "matroska");
    NULL/empty format falls back to extension inference from the path. */
 KC_API int  ffkmp_fmt_alloc_output2(AVFormatContext **out, const char *path, const char *format) {
+    if (!out) return AVERROR(EINVAL);
+    *out = NULL;
+    if ((!format || !format[0]) && (!path || !path[0])) return AVERROR(EINVAL);
     AVFormatContext *c = NULL;
     int rc = avformat_alloc_output_context2(&c, NULL, (format && format[0]) ? format : NULL, path);
-    if (rc < 0 || !c) { *out = NULL; return rc < 0 ? rc : AVERROR_UNKNOWN; }
+    if (rc < 0 || !c) return rc < 0 ? rc : AVERROR_UNKNOWN;
     *out = c; return 0;
 }
 /* Muxer private options (movflags, …): AV_OPT_SEARCH_CHILDREN reaches oformat priv_data. */
@@ -91,7 +101,9 @@ KC_API void ffkmp_fmt_avoid_negative_ts(AVFormatContext *ctx) {
     if (ctx) ctx->avoid_negative_ts = AVFMT_AVOID_NEG_TS_MAKE_ZERO;
 }
 KC_API int ffkmp_fmt_write_header(AVFormatContext *ctx)         { return ctx ? avformat_write_header(ctx, NULL) : AVERROR(EINVAL); }
-KC_API int ffkmp_fmt_write_frame(AVFormatContext *ctx, AVPacket *p) { return av_interleaved_write_frame(ctx, p); }
+KC_API int ffkmp_fmt_write_frame(AVFormatContext *ctx, AVPacket *p) {
+    return ctx ? av_interleaved_write_frame(ctx, p) : AVERROR(EINVAL);
+}
 KC_API int ffkmp_fmt_write_trailer(AVFormatContext *ctx)         { return ctx ? av_write_trailer(ctx) : AVERROR(EINVAL); }
 KC_API int ffkmp_oformat_global_header(AVFormatContext *c) {
     return (c && c->oformat && (c->oformat->flags & AVFMT_GLOBALHEADER)) ? 1 : 0;
@@ -101,4 +113,3 @@ KC_API int ffkmp_fmt_set_metadata(AVFormatContext *c, const char *key, const cha
     if (!c || !key) return AVERROR(EINVAL);
     return av_dict_set(&c->metadata, key, value, 0);
 }
-

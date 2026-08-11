@@ -12,6 +12,11 @@
 /* ════════════ AVCodecParameters ════════════ */
 
 KC_API int     ffkmp_codecpar_codec_type(AVCodecParameters *p) { return p ? (int)p->codec_type : -1; }
+KC_API int     ffkmp_media_type_video(void)      { return (int)AVMEDIA_TYPE_VIDEO; }
+KC_API int     ffkmp_media_type_audio(void)      { return (int)AVMEDIA_TYPE_AUDIO; }
+KC_API int     ffkmp_media_type_subtitle(void)   { return (int)AVMEDIA_TYPE_SUBTITLE; }
+KC_API int     ffkmp_media_type_data(void)       { return (int)AVMEDIA_TYPE_DATA; }
+KC_API int     ffkmp_media_type_attachment(void) { return (int)AVMEDIA_TYPE_ATTACHMENT; }
 KC_API int     ffkmp_codecpar_codec_id(AVCodecParameters *p)   { return p ? (int)p->codec_id : 0; }
 KC_API int64_t ffkmp_codecpar_bit_rate(AVCodecParameters *p)   { return p ? p->bit_rate : 0; }
 KC_API int     ffkmp_codecpar_width(AVCodecParameters *p)      { return p ? p->width : 0; }
@@ -25,13 +30,14 @@ KC_API void    ffkmp_codecpar_sample_aspect_ratio(AVCodecParameters *p, int *num
     *den = p->sample_aspect_ratio.den ? p->sample_aspect_ratio.den : 1;
 }
 KC_API int ffkmp_codecpar_from_context(AVCodecParameters *par, AVCodecContext *ctx) {
+    if (!par || !ctx) return AVERROR(EINVAL);
     return avcodec_parameters_from_context(par, ctx);
 }
 /* Stream-copy parameter clone. codec_tag is container-specific (mp4 'avc1' means nothing
    to mkv), and zeroing it lets the destination muxer pick its own tag; ffmpeg.c does the same. */
 KC_API int ffkmp_codecpar_copy_for_mux(AVCodecParameters *dst, const AVCodecParameters *src) {
+    if (!dst || !src) return AVERROR(EINVAL);
     int rc = avcodec_parameters_copy(dst, src);
     if (rc >= 0) dst->codec_tag = 0;
     return rc;
 }
-
