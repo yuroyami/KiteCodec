@@ -9,11 +9,13 @@
 # Reworked at the interlude (I-13), because the first shape of this ratchet fought the work it
 # protects, measured three ways. Moving a raw libav call behind a helper, which is register item
 # B1-22's own ask of B2, lowered one of the old counts and raised another, and the ratchet only
-# looked at rises, so the exact improvement B2 is planned around failed the build (measured:
-# replacing avcodec_send_packet with ffkmp_codecctx_send_packet at one call site gave "baseline
-# 273, actual 274", BUILD FAILED). A KDoc sentence naming a struct type moved the type count with
-# no code change at all, so B2 could not have documented its own AVChannelLayout work. And the
-# prose in this file mis-split the fourteen raw sites; the correct split is recorded below.
+# looked at rises, so the exact improvement B2 is planned around failed the build. The synthetic
+# fixture proposed replacing avcodec_send_packet with ffkmp_codecctx_send_packet at one call site;
+# that hypothetical mutation gave "baseline 273, actual 274", BUILD FAILED. No helper named
+# ffkmp_codecctx_send_packet exists in this library today; S1.a.7 is what creates it. A KDoc
+# sentence naming a struct type moved the type count with no code change at all, so B2 could not
+# have documented its own AVChannelLayout work. And the prose in this file mis-split the fourteen
+# raw sites; the correct split is recorded below.
 #
 # What `./gradlew checkCinteropCoupling` enforces now:
 #
