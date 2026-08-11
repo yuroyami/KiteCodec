@@ -69,6 +69,14 @@
 
 #include "kitecodec_helpers.h"
 
+#include <libavfilter/buffersink.h>
+#include <libavutil/channel_layout.h>
+#include <libavutil/error.h>
+#include <libavutil/frame.h>
+#include <libavutil/pixdesc.h>
+#include <libavutil/pixfmt.h>
+#include <libavutil/samplefmt.h>
+
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>

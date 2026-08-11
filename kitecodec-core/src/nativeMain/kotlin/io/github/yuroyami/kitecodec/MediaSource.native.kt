@@ -1,19 +1,12 @@
 package io.github.yuroyami.kitecodec
 
-import ffmpeg.AVCodecContext
-import ffmpeg.AVMEDIA_TYPE_ATTACHMENT
-import ffmpeg.AVMEDIA_TYPE_AUDIO
-import ffmpeg.AVMEDIA_TYPE_DATA
-import ffmpeg.AVMEDIA_TYPE_SUBTITLE
-import ffmpeg.AVMEDIA_TYPE_VIDEO
-import ffmpeg.AVPacket
-import ffmpeg.avcodec_receive_frame
-import ffmpeg.avcodec_send_packet
 import ffmpeg.ffkmp_codec_id_name
 import ffmpeg.ffkmp_codecctx_alloc
 import ffmpeg.ffkmp_codecctx_free
 import ffmpeg.ffkmp_codecctx_from_par
 import ffmpeg.ffkmp_codecctx_open
+import ffmpeg.ffkmp_codecctx_receive_frame
+import ffmpeg.ffkmp_codecctx_send_packet
 import ffmpeg.ffkmp_codecpar_bit_rate
 import ffmpeg.ffkmp_codecpar_ch_layout_mask
 import ffmpeg.ffkmp_codecpar_channels
@@ -26,12 +19,16 @@ import ffmpeg.ffkmp_codecpar_sample_rate
 import ffmpeg.ffkmp_codecpar_width
 import ffmpeg.ffkmp_find_decoder_by_id
 import ffmpeg.ffkmp_frame_use_best_effort_ts
+import ffmpeg.ffkmp_media_type_attachment
+import ffmpeg.ffkmp_media_type_audio
+import ffmpeg.ffkmp_media_type_data
+import ffmpeg.ffkmp_media_type_subtitle
+import ffmpeg.ffkmp_media_type_video
 import ffmpeg.ffkmp_packet_alloc
 import ffmpeg.ffkmp_packet_free
 import ffmpeg.ffkmp_packet_stream_index
 import ffmpeg.ffkmp_packet_unref
 import ffmpeg.ffkmp_rescale_q
-import ffmpeg.AVFormatContext
 import ffmpeg.ffkmp_fmt_close_input
 import ffmpeg.ffkmp_fmt_duration
 import ffmpeg.ffkmp_fmt_find_stream_info
@@ -63,6 +60,11 @@ import ffmpeg.ffkmp_stream_time_base
 import ffmpeg.ffkmp_dict_entry_key
 import ffmpeg.ffkmp_dict_entry_value
 import ffmpeg.ffkmp_dict_get
+import ffmpeg.kc_codec_ctx
+import ffmpeg.kc_codec_par
+import ffmpeg.kc_dict
+import ffmpeg.kc_fmt_ctx
+import ffmpeg.kc_packet
 import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
 import kotlinx.cinterop.Arena
@@ -81,7 +83,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 
 public actual class MediaSource internal constructor(
-    private val ctx: CPointer<AVFormatContext>,
+    private val ctx: CPointer<kc_fmt_ctx>,
     public actual val streams: List<StreamInfo>,
     public actual val durationMicros: Long?,
     public actual val formatName: String,
@@ -174,7 +176,7 @@ public actual class MediaSource internal constructor(
         decode: List<StreamInfo>,
         copy: List<StreamInfo>,
         onFrame: suspend (Frame) -> Unit,
-        onPacket: (CPointer<AVPacket>, StreamInfo) -> Unit,
+        onPacket: (CPointer<kc_packet>, StreamInfo) -> Unit,
     ) {
         val all = decode + copy
         require(all.isNotEmpty()) { "Need at least one stream to demux" }
@@ -213,10 +215,10 @@ public actual class MediaSource internal constructor(
     private suspend fun pump(
         decoders: List<DecoderState>,
         copyByIndex: Map<Int, StreamInfo>,
-        packet: CPointer<AVPacket>,
+        packet: CPointer<kc_packet>,
         frame: Frame,
         onFrame: suspend (Frame) -> Unit,
-        onPacket: (CPointer<AVPacket>, StreamInfo) -> Unit,
+        onPacket: (CPointer<kc_packet>, StreamInfo) -> Unit,
     ) {
         val decoderByIndex = decoders.associateBy { it.stream.index }
         val eof = FFErrors.EOF
@@ -252,14 +254,14 @@ public actual class MediaSource internal constructor(
      */
     private suspend fun sendAndDrain(
         decoder: DecoderState,
-        packet: CPointer<AVPacket>?,
+        packet: CPointer<kc_packet>?,
         frame: Frame,
         onFrame: suspend (Frame) -> Unit,
     ) {
         val eagain = FFErrors.EAGAIN
         val eof = FFErrors.EOF
         while (true) {
-            val sendRc = avcodec_send_packet(decoder.codecCtx, packet)
+            val sendRc = ffkmp_codecctx_send_packet(decoder.codecCtx, packet)
             when {
                 sendRc == 0 || sendRc == eof -> { drain(decoder, frame, onFrame); return }
                 sendRc == eagain -> drain(decoder, frame, onFrame)  // output full → drain, then resend
@@ -280,7 +282,7 @@ public actual class MediaSource internal constructor(
         val eagain = FFErrors.EAGAIN
         val eof = FFErrors.EOF
         while (true) {
-            val rc = avcodec_receive_frame(decoder.codecCtx, frame.nativeFrame)
+            val rc = ffkmp_codecctx_receive_frame(decoder.codecCtx, frame.nativeFrame)
             if (rc == eagain || rc == eof) return
             // Same tolerance as the send side: a frame that could not be reconstructed from the
             // packets seen so far is skipped, not fatal.
@@ -341,7 +343,7 @@ public actual class MediaSource internal constructor(
     }
 
     /** Native codec parameters of a stream, for stream-copy setups ([MediaSink.addCopyStream]). */
-    internal fun codecparOf(stream: StreamInfo): CPointer<ffmpeg.AVCodecParameters>? {
+    internal fun codecparOf(stream: StreamInfo): CPointer<kc_codec_par>? {
         check(!isClosed) { "MediaSource is closed" }
         return ffkmp_fmt_stream(ctx, stream.index.toUInt())?.let { ffkmp_stream_codecpar(it) }
     }
@@ -454,7 +456,7 @@ public actual class MediaSource internal constructor(
             closed = true
         }
         memScoped {
-            val pp = alloc<CPointerVar<AVFormatContext>>()
+            val pp = alloc<CPointerVar<kc_fmt_ctx>>()
             pp.value = ctx
             ffkmp_fmt_close_input(pp.ptr)
         }
@@ -487,12 +489,12 @@ internal class StopDemux : Throwable()
 /** One opened decoder bound to one input stream. */
 private class DecoderState(
     val stream: StreamInfo,
-    val codecCtx: CPointer<AVCodecContext>,
+    val codecCtx: CPointer<kc_codec_ctx>,
 ) {
     fun free() = ffkmp_codecctx_free(codecCtx)
 
     companion object {
-        fun open(ctx: CPointer<AVFormatContext>, stream: StreamInfo): DecoderState {
+        fun open(ctx: CPointer<kc_fmt_ctx>, stream: StreamInfo): DecoderState {
             val streamPtr = ffkmp_fmt_stream(ctx, stream.index.toUInt())
                 ?: throw FFmpegException(FFmpegError.Internal("Stream ${stream.index} disappeared"))
             val codecpar = ffkmp_stream_codecpar(streamPtr)
@@ -517,7 +519,7 @@ private class DecoderState(
 
 internal fun openMediaSource(path: String): MediaSource {
     val arena = Arena()
-    val ctxVar = arena.allocPointerTo<AVFormatContext>()
+    val ctxVar = arena.allocPointerTo<kc_fmt_ctx>()
     val openRc = ffkmp_fmt_open_input(ctxVar.ptr, path)
     if (openRc < 0) { arena.clear(); throw FFmpegException(avError(openRc)) }
     val ctx = ctxVar.value
@@ -527,7 +529,7 @@ internal fun openMediaSource(path: String): MediaSource {
     val infoRc = ffkmp_fmt_find_stream_info(ctx)
     if (infoRc < 0) {
         memScoped {
-            val pp = alloc<CPointerVar<AVFormatContext>>().also { it.value = ctx }
+            val pp = alloc<CPointerVar<kc_fmt_ctx>>().also { it.value = ctx }
             ffkmp_fmt_close_input(pp.ptr)
         }
         throw FFmpegException(avError(infoRc))
@@ -541,7 +543,7 @@ internal fun openMediaSource(path: String): MediaSource {
     return MediaSource(ctx, streams, durationFromHeader, formatName, metadata, ffkmp_fmt_start_time(ctx))
 }
 
-private fun buildStreams(ctx: CPointer<AVFormatContext>): List<StreamInfo> {
+private fun buildStreams(ctx: CPointer<kc_fmt_ctx>): List<StreamInfo> {
     val nb = ffkmp_fmt_nb_streams(ctx).toInt()
     val out = ArrayList<StreamInfo>(nb)
     for (i in 0 until nb) {
@@ -550,11 +552,11 @@ private fun buildStreams(ctx: CPointer<AVFormatContext>): List<StreamInfo> {
 
         val typeRaw = ffkmp_codecpar_codec_type(par)
         val type = when (typeRaw) {
-            mediaTypeAsInt(AVMEDIA_TYPE_VIDEO) -> MediaType.Video
-            mediaTypeAsInt(AVMEDIA_TYPE_AUDIO) -> MediaType.Audio
-            mediaTypeAsInt(AVMEDIA_TYPE_SUBTITLE) -> MediaType.Subtitle
-            mediaTypeAsInt(AVMEDIA_TYPE_DATA) -> MediaType.Data
-            mediaTypeAsInt(AVMEDIA_TYPE_ATTACHMENT) -> MediaType.Attachment
+            ffkmp_media_type_video() -> MediaType.Video
+            ffkmp_media_type_audio() -> MediaType.Audio
+            ffkmp_media_type_subtitle() -> MediaType.Subtitle
+            ffkmp_media_type_data() -> MediaType.Data
+            ffkmp_media_type_attachment() -> MediaType.Attachment
             else -> MediaType.Unknown
         }
 
@@ -617,7 +619,7 @@ private inline fun readRational(block: (CPointer<IntVar>, CPointer<IntVar>) -> U
     Rational(n.value, d.value.takeIf { it != 0 } ?: 1)
 }
 
-private fun readMetadata(dict: CPointer<cnames.structs.AVDictionary>?): Map<String, String> {
+private fun readMetadata(dict: CPointer<kc_dict>?): Map<String, String> {
     if (dict == null) return emptyMap()
     val out = LinkedHashMap<String, String>()
     var entry = ffkmp_dict_get(dict, null)
@@ -628,11 +630,4 @@ private fun readMetadata(dict: CPointer<cnames.structs.AVDictionary>?): Map<Stri
         entry = ffkmp_dict_get(dict, entry)
     }
     return out
-}
-
-/** AVMediaType in cinterop is a typedef'd enum. Reduce it to a plain Int for comparisons. */
-private fun mediaTypeAsInt(value: Any): Int = when (value) {
-    is Int  -> value
-    is UInt -> value.toInt()
-    else    -> (value as? Number)?.toInt() ?: -1
 }

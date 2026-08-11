@@ -26,6 +26,10 @@
 
 #include "kc_fuzz.h"
 
+#include <libavformat/avformat.h>
+#include <libavutil/dict.h>
+#include <libavutil/error.h>
+
 #include <stdlib.h>
 
 #define FUZZ_OUTPUT_PATH "kc_fuzz_never_opened.out"

@@ -50,6 +50,8 @@
 
 #include "kitecodec_helpers.h"
 
+#include <libavutil/error.h>
+
 #define KC_MSG_MAX 256
 #define KC_WORKERS 4
 #define KC_ROUNDS 256

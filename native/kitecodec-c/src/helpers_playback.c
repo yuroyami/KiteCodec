@@ -9,6 +9,19 @@
  * The playback part of the FFmpeg helper layer: the def's 'Playback additions' section(s). */
 
 #include "kitecodec_helpers.h"
+
+#include <libavcodec/avcodec.h>
+#include <libavcodec/packet.h>
+#include <libavformat/avformat.h>
+#include <libavformat/avio.h>
+#include <libavutil/channel_layout.h>
+#include <libavutil/common.h>
+#include <libavutil/display.h>
+#include <libavutil/error.h>
+#include <libavutil/frame.h>
+#include <libavutil/pixdesc.h>
+#include <libavutil/samplefmt.h>
+
 /* ════════════ Playback additions ════════════
    Everything below exists for KitePlayer. A batch transcoder reads a file once, front to back, and
    needs none of it. A player needs to drive demuxing and decoding as separate stages, to flush a

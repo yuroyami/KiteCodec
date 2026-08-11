@@ -28,6 +28,9 @@
 
 #include "kc_fuzz.h"
 
+#include <libavutil/pixfmt.h>
+#include <libavutil/samplefmt.h>
+
 #include <stdlib.h>
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {

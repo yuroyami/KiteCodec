@@ -36,19 +36,26 @@ The two things a reader most often needs from it:
 
 ## Architecture
 
-### One consolidated cinterop module
+### One opaque cinterop module
 
-The binding is **one** cinterop module (`kitecodec-core/src/nativeInterop/cinterop/ffmpeg.def`) that includes every libav\* header behind a single Kotlin package (`ffmpeg.*`).
+The binding is **one** cinterop module (`kitecodec-core/src/nativeInterop/cinterop/ffmpeg.def`), but
+the def parses only KiteCodec's helper, handle and ABI headers. It no longer parses libav\*
+functions, constants or struct layouts. Eleven incomplete forward tags remain behind the eleven
+`kc_*` aliases, and Kotlin source is forbidden to name those tags directly. The aliases and
+`ffkmp_*` functions are the complete native boundary; the compiled C archive owns the direct
+FFmpeg headers and calls internally.
 
-The pragmatic alternative, six separate cinterops (one per library), does not work. It produces six duplicate `AVCodec` / `AVFrame` / `AVPacket` types that will not pass across module boundaries. A frame decoded through one cinterop's `AVFrame` cannot be handed to a filter graph built against another cinterop's `AVFrame`. Consolidating into a single module is the only way to keep the types unified across decode -> filter -> encode.
+Earlier revisions consolidated every libav header into that one cinterop to avoid the duplicate
+`AVCodec` / `AVFrame` / `AVPacket` types produced by six separate cinterops. The opaque boundary
+removes that type-sharing problem entirely while retaining one package and one archive.
 
 ### The `ffkmp_*` C helpers
 
-Kotlin currently consumes 157 legacy C helpers, all prefixed `ffkmp_*`. They live in
-`native/kitecodec-c/`, compiled per Kotlin/Native target into a static archive that the def names and
-cinterop embeds. ABI 1.1 exports twelve more compatible but dormant `ffkmp_` functions, seven wrappers
-and five media-type accessors, for 169 `ffkmp_` exports in all. Kotlin does not call those additions;
-it stays on the legacy surface until S1.a.8 changes the header, def and Kotlin signatures together.
+Kotlin consumes 169 C helpers, all prefixed `ffkmp_*`, through eleven opaque `kc_*` handle aliases.
+They live in `native/kitecodec-c/`, compiled per Kotlin/Native target into a static archive that the
+def names and cinterop embeds. ABI 2.0 is the breaking C-source boundary: 140 legacy declarations
+were respelled from raw FFmpeg pointer types to the aliases, and the seven wrappers plus five
+media-type accessors added compatibly at ABI 1.1 now carry every Kotlin call across that boundary.
 
 The helpers used to be `static inline` text inside the def, which meant no translation unit, no object
 file and no test. The C layer now has nine translation units, seven C test suites, three sanitizer
@@ -58,7 +65,7 @@ variants and six fuzz targets. Its historical extraction was byte-compared befor
 They exist because some of FFmpeg's surface does not survive cinterop cleanly:
 
 - **Macros that don't survive cinterop.** `av_err2str` is a compound-statement macro; `AVERROR(EAGAIN)` and `AVERROR_EOF` are function-style macros. Each gets a real C function the indexer can actually read.
-- **Struct field accessors.** `ffkmp_stream_codecpar(AVStream*)`, `ffkmp_frame_pts(AVFrame*)`, and similar accessors. Modern FFmpeg marks many fields "do not access directly," and several vary across libav versions. A thin C accessor pins one stable read path per field.
+- **Struct field accessors.** `ffkmp_stream_codecpar(kc_stream*)`, `ffkmp_frame_pts(kc_frame*)`, and similar accessors. Modern FFmpeg marks many fields "do not access directly," and several vary across libav versions. A thin C accessor pins one stable read path per field.
 - **128-bit-safe timestamp math.** `ffkmp_rescale_q` wraps `av_rescale_q`, the only overflow-safe way to convert timestamps between time-bases.
 - **Double-pointer ceremony for alloc/free pairs.** `avformat_close_input(AVFormatContext**)` and similar become single-pointer wrappers that Kotlin/Native interop calls cleanly.
 - **One-shot pipeline helpers.** `ffkmp_fmt_open_input(...)` does alloc plus open in one call; `ffkmp_graph_build_video(...)` / `ffkmp_graph_build_audio(...)` build a complete buffer -> chain -> buffersink graph from a single filter description. The audio variant appends `aformat` so output arrives ready for the encoder. Filter-string syntax stays stable across FFmpeg versions, while buffersink option names do not.
@@ -67,14 +74,15 @@ They exist because some of FFmpeg's surface does not survive cinterop cleanly:
 
 ```
 native/kitecodec-c/                  ← the C helper layer: nine units, its own tests and fuzz targets
-├── include/kitecodec_helpers.h      ← generated from the def body
+├── include/kitecodec_helpers.h      ← maintained opaque helper declarations, no FFmpeg header
+├── include/kitecodec_handles.h      ← eleven opaque handle aliases
 ├── include/kitecodec_abi.h          ← the FFmpeg identity gate's contract, no FFmpeg header in it
-├── src/helpers_*.c                  ← generated, one per subsystem
+├── src/helpers_*.c                  ← maintained implementations, one per subsystem
 ├── src/kitecodec_abi.c              ← the identity gate itself
-├── tests/ fuzz/ scripts/            ← seven suites, six fuzz targets, the audit and lift scripts
+├── tests/ fuzz/ scripts/            ← seven suites, six fuzz targets and the audits
 kitecodec-core/src/
 ├── nativeInterop/cinterop/
-│   └── ffmpeg.def                   ← unified cinterop; names the compiled helper archive
+│   └── ffmpeg.def                   ← opaque cinterop; names the compiled helper archive
 ├── commonMain/kotlin/io/github/yuroyami/kitecodec/
 │   ├── FFmpeg.kt                    ← capability probing + Versions
 │   ├── MediaSource.kt               ← demuxer + decode flows (expect)
@@ -114,7 +122,7 @@ KiteCodec links against an FFmpeg you provide. In a consumer project the [Gradle
 
 === "Dynamic (default)"
 
-    Links against a system FFmpeg. This is what the macOS arm64 build does today. The Gradle build finds Homebrew on macOS or apt-installed libraries on Linux, points cinterop at their headers, and links the dylibs. Your users need their own FFmpeg installed at run time.
+    Links against a system FFmpeg. This is what the macOS arm64 build does today. The Gradle build finds Homebrew on macOS or apt-installed libraries on Linux, compiles the C archive against those headers, and links the dylibs. The reduced def parses no FFmpeg header. The module build still supplies the include path redundantly to cinterop, but it is unused by the opaque header set. Your users need their own FFmpeg installed at run time.
 
     ```bash
     brew install ffmpeg                     # macOS
@@ -124,7 +132,7 @@ KiteCodec links against an FFmpeg you provide. In a consumer project the [Gradle
 
 === "Vendored static (release)"
 
-    Cross-compiles a minimal FFmpeg from source through a Gradle task, with a pinned codec and filter set, and drops `.a` libraries under `native-libs/<license>/<target>/` (`lgpl` by default; `gpl` for the opt-in `Gpl` task variants). The build notices them and switches cinterop to static linking, so the resulting binary carries everything it needs.
+    Cross-compiles a minimal FFmpeg from source through a Gradle task, with a pinned codec and filter set, and drops `.a` libraries under `native-libs/<license>/<target>/` (`lgpl` by default; `gpl` for the opt-in `Gpl` task variants). The build notices them, compiles the C archive against their headers and switches the final link to the static libraries, so the resulting binary carries everything it needs.
 
     ```bash
     git clone --depth 1 --branch n8.0 https://github.com/FFmpeg/FFmpeg vendor/ffmpeg

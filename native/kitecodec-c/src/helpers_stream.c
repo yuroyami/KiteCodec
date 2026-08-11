@@ -9,6 +9,11 @@
  * The stream part of the FFmpeg helper layer: the def's 'AVStream' section(s). */
 
 #include "kitecodec_helpers.h"
+
+#include <libavformat/avformat.h>
+#include <libavutil/avutil.h>
+#include <libavutil/mathematics.h>
+
 /* ════════════ AVStream ════════════ */
 
 KC_API int                  ffkmp_stream_index(AVStream *s)    { return s ? s->index : -1; }
@@ -32,4 +37,3 @@ KC_API void ffkmp_stream_avg_frame_rate(AVStream *s, int *n, int *d) {
 KC_API void ffkmp_stream_set_time_base(AVStream *s, int n, int d) {
     if (s) { s->time_base.num = n; s->time_base.den = d ? d : 1; }
 }
-

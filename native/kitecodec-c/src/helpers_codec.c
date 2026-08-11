@@ -9,6 +9,11 @@
  * The codec part of the FFmpeg helper layer: the def's 'AVCodec / AVCodecContext' section(s). */
 
 #include "kitecodec_helpers.h"
+
+#include <libavcodec/avcodec.h>
+#include <libavutil/error.h>
+#include <libavutil/opt.h>
+
 /* ════════════ AVCodec / AVCodecContext ════════════ */
 
 KC_API AVCodecContext* ffkmp_codecctx_alloc(const AVCodec *c) { return avcodec_alloc_context3(c); }

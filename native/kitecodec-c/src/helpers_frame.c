@@ -9,6 +9,16 @@
  * The frame part of the FFmpeg helper layer: the def's 'AVFrame', 'Pixel/sample format names', 'AVDictionary iteration' section(s). */
 
 #include "kitecodec_helpers.h"
+
+#include <libavutil/channel_layout.h>
+#include <libavutil/dict.h>
+#include <libavutil/error.h>
+#include <libavutil/frame.h>
+#include <libavutil/imgutils.h>
+#include <libavutil/pixdesc.h>
+#include <libavutil/samplefmt.h>
+#include <libswscale/swscale.h>
+
 /* ════════════ AVFrame ════════════ */
 
 KC_API AVFrame* ffkmp_frame_alloc(void)        { return av_frame_alloc(); }

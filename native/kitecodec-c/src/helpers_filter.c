@@ -9,6 +9,16 @@
  * The filter part of the FFmpeg helper layer: the def's 'Filter graphs (single-input video / audio)' section(s). */
 
 #include "kitecodec_helpers.h"
+
+#include <libavfilter/avfilter.h>
+#include <libavfilter/buffersink.h>
+#include <libavfilter/buffersrc.h>
+#include <libavutil/channel_layout.h>
+#include <libavutil/error.h>
+#include <libavutil/mem.h>
+#include <libavutil/pixdesc.h>
+#include <libavutil/samplefmt.h>
+
 /* ════════════ Filter graphs (single-input video / audio) ════════════ */
 
 KC_API int ffkmp_filter_exists(const char *name) {

@@ -1,84 +1,27 @@
-# The Kotlin to FFmpeg coupling baseline of kitecodec-core.
+# The post-S1.a.8 Kotlin to FFmpeg coupling baseline of kitecodec-core.
 #
-# Why this file exists. B1 lifted the `ffkmp_` helpers out of ffmpeg.def into a real, versioned
-# C library, but it deliberately deferred the opaque handle migration: the Kotlin call sites, the
-# cinterop imports and the FFmpeg headers in the def all stayed exactly where they were. A
-# deferral with no ratchet turns into a permanent half-state, and the coupling can grow while
-# everyone believes it is shrinking. So the numbers here are a ceiling, never a target.
+# The opaque migration changes what the two ratchets mean. Before S1.a.8, direct FFmpeg imports
+# stood at 246 and ffmpeg_typed_crossings combined 273 ffkmp_ mentions with 14 direct libav calls
+# for 287 total. The reduced cinterop now exposes only KiteCodec-owned declarations, so the durable
+# boundary is stricter and simpler:
 #
-# Reworked at the interlude (I-13), because the first shape of this ratchet fought the work it
-# protects, measured three ways. Moving a raw libav call behind a helper, which is register item
-# B1-22's own ask of B2, lowered one of the old counts and raised another, and the ratchet only
-# looked at rises, so the exact improvement B2 is planned around failed the build. The synthetic
-# fixture proposed replacing avcodec_send_packet with ffkmp_codecctx_send_packet at one call site;
-# that hypothetical mutation gave "baseline 273, actual 274", BUILD FAILED. No helper named
-# ffkmp_codecctx_send_packet exists in this library today; S1.a.7 is what creates it. A KDoc
-# sentence naming a struct type moved the type count with no code change at all, so B2 could not
-# have documented its own AVChannelLayout work. And the prose in this file mis-split the fourteen
-# raw sites; the correct split is recorded below.
+#   cinterop_import_lines counts imports from ffmpeg whose symbol does not begin ffkmp_, kc_ or
+#   KC_. These are direct FFmpeg imports, and the ceiling is zero.
 #
-# What `./gradlew checkCinteropCoupling` enforces now:
+#   ffmpeg_typed_crossings counts direct libav calls only. Helper traffic no longer belongs in
+#   this number because ffkmp_ is the intended opaque boundary, and the ceiling is zero.
 #
-#   RATCHETED. The two `name value` lines below are ceilings; the task fails when a measured
-#   value is HIGHER. Lowering one is a normal commit. Raising one needs an Execution log entry
-#   (the move procedure is in KPKMP.md section 9's ratchet move table).
+# ffkmp_call_sites remains reported-only and is deliberately not recorded here;
+# direct_libav_call_sites is also reported. Raw FFmpeg struct names are derived from the C
+# declarations and forbidden outright, so there are no allowed_struct_type lines.
 #
-#   REPORTED. ffkmp_call_sites and direct_libav_call_sites, the two components of the crossings
-#   number, are printed on every run and recorded nowhere: a category move between them is
-#   neutral by construction, a real reduction shows as a fall in the sum, and nothing hides.
+# Matching happens after the context-stack Kotlin lexer strips line comments, KDoc and nested block
+# comments, including comments inside ordinary and raw ${...} template expressions. Quoted content,
+# nested templates, chars and backtick identifiers remain in their correct lexical contexts.
 #
-#   ALLOWLISTED. One allowed_struct_type line per FFmpeg struct type that Kotlin may name. A new
-#   type reaching Kotlin fails the build by NAME until a line is added deliberately, which is a
-#   stronger guarantee than the old count of eleven: a swap of one type for another kept the old
-#   number at eleven and passed, and now it cannot.
-#
-# All counting is over comment-stripped Kotlin since the interlude: line comments, KDoc and
-# nested block comments leave the text before any pattern runs (string literals survive,
-# including raw strings). A comment is not coupling. Measured consequence of the strip, worth
-# keeping: the counts did not move (273 + 14 = 287 either way, so no helper or libav mention
-# lived in a comment), and the named type count fell from 11 to 10 because AVRational was
-# "named in Kotlin" by exactly one KDoc sentence in Rational.kt and nothing else.
-#
-# Measured on 2026-08-10 at the interlude over kitecodec-core/src, with the commands the task
-# reimplements (the task skips directories named build and .claude; so must any by-hand rerun).
+# These numbers are ceilings, never targets. Lowering one is a normal commit. Raising one requires
+# the old and new value, the reason and the exact source sites in KPKMP.md's Execution log, following
+# section 9's ratchet move table.
 
-# Lines importing an FFmpeg symbol out of the `ffmpeg` cinterop package. Imports of the opaque
-# kc_/KC_ surface are excluded by a negative lookahead: their header includes no FFmpeg header
-# and names no FFmpeg type, and counting them would punish the migration this ratchet protects
-# (measured at B1.6: 253 fell to 246 while 26 kc_/KC_ imports arrived; read together that is a
-# false rise to 272). 253 at B1.1, 246 since B1.6.
-cinterop_import_lines 246
-
-# Helper mentions plus raw libav calls in non-import, non-comment Kotlin text: every place the
-# Kotlin crosses into FFmpeg-typed C, as one number, so that moving a call between the two
-# categories is neutral and only genuinely new traffic can raise it. 287 at the interlude,
-# which is 273 helper mentions + 14 raw libav call sites.
-#
-# The correct split of the 14 raw sites, corrected here per I-13 (the old prose said "7 hot
-# sites, 4 lookups, 3 more send/receive", which matched no measurement): NINE hot send/receive
-# sites across four functions (avcodec_send_packet at MediaSource.native.kt:262 and
-# Playback.native.kt:317; avcodec_receive_frame at MediaSource.native.kt:283 and
-# Playback.native.kt:340; avcodec_send_frame at Frame.native.kt:247, Frame.native.kt:253 and
-# MediaSink.native.kt:498; avcodec_receive_packet at Frame.native.kt:236 and
-# MediaSink.native.kt:511) and FIVE lookup sites across three functions
-# (avcodec_find_encoder_by_name at FFmpeg.native.kt:55, Frame.native.kt:191 and
-# MediaSink.native.kt:210; avcodec_find_decoder_by_name at FFmpeg.native.kt:60;
-# avfilter_get_by_name at FFmpeg.native.kt:65). All fourteen are B2's, through its typed send
-# and receive outcomes; wrapping them before that would change their signatures twice.
-ffmpeg_typed_crossings 287
-
-# The FFmpeg struct types Kotlin may name, one line each. The candidate set is derived from the
-# C (the def plus native/kitecodec-c include and src), so it cannot go stale; these are the ten
-# of those candidates that Kotlin code actually names today. Adding a line is deliberate and
-# carries an Execution log entry; a line whose type is no longer named is reported as stale and
-# removable in a normal commit.
-allowed_struct_type AVCodec
-allowed_struct_type AVCodecContext
-allowed_struct_type AVCodecParameters
-allowed_struct_type AVDictionary
-allowed_struct_type AVFilterContext
-allowed_struct_type AVFilterGraph
-allowed_struct_type AVFormatContext
-allowed_struct_type AVFrame
-allowed_struct_type AVPacket
-allowed_struct_type AVStream
+cinterop_import_lines 0
+ffmpeg_typed_crossings 0

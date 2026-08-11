@@ -10,6 +10,9 @@
 
 #include "kitecodec_helpers.h"
 
+#include <libavutil/error.h>
+#include <libavutil/mathematics.h>
+
 /* ════════════ Errors & macros ════════════ */
 
 KC_API const char* ffkmp_strerror(int errnum) {
@@ -27,4 +30,3 @@ KC_API int64_t ffkmp_rescale_q(int64_t v, int sn, int sd, int dn, int dd) {
     AVRational d = { dn, dd ? dd : 1 };
     return av_rescale_q(v, s, d);
 }
-

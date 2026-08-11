@@ -9,6 +9,10 @@
  * The packet part of the FFmpeg helper layer: the def's 'AVPacket' section(s). */
 
 #include "kitecodec_helpers.h"
+
+#include <libavcodec/packet.h>
+#include <libavutil/avutil.h>
+
 /* ════════════ AVPacket ════════════ */
 
 KC_API AVPacket* ffkmp_packet_alloc(void)        { return av_packet_alloc(); }
@@ -30,4 +34,3 @@ KC_API void      ffkmp_packet_rescale_ts(AVPacket *p, int sn, int sd, int dn, in
     AVRational d = { dn, dd ? dd : 1 };
     av_packet_rescale_ts(p, s, d);
 }
-

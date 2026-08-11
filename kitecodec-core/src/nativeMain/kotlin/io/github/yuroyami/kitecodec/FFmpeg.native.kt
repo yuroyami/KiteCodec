@@ -6,29 +6,18 @@ import ffmpeg.KC_LIB_AVFORMAT
 import ffmpeg.KC_LIB_AVUTIL
 import ffmpeg.KC_LIB_SWRESAMPLE
 import ffmpeg.KC_LIB_SWSCALE
-import ffmpeg.avcodec_find_decoder_by_name
-import ffmpeg.avcodec_find_encoder_by_name
-import ffmpeg.avfilter_get_by_name
+import ffmpeg.ffkmp_filter_exists
+import ffmpeg.ffkmp_find_decoder_by_name
+import ffmpeg.ffkmp_find_encoder_by_name
 import ffmpeg.kc_ffmpeg_configuration
 import kotlinx.cinterop.toKString
 
 public actual object FFmpeg {
 
     /*
-     * Register item B1-22. The six `*_version` functions and `avcodec_configuration` used to be called
-     * straight from here, which made this file 7 of the 21 direct libav call sites the coupling ratchet
-     * counted. They now come through the identity gate's report and its one configuration accessor,
-     * because a caller asking what FFmpeg it has is asking an identity question and the answer has to be
-     * the same one the gate compared against. The four hot decode and encode calls stay raw: giving them
-     * a C wrapper without B2's typed send and receive outcomes would change their signatures twice, and
-     * the three find_*_by_name queries below go with them in B2.
-     *
-     * The function names in the paragraph above are deliberately written without their parentheses. The
-     * ratchet counts a libav call as the name followed by an opening bracket, in any line that is not an
-     * import, comments included, so a comment naming a function this file no longer calls would keep
-     * that call site on the books for ever. Three such mentions were measured at B1.6 and rewritten for
-     * exactly this reason, after which the count fell from 21 to 14, which is the number of call sites
-     * that are really left.
+     * Register item B1-22. The version/configuration queries come through the identity gate, and the
+     * three availability queries come through KiteCodec's opaque helper boundary. No raw libav
+     * declaration is needed by this file.
      *
      * Every member here except `identity` calls requireCompatibleFFmpeg() first. `identity` runs the
      * gate and does not throw, because a diagnostic that is unreadable on a rejected runtime is
@@ -52,17 +41,17 @@ public actual object FFmpeg {
 
     public actual fun hasEncoder(name: String): Boolean {
         requireCompatibleFFmpeg()
-        return avcodec_find_encoder_by_name(name) != null
+        return ffkmp_find_encoder_by_name(name) != null
     }
 
     public actual fun hasDecoder(name: String): Boolean {
         requireCompatibleFFmpeg()
-        return avcodec_find_decoder_by_name(name) != null
+        return ffkmp_find_decoder_by_name(name) != null
     }
 
     public actual fun hasFilter(name: String): Boolean {
         requireCompatibleFFmpeg()
-        return avfilter_get_by_name(name) != null
+        return ffkmp_filter_exists(name) != 0
     }
 }
 

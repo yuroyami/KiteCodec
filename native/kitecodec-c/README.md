@@ -13,23 +13,25 @@ the shape: nine translation units, one per subsystem; `KC_API` on the 157 helper
 and the 15 that nothing imported deleted outright, because in a versioned library a dead exported
 symbol is a compatibility promise nobody meant to make (register item B1-08).
 
-ABI 1.1 adds the compatible half of the opaque C surface: eleven forward-declared handle aliases,
-seven wrapper functions and five media-type accessors. The twelve new `ffkmp_` functions are
-exported but deliberately dormant from Kotlin. Kotlin still consumes the legacy 157 helpers until
-S1.a.8 changes the header, def and Kotlin signatures together.
+ABI 1.1 added the compatible half of the opaque C surface: eleven forward-declared handle aliases,
+seven wrapper functions and five media-type accessors. ABI 2.0 completes the source break: the 140
+legacy declarations that named FFmpeg types now use those aliases, the public helper header includes
+no FFmpeg header, and Kotlin consumes the wrappers and accessors rather than raw libav functions,
+constants or struct layouts.
+The symbol set remains 169 `ffkmp_` functions plus the six `kc_` identity functions.
 
 ## Layout
 
 | Path | What it is |
 |---|---|
-| `include/kitecodec_helpers.h` | The original 20 standard and FFmpeg includes plus `kitecodec_handles.h`, the `KC_API` macro, then one declaration per exported helper. Lifted from the def at B1.3, an ordinary maintained source since the interlude. |
-| `include/kitecodec_handles.h` | ABI 1.1's compatible handle surface: eleven forward-declared opaque aliases and no FFmpeg includes. Kotlin does not adopt them until S1.a.8. |
+| `include/kitecodec_helpers.h` | Four standard includes plus `kitecodec_handles.h`, the `KC_API` macro, then 169 opaque helper declarations. It includes no FFmpeg header; each implementation unit owns the libav headers it uses. Lifted from the def at B1.3, an ordinary maintained source since the interlude. |
+| `include/kitecodec_handles.h` | Eleven forward-declared opaque aliases and no FFmpeg include. ABI 2.0 uses them throughout the public helper declarations and Kotlin cinterop surface. |
 | `src/helpers_*.c` | Nine units, one per subsystem. Lifted from the def body at B1.3, ordinary maintained sources since the interlude. |
 | `include/kitecodec_abi.h` | HAND WRITTEN. The FFmpeg identity gate's contract. Includes no FFmpeg header and names no FFmpeg type. |
 | `include/kitecodec_ffmpeg_versions.h` | HAND WRITTEN, private. The only place the gate reaches into FFmpeg, and the one file the identity test replaces. |
 | `src/kitecodec_abi.c` | HAND WRITTEN. The gate: the frozen header macros, the runtime comparison, the report, the diagnostic bypass. |
 | `scripts/build-host.sh` | Builds the host test binaries for one variant. |
-| `scripts/symbol-audit.sh` | Proves what the compiled archive needs, exports and keeps private. |
+| `scripts/symbol-audit.sh` | Proves what the compiled archive needs, exports and keeps private, and checks all 189 normalized public C declaration records. |
 | `scripts/check-deleted-surface.sh` | Proves nothing in either repository refers to a helper whose status is deleted. |
 | `deleted-surface.txt` | The deleted helper surface: 15 names, one status each. The single copy of the list, and the file to edit when a plan item resurrects one. |
 | `scripts/run-c-tests.sh` | Runs the seven suites for one variant, or in the `interpose` mode: the plain binaries with allocation accounting REQUIRED, so a blinded interposer fails instead of recording partials. |
@@ -37,6 +39,7 @@ S1.a.8 changes the header, def and Kotlin signatures together.
 | `scripts/replay-corpus.sh` | Replays every committed fuzz seed through the replay driver under ASan and UBSan. Added by B1.5. |
 | `scripts/run-fuzz.sh` | Runs the six libFuzzer targets. Refuses with one sentence on a host whose clang has no fuzzer runtime, which is every clang here. |
 | `klib-metadata-baseline.txt` | Its baseline: the filtered metadata dump of that klib. |
+| `signature-baseline.txt` | The 189-record C declaration baseline: helper and ABI prototypes, opaque aliases, ABI enums and the complete report type. |
 | `fuzz/fuzz_*.c` | The six fuzz targets of plan section 15.2 B1.5, one per C entry point that parses a caller's string. |
 | `fuzz/kc_fuzz.h`, `fuzz/kc_fuzz.c` | The input contract and the three helpers every target shares, so the corpus and the split cannot drift apart. |
 | `fuzz/replay_main.c` | The `main()` that makes each target an ordinary sanitized regression test here. libFuzzer supplies its own in CI. |
@@ -75,24 +78,24 @@ kept as the record of where the ten files came from:
   sources import 157 distinct `ffkmp_` names, and the difference is exactly those 15.
 * The remaining 157 lose the whole `static inline ` token and gain `KC_API`, which is what makes
   them real exported symbols. See "KC_API and the nine units" below.
-* Named helpers gain a documented contract comment above their declaration, taken from the
+* Named helpers gained a documented contract comment above their declaration, taken from the
   `CONTRACTS` table in the generator. See "Documented contracts" below.
-* Four helpers keep `static` and lose `inline`, and are not declared in the header at all:
+* Four helpers kept `static`, lost `inline`, and were not declared in the header at all:
   `ffkmp_codec_pix_fmts_` (def 289), `ffkmp_graph_finish_` (470), `ffkmp_graph_finish_multi_`
   (616) and `ffkmp_ch_layout_mask_` (908). Each is used only from inside its own banner section,
-  so each lands in the same unit as every one of its callers. The generator re-checks that against
-  the unit map on every run and refuses to emit if it stops holding, which is what decides whether
-  any of the four has to become `KC_API` instead of staying `static`. At B1.4 none did.
+  so each landed in the same unit as every one of its callers. The generator re-checked that
+  against the unit map during the historical lift and refused to emit if it stopped holding,
+  which decided whether any of the four had to become `KC_API` instead. At B1.4 none did.
 
 ## KC_API and the nine units
 
-The nine units are groupings of the def's own banner sections and never a re-cut of them, so the
-map in `UNIT_MAP` inside the generator is short and checkable. Two of the eleven banners name no
+The nine units were grouped from the def's own banner sections and never re-cut, so the historical
+`UNIT_MAP` in the retired generator was short and checkable. Two of the eleven banners name no
 subsystem of their own, "Pixel/sample format names" and "AVDictionary iteration", and
-`helpers_frame.c` carries both because they sit between AVFrame and AVPacket and a unit has to be a
-contiguous run. The generator proves three things about the map on every run: every banner is
-claimed exactly once, each unit's banners are an unbroken run, and the nine line ranges tile the
-whole body with no gap and no overlap.
+`helpers_frame.c` carries both because they sit between AVFrame and AVPacket and a unit had to be a
+contiguous run. During the lift the generator proved every banner was claimed exactly once, each
+unit's banners were an unbroken run, and the nine line ranges tiled the whole body with no gap or
+overlap. The final proof remains in the execution record; no generator runs now.
 
 | Unit | Def lines | Helpers | Banner sections |
 |---|---|---|---|
@@ -113,8 +116,10 @@ the link that embeds the archive. So `KC_API` is not what makes the cinterop wor
 the exported set a decision instead of an accident, and `symbol-audit.sh` is what checks the
 decision, by comparing the archive's external symbols with the header's `KC_API` declarations and
 finding them equal at 175: 169 `ffkmp_` helpers plus the six `kc_` functions of the identity gate
-below. Of the 169 `ffkmp_` exports, Kotlin already consumes the legacy 157; ABI 1.1's seven wrappers
-and five media-type accessors are twelve compatible additions that remain dormant until S1.a.8.
+below. ABI 2.0 leaves those names unchanged while respelling the 140 FFmpeg-typed declarations to
+the eleven opaque aliases. Kotlin now consumes the seven wrappers and five media-type accessors
+added at ABI 1.1. No raw libav function, constant or struct layout crosses the cinterop boundary;
+the eleven incomplete forward tags remain only as the private identities behind the aliases.
 
 ## The FFmpeg identity gate
 
@@ -243,8 +248,9 @@ comparison matched, and the output with both digests is recorded in KPKMP.md's I
 entry. It was retired because its anchor could never move and it had begun to block real fixes to
 exported code (interlude item I-12).
 
-The cinterop surface has its own instrument, which is not part of the C build and needs a klib
-rather than a host binary:
+The opaque cinterop surface has its own instrument, which is not part of the C build and needs a
+klib rather than a host binary. The def parses only `kitecodec_helpers.h`,
+`kitecodec_handles.h` and `kitecodec_abi.h`; libav headers are private to the C archive:
 
 ```bash
 ../../gradlew :kitecodec-core:cinteropFfmpegMacosArm64
@@ -285,8 +291,8 @@ The helper units also get `-fvisibility=hidden`, matching the shipped compile in
 `buildSrc/CompileKiteCodecCTask.kt`, so the host archive carries the same exported set as the
 shipped one and `symbol-audit.sh` means the same thing whichever archive it is pointed at.
 
-`-Werror` is not decoration. Because every unit includes its own generated header, this compile is
-the only mechanical proof that all the emitted declarations agree with their definitions, and a
+`-Werror` is not decoration. Because every unit includes its maintained public header, this compile
+is the mechanical proof that all the public declarations agree with their definitions, and a
 warning that nobody reads would not be a proof. Separate compilation earns a second proof for free:
 the four `static` helpers cannot be called from another unit, because that would be an implicit
 declaration, and cannot sit in a unit that never calls them, because that would be an unused

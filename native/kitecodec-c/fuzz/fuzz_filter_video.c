@@ -33,6 +33,9 @@
 
 #include "kc_fuzz.h"
 
+#include <libavfilter/avfilter.h>
+#include <libavutil/pixfmt.h>
+
 #include <stdlib.h>
 
 /* One source's parameters. Kept together so the multi-input arrays below are readable. */

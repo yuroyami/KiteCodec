@@ -2,11 +2,6 @@
 
 package io.github.yuroyami.kitecodec
 
-import ffmpeg.AVCodecContext
-import ffmpeg.AVFrame
-import ffmpeg.AVPacket
-import ffmpeg.avcodec_receive_frame
-import ffmpeg.avcodec_send_packet
 import ffmpeg.ffkmp_avseek_flag_any
 import ffmpeg.ffkmp_avseek_flag_backward
 import ffmpeg.ffkmp_codecctx_alloc
@@ -14,6 +9,8 @@ import ffmpeg.ffkmp_codecctx_flush
 import ffmpeg.ffkmp_codecctx_free
 import ffmpeg.ffkmp_codecctx_from_par
 import ffmpeg.ffkmp_codecctx_open
+import ffmpeg.ffkmp_codecctx_receive_frame
+import ffmpeg.ffkmp_codecctx_send_packet
 import ffmpeg.ffkmp_codecctx_set_low_delay
 import ffmpeg.ffkmp_codecctx_set_threads
 import ffmpeg.ffkmp_codecpar_codec_id
@@ -44,6 +41,10 @@ import ffmpeg.ffkmp_packet_unref
 import ffmpeg.ffkmp_stream_codecpar
 import ffmpeg.ffkmp_stream_discard_all
 import ffmpeg.ffkmp_stream_discard_none
+import ffmpeg.kc_codec_ctx
+import ffmpeg.kc_fmt_ctx
+import ffmpeg.kc_frame
+import ffmpeg.kc_packet
 import kotlinx.cinterop.COpaquePointer
 import kotlinx.cinterop.UByteVar
 import kotlinx.cinterop.CPointer
@@ -65,7 +66,7 @@ import kotlinx.cinterop.ExperimentalForeignApi
 @KiteCodecLowLevelApi
 @OptIn(ExperimentalForeignApi::class)
 public class Packet internal constructor(
-    internal val native: CPointer<AVPacket>,
+    internal val native: CPointer<kc_packet>,
     /** The stream's time base, so the caller can convert [pts] without looking the stream up. */
     public val timeBase: Rational,
 ) : AutoCloseable {
@@ -178,11 +179,11 @@ public enum class SeekDirection {
 @OptIn(ExperimentalForeignApi::class)
 public class PacketReader internal constructor(
     private val source: MediaSource,
-    private val ctx: CPointer<ffmpeg.AVFormatContext>,
+    private val ctx: CPointer<kc_fmt_ctx>,
     private val timeBaseByStream: Map<Int, Rational>,
 ) : AutoCloseable {
 
-    private val scratch: CPointer<AVPacket> = ffkmp_packet_alloc()
+    private val scratch: CPointer<kc_packet> = ffkmp_packet_alloc()
         ?: throw FFmpegException(FFmpegError.Internal("av_packet_alloc returned NULL"))
     private var closed = false
 
@@ -282,10 +283,10 @@ public class PacketReader internal constructor(
 @OptIn(ExperimentalForeignApi::class)
 public class StreamDecoder internal constructor(
     public val stream: StreamInfo,
-    private val codecCtx: CPointer<AVCodecContext>,
+    private val codecCtx: CPointer<kc_codec_ctx>,
 ) : AutoCloseable {
 
-    private val landing: CPointer<AVFrame> = ffkmp_frame_alloc()
+    private val landing: CPointer<kc_frame> = ffkmp_frame_alloc()
         ?: throw FFmpegException(FFmpegError.Internal("av_frame_alloc returned NULL"))
     private var closed = false
 
@@ -314,7 +315,7 @@ public class StreamDecoder internal constructor(
     public fun send(packet: Packet?): Boolean {
         check(!closed) { "StreamDecoder is closed" }
         packet?.checkOpen()
-        val rc = avcodec_send_packet(codecCtx, packet?.native)
+        val rc = ffkmp_codecctx_send_packet(codecCtx, packet?.native)
         return when {
             rc == 0 -> true
             rc == FFErrors.EOF -> true
@@ -337,7 +338,7 @@ public class StreamDecoder internal constructor(
      */
     public fun receive(): Frame? {
         check(!closed) { "StreamDecoder is closed" }
-        val rc = avcodec_receive_frame(codecCtx, landing)
+        val rc = ffkmp_codecctx_receive_frame(codecCtx, landing)
         if (rc == FFErrors.EOF) {
             isDrained = true
             return null
@@ -385,7 +386,7 @@ public class StreamDecoder internal constructor(
 
     internal companion object {
         fun open(
-            ctx: CPointer<ffmpeg.AVFormatContext>,
+            ctx: CPointer<kc_fmt_ctx>,
             stream: StreamInfo,
             threadCount: Int,
             lowDelay: Boolean,

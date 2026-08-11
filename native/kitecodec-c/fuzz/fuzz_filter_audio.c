@@ -32,6 +32,9 @@
 
 #include "kc_fuzz.h"
 
+#include <libavfilter/avfilter.h>
+#include <libavutil/samplefmt.h>
+
 #include <stdlib.h>
 
 /* Pinned output, per plan: a real format, a real rate, a real channel count. `,aformat=` plus all

@@ -3,8 +3,9 @@
 # Audit the symbol table of the compiled FFmpeg helper archive.
 #
 # This is a test, not documentation: plan section 15.3 lists it beside the sanitizer runs, and it
-# is the only instrument that checks what the archive PROMISES rather than what it does. Three
-# questions, all of them answerable only from the object code:
+# is the only instrument that checks what the archive PROMISES rather than what it does. Its symbol
+# questions come from object code; its final declaration-shape question comes from the public
+# headers that define the source and cinterop contract:
 #
 #   1. What does the archive need from outside itself? Anything beyond libav*, libsw* and a short
 #      allowlist is a dependency nobody decided to take. A `printf` would mean a helper writes to
@@ -19,6 +20,8 @@
 #      must never appear as external symbols.
 #   4. Does anything print? Nothing but the identity gate's diagnostic bypass warning, which plan
 #      section 15.6 question 3 requires to be loud. Check 5 pins that to one source file.
+#   5. Did any public C declaration change shape? Check 7 compares normalized declaration records
+#      from the helper, handle and ABI headers, including opaque alias targets and aggregate bodies.
 #
 # The default archive is the SHIPPED one, built per konan target by
 # :kitecodec-core:compileKiteCodecCFor<Target> and embedded in the cinterop klib. That is the
@@ -30,6 +33,9 @@
 #   ./scripts/symbol-audit.sh --target macos_x64  another konan target's archive
 #   ./scripts/symbol-audit.sh --host              the host test archive of build-host.sh
 #   ./scripts/symbol-audit.sh --archive PATH      any archive
+#   ./scripts/symbol-audit.sh --write-baseline    deliberately rewrite the export-name baseline
+#   ./scripts/symbol-audit.sh --write-signature-baseline
+#                                                  deliberately rewrite the declaration baseline
 #
 # Environment:
 #   KC_NM   the nm to use, default /usr/bin/nm. Mach-O archives are read by the system nm; an ELF
@@ -47,6 +53,7 @@ TARGET="macos_arm64"
 ARCHIVE=""
 HOST=0
 WRITE_BASELINE=0
+WRITE_SIGNATURE_BASELINE=0
 NM="${KC_NM:-/usr/bin/nm}"
 
 while [ $# -gt 0 ]; do
@@ -57,7 +64,8 @@ while [ $# -gt 0 ]; do
                    ARCHIVE="$2"; shift 2 ;;
         --host)    HOST=1; shift ;;
         --write-baseline) WRITE_BASELINE=1; shift ;;
-        -h|--help) sed -n '2,38p' "${BASH_SOURCE[0]}"; exit 0 ;;
+        --write-signature-baseline) WRITE_SIGNATURE_BASELINE=1; shift ;;
+        -h|--help) sed -n '2,43p' "${BASH_SOURCE[0]}"; exit 0 ;;
         *)         echo "symbol-audit.sh: unknown argument '$1'" >&2; exit 2 ;;
     esac
 done
@@ -82,9 +90,10 @@ fi
 }
 
 HEADER="$ROOT/include/kitecodec_helpers.h"
+HANDLES_HEADER="$ROOT/include/kitecodec_handles.h"
 ABI_HEADER="$ROOT/include/kitecodec_abi.h"
 SRC="$ROOT/src"
-for path in "$HEADER" "$ABI_HEADER" "$SRC"; do
+for path in "$HEADER" "$HANDLES_HEADER" "$ABI_HEADER" "$SRC"; do
     [ -e "$path" ] || { echo "symbol-audit.sh: missing $path" >&2; exit 1; }
 done
 
@@ -151,9 +160,9 @@ echo "  header    $HEADER"
 # ---------------------------------------------------------------------------------------------
 # The three sets, all derived and none written down twice.
 #
-#   expected exported   the KC_API declarations in the generated helper header, plus the KC_API
+#   expected exported   the KC_API declarations in the maintained helper header, plus the KC_API
 #                       declarations of the hand written identity gate header
-#   expected internal   the `static` trailing-underscore definitions in the generated units
+#   expected internal   the `static` trailing-underscore definitions in the maintained units
 #   actual              what nm reports
 # ---------------------------------------------------------------------------------------------
 
@@ -358,6 +367,202 @@ else
             echo "        Deliberate? Rerun with --write-baseline in the same commit and log the names."
         fi
         [ -s "$WORK/baseline_missing.txt" ] || [ -s "$WORK/baseline_extra.txt" ] ||             echo "  ok: the two sets are equal"
+    fi
+    echo
+fi
+
+# ---------------------------------------------------------------------------------------------
+# 7. The normalized public declaration set equals the COMMITTED signature baseline (S1.a.8).
+#
+# The export-name baseline in check 6 cannot detect a changed parameter type or an opaque alias
+# silently retargeted to another C tag. This check records declaration SHAPES from all three public
+# headers. Selection is per header and deliberate:
+#
+#   kitecodec_helpers.h  every KC_API prototype (169)
+#   kitecodec_handles.h  every opaque typedef (11)
+#   kitecodec_abi.h      KC_API prototypes (6), enum definitions (2), report typedef (1)
+#
+# Comments and preprocessor lines are discarded. Declarations may span lines, and a semicolon ends
+# a record only at brace depth zero, so enum fields and the report fields remain inside their one
+# complete record. Whitespace is normalized, records are C-locale sorted WITHOUT deduplication, and
+# the exact installed scope is 189 records.
+#
+# THE MOVE (also in KPKMP.md section 9's ratchet move table): change a public declaration
+# deliberately, run
+#   ./scripts/symbol-audit.sh --write-signature-baseline
+# in the same commit, and name every changed record in the Execution log entry. This is deliberately
+# distinct from --write-baseline, which owns only export names.
+# ---------------------------------------------------------------------------------------------
+generate_signature_records() {
+    awk '
+        function strip_comments(line,    out, i, c, next_c) {
+            out = ""
+            i = 1
+            while (i <= length(line)) {
+                c = substr(line, i, 1)
+                next_c = i < length(line) ? substr(line, i + 1, 1) : ""
+                if (in_block_comment) {
+                    if (c == "*" && next_c == "/") {
+                        in_block_comment = 0
+                        i += 2
+                    } else {
+                        i++
+                    }
+                } else if (c == "/" && next_c == "*") {
+                    out = out " "
+                    in_block_comment = 1
+                    i += 2
+                } else if (c == "/" && next_c == "/") {
+                    break
+                } else {
+                    out = out c
+                    i++
+                }
+            }
+            return out
+        }
+
+        function normalized(value) {
+            gsub(/[[:space:]]+/, " ", value)
+            sub(/^ /, "", value)
+            sub(/ $/, "", value)
+            return value
+        }
+
+        FNR == 1 {
+            if (NR > 1 && collecting) {
+                print "symbol-audit.sh: unterminated selected declaration before " FILENAME > "/dev/stderr"
+                exit 3
+            }
+            if (FILENAME ~ /kitecodec_helpers[.]h$/) role = "helpers"
+            else if (FILENAME ~ /kitecodec_handles[.]h$/) role = "handles"
+            else if (FILENAME ~ /kitecodec_abi[.]h$/) role = "abi"
+            else {
+                print "symbol-audit.sh: unexpected signature header " FILENAME > "/dev/stderr"
+                exit 3
+            }
+            in_block_comment = 0
+            in_preprocessor = 0
+            collecting = 0
+            brace_depth = 0
+            record = ""
+        }
+
+        {
+            clean = strip_comments($0)
+            trimmed = clean
+            sub(/^[[:space:]]+/, "", trimmed)
+
+            if (in_preprocessor) {
+                if (clean !~ /\\[[:space:]]*$/) in_preprocessor = 0
+                next
+            }
+            if (trimmed ~ /^#/) {
+                if (clean ~ /\\[[:space:]]*$/) in_preprocessor = 1
+                next
+            }
+
+            if (!collecting) {
+                selected = 0
+                if (role == "helpers" && trimmed ~ /^KC_API[[:space:]]/) selected = 1
+                if (role == "handles" && trimmed ~ /^typedef[[:space:]]/) selected = 1
+                abi_selected = trimmed ~ /^KC_API[[:space:]]/ ||
+                    trimmed ~ /^enum[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*[{]/ ||
+                    trimmed ~ /^typedef[[:space:]]+struct[[:space:]]+kc_ffmpeg_report[[:space:]]*[{]/
+                if (role == "abi" && abi_selected) selected = 1
+                if (!selected) next
+                collecting = 1
+                brace_depth = 0
+                record = ""
+            }
+
+            if (trimmed != "") {
+                if (record != "") record = record " "
+                record = record clean
+            }
+            for (i = 1; i <= length(clean); i++) {
+                c = substr(clean, i, 1)
+                if (c == "{") brace_depth++
+                else if (c == "}") brace_depth--
+                else if (c == ";" && brace_depth == 0) {
+                    print normalized(record)
+                    collecting = 0
+                    brace_depth = 0
+                    record = ""
+                    break
+                }
+            }
+        }
+
+        END {
+            if (collecting) {
+                print "symbol-audit.sh: unterminated selected declaration at end of input" > "/dev/stderr"
+                exit 3
+            }
+        }
+    ' "$HEADER" "$HANDLES_HEADER" "$ABI_HEADER"
+}
+
+SIGNATURE_BASELINE_FILE="$ROOT/signature-baseline.txt"
+generate_signature_records > "$WORK/actual_signatures_unsorted.txt"
+LC_ALL=C sort "$WORK/actual_signatures_unsorted.txt" > "$WORK/actual_signatures.txt"
+ACTUAL_SIGNATURE_COUNT="$(wc -l < "$WORK/actual_signatures.txt" | tr -d ' ')"
+
+if [ "$WRITE_SIGNATURE_BASELINE" = 1 ]; then
+    echo "7. normalized public declaration baseline"
+    if [ "$ACTUAL_SIGNATURE_COUNT" -ne 189 ]; then
+        fail "refusing to rewrite $SIGNATURE_BASELINE_FILE: expected 189 records, found $ACTUAL_SIGNATURE_COUNT"
+    else
+        {
+            echo "# The normalized public C declaration baseline of KiteCodec (S1.a.8)."
+            echo "#"
+            echo "# Exact scope: 169 helper KC_API prototypes, eleven opaque handle typedefs, six"
+            echo "# ABI KC_API prototypes, two ABI enum definitions and the full kc_ffmpeg_report"
+            echo "# typedef. Comments and preprocessor lines are absent; whitespace is normalized;"
+            echo "# records are sorted without deduplication. There must be exactly 189 records."
+            echo "#"
+            echo "# THE MOVE (also in KPKMP.md section 9's ratchet move table): change the public"
+            echo "# declaration deliberately, run ./scripts/symbol-audit.sh"
+            echo "# --write-signature-baseline in the same commit, and name every changed record in"
+            echo "# the Execution log entry. --write-baseline is separate and changes export names."
+            cat "$WORK/actual_signatures.txt"
+        } > "$SIGNATURE_BASELINE_FILE"
+        echo "  baseline REWRITTEN at $SIGNATURE_BASELINE_FILE (189 records)"
+        echo "  commit it with the declaration change it records and log every changed record"
+    fi
+    echo
+else
+    echo "7. public declaration shapes equal the committed signature baseline"
+    echo "  selected $ACTUAL_SIGNATURE_COUNT normalized record(s); expected 189"
+    if [ "$ACTUAL_SIGNATURE_COUNT" -ne 189 ]; then
+        fail "public declaration selection changed scope: expected 189 records, found $ACTUAL_SIGNATURE_COUNT"
+    fi
+    if [ ! -f "$SIGNATURE_BASELINE_FILE" ]; then
+        fail "$SIGNATURE_BASELINE_FILE does not exist; create it with: $0 --write-signature-baseline"
+    else
+        awk '!/^[[:space:]]*#/ && NF { print }' "$SIGNATURE_BASELINE_FILE" \
+            > "$WORK/baseline_signatures_unsorted.txt"
+        LC_ALL=C sort "$WORK/baseline_signatures_unsorted.txt" > "$WORK/baseline_signatures.txt"
+        BASELINE_SIGNATURE_COUNT="$(wc -l < "$WORK/baseline_signatures.txt" | tr -d ' ')"
+        comm -23 "$WORK/baseline_signatures.txt" "$WORK/actual_signatures.txt" \
+            > "$WORK/signatures_missing.txt"
+        comm -13 "$WORK/baseline_signatures.txt" "$WORK/actual_signatures.txt" \
+            > "$WORK/signatures_extra.txt"
+        echo "  baseline lists $BASELINE_SIGNATURE_COUNT record(s)"
+        if [ "$BASELINE_SIGNATURE_COUNT" -ne 189 ]; then
+            fail "signature baseline scope is not 189 records"
+        fi
+        if [ -s "$WORK/signatures_missing.txt" ]; then
+            fail "in the signature baseline but not in the headers (removed or changed):"
+            sed 's/^/          /' "$WORK/signatures_missing.txt"
+        fi
+        if [ -s "$WORK/signatures_extra.txt" ]; then
+            fail "in the headers but not in the signature baseline (added or changed):"
+            sed 's/^/          /' "$WORK/signatures_extra.txt"
+            echo "        Deliberate? Rerun with --write-signature-baseline in the same commit."
+        fi
+        [ -s "$WORK/signatures_missing.txt" ] || [ -s "$WORK/signatures_extra.txt" ] || \
+            echo "  ok: all 189 records are equal"
     fi
     echo
 fi

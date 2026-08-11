@@ -1,16 +1,15 @@
 package io.github.yuroyami.kitecodec
 
-import ffmpeg.AVFrame
-import ffmpeg.avcodec_find_encoder_by_name
-import ffmpeg.avcodec_receive_packet
-import ffmpeg.avcodec_send_frame
 import ffmpeg.ffkmp_codec_first_pix_fmt
 import ffmpeg.ffkmp_codec_supports_pix_fmt
 import ffmpeg.ffkmp_codecctx_alloc
 import ffmpeg.ffkmp_codecctx_free
 import ffmpeg.ffkmp_codecctx_open
+import ffmpeg.ffkmp_codecctx_receive_packet
+import ffmpeg.ffkmp_codecctx_send_frame
 import ffmpeg.ffkmp_codecctx_set_full_range
 import ffmpeg.ffkmp_codecctx_set_video
+import ffmpeg.ffkmp_find_encoder_by_name
 import ffmpeg.ffkmp_frame_alloc
 import ffmpeg.ffkmp_frame_channels
 import ffmpeg.ffkmp_frame_clone
@@ -53,6 +52,7 @@ import ffmpeg.ffkmp_frame_duration
 import ffmpeg.ffkmp_frame_is_hardware
 import ffmpeg.ffkmp_frame_is_keyframe
 import ffmpeg.ffkmp_frame_sample_aspect_ratio
+import ffmpeg.kc_frame
 import kotlinx.cinterop.ByteVar
 import kotlinx.cinterop.IntVar
 import kotlinx.cinterop.alloc
@@ -75,7 +75,7 @@ import kotlinx.cinterop.usePinned
  * be adopted, e.g. from a decoder).
  */
 public actual class Frame internal constructor(
-    internal val nativeFrame: CPointer<AVFrame>,
+    internal val nativeFrame: CPointer<kc_frame>,
     private val ownsPointer: Boolean,
     internal val streamIndex: Int,
     internal val streamType: MediaType,
@@ -188,14 +188,14 @@ public actual class Frame internal constructor(
         if (width <= 0 || height <= 0 || format < 0) {
             throw FFmpegException(FFmpegError.Internal("Frame carries no image data"))
         }
-        val encoder = avcodec_find_encoder_by_name(codec.name)
+        val encoder = ffkmp_find_encoder_by_name(codec.name)
             ?: throw FFmpegException(FFmpegError.Internal("No encoder named '${codec.name}'"))
 
         // Image codecs are picky about input pixel format (png: rgb*, mjpeg: yuvj*), so
         // convert when the frame's own format isn't accepted.
         val needsConvert = ffkmp_codec_supports_pix_fmt(encoder, format) == 0
-        val sendFrame: CPointer<AVFrame>
-        var converted: CPointer<AVFrame>? = null
+        val sendFrame: CPointer<kc_frame>
+        var converted: CPointer<kc_frame>? = null
         if (needsConvert) {
             val targetFmt = ffkmp_codec_first_pix_fmt(encoder)
             if (targetFmt < 0) throw FFmpegException(FFmpegError.Internal("Encoder '${codec.name}' advertises no pixel formats"))
@@ -233,7 +233,7 @@ public actual class Frame internal constructor(
                     // Image codecs emit one packet, but nothing in the API guarantees it.
                     fun drainAll() {
                         while (true) {
-                            val rc = avcodec_receive_packet(ctx, packet)
+                            val rc = ffkmp_codecctx_receive_packet(ctx, packet)
                             if (rc == eagain || rc == eof) return
                             check0(rc, "avcodec_receive_packet (image)")
                             if (bytes == null) {
@@ -244,13 +244,13 @@ public actual class Frame internal constructor(
                         }
                     }
                     while (true) {
-                        val rc = avcodec_send_frame(ctx, sendFrame)
+                        val rc = ffkmp_codecctx_send_frame(ctx, sendFrame)
                         if (rc == 0) break
                         if (rc == eagain) { drainAll(); continue }
                         check0(rc, "avcodec_send_frame (image)")
                     }
                     while (true) {
-                        val rc = avcodec_send_frame(ctx, null)
+                        val rc = ffkmp_codecctx_send_frame(ctx, null)
                         if (rc == 0 || rc == eof) break
                         if (rc == eagain) { drainAll(); continue }
                         check0(rc, "avcodec_send_frame (image flush)")
@@ -400,7 +400,7 @@ internal object FrameOps {
 
     /** Wrap an externally-owned AVFrame pointer (caller frees). */
     fun wrap(
-        raw: CPointer<AVFrame>,
+        raw: CPointer<kc_frame>,
         streamIndex: Int,
         streamType: MediaType,
         timeBase: Rational,

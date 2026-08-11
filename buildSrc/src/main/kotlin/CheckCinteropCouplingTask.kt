@@ -14,46 +14,29 @@ import org.gradle.api.tasks.TaskAction
 import java.io.File
 
 /**
- * The ratchet on how tightly kitecodec-core's Kotlin is bolted to FFmpeg's C types.
+ * The zero ceiling on direct FFmpeg coupling in kitecodec-core's Kotlin.
  *
- * B1 turned the `ffkmp_` helpers into a compiled, versioned library but deliberately left the
- * Kotlin side alone: the cinterop imports, the helper call sites, the raw libav calls and the
- * FFmpeg headers in `ffmpeg.def` all stayed. That deferral is only safe if the thing being
- * deferred can do nothing but shrink, which is what this task enforces.
+ * S1.a.8 removes FFmpeg's headers from the cinterop definition. Kotlin may import and call the
+ * KiteCodec-owned `ffkmp_`, `kc_` and `KC_` surface, but it may neither import a raw FFmpeg name,
+ * call libav directly nor name an FFmpeg struct type. The two ratcheted counts therefore mean:
  *
- * Reworked at the interlude (I-13), because the first version fought the very work it protects,
- * measured three ways: moving a raw libav call behind a helper (register item B1-22's own ask)
- * lowered one count and raised another, and the ratchet only looked at rises, so the improvement
- * failed the build; a KDoc sentence naming a struct type counted as coupling, so B2 could not
- * document its own headline deliverable; and the baseline's prose mis-split the fourteen raw
- * sites. What this task measures now:
+ *  1. `cinterop_import_lines`: direct FFmpeg imports from the `ffmpeg` cinterop package. Imports
+ *     whose names begin `ffkmp_`, `kc_` or `KC_` are the owned boundary and are excluded.
+ *  2. `ffmpeg_typed_crossings`: direct libav call sites only.
  *
- *  RATCHETED, may never rise above the baseline:
- *  1. `cinterop_import_lines`: lines importing an FFmpeg symbol out of the `ffmpeg` cinterop
- *     package. Imports of the opaque `kc_` surface are excluded; see [CINTEROP_IMPORT].
- *  2. `ffmpeg_typed_crossings`: helper mentions plus raw libav calls, one number. A category move
- *     (raw call becomes helper call) is neutral by construction; a genuine reduction shows as a
- *     fall; only genuinely new FFmpeg-typed traffic shows as a rise.
+ * `ffkmp_call_sites` remains reported-only boundary traffic and may grow. The direct-libav count
+ * is printed separately as well as carrying the second ratchet name. FFmpeg struct candidates are
+ * derived from the C declarations, including the private forward tags in handles.h, and every
+ * candidate is forbidden in Kotlin source rather than allowlisted.
  *
- *  REPORTED, printed every run and recorded nowhere: `ffkmp_call_sites` and
- *  `direct_libav_call_sites`, the two components of the crossings number, so nothing is hidden
- *  by the sum.
+ * All matching happens over a code-only Kotlin view. A context-stack lexer blanks ordinary-string,
+ * raw-string and character-literal content while preserving whitespace, newlines, live template
+ * expressions and backtick identifiers. Nested templates and braces remain code; comments inside
+ * `${...}` are removed. Diagnostic text therefore cannot look like coupling, while live code in a
+ * template cannot hide from the ratchet.
  *
- *  ALLOWLISTED BY NAME: every FFmpeg struct type name that reaches Kotlin must be one of the
- *  `allowed_struct_type` lines in the baseline. The guarantee is no longer "the number eleven
- *  does not rise" but "no new FFmpeg struct type reaches Kotlin without being named in a commit",
- *  which is stronger, and a type that stops being named simply stops appearing (the stale line is
- *  reported so it can be cleaned up in a normal commit).
- *
- * All counting happens over comment-stripped Kotlin: line comments, nested block comments and
- * KDoc leave the text before any pattern runs, with string literals (escaped and raw) preserved,
- * because a comment is not coupling and the count must not punish documentation. The candidate
- * struct type set is still derived from the C (the def plus [cDeclarationFiles]), so it cannot go
- * stale.
- *
- * Lowering a baseline number is a normal commit. Raising one, or adding an `allowed_struct_type`
- * line, needs an Execution log entry; the move procedure is in KPKMP.md section 9's ratchet move
- * table.
+ * Lowering a baseline number is a normal commit. Raising one needs an Execution log entry; the
+ * move procedure is in KPKMP.md section 9's ratchet move table.
  *
  * Two properties of this implementation are load bearing rather than incidental:
  *
@@ -70,9 +53,8 @@ abstract class CheckCinteropCouplingTask : DefaultTask() {
     abstract val sourceDir: DirectoryProperty
 
     /**
-     * `native/kitecodec-c/coupling-baseline.txt`: `name value` lines for the two ratcheted counts
-     * plus one `allowed_struct_type Name` line per FFmpeg struct type Kotlin may name. `#` starts
-     * a comment.
+     * `native/kitecodec-c/coupling-baseline.txt`: `name value` lines for the two zero ceilings.
+     * `#` starts a comment.
      */
     @get:InputFile
     @get:PathSensitive(PathSensitivity.RELATIVE)
@@ -101,9 +83,10 @@ abstract class CheckCinteropCouplingTask : DefaultTask() {
             val ceiling = recorded.counts.getValue(name)
             if (actual > ceiling) failures += "$name: baseline $ceiling, actual $actual"
         }
-        val newTypes = measured.namedStructTypes - recorded.allowedStructTypes
-        if (newTypes.isNotEmpty()) {
-            failures += "FFmpeg struct type(s) newly named in Kotlin: ${newTypes.sorted().joinToString()}"
+        if (measured.namedStructTypes.isNotEmpty()) {
+            failures +=
+                "raw FFmpeg struct type(s) named in Kotlin: " +
+                measured.namedStructTypes.sorted().joinToString()
         }
 
         if (failures.isNotEmpty()) {
@@ -113,11 +96,10 @@ abstract class CheckCinteropCouplingTask : DefaultTask() {
                     for (line in failures) appendLine("  $line")
                     appendLine()
                     appendLine(
-                        "The deferred coupling may only shrink, and since the interlude (I-13) a " +
-                            "category move, a raw call becoming a helper call, is neutral here and " +
-                            "cannot be what fired. Either take the new coupling back out, or, if " +
-                            "it is deliberate, raise the number or add the allowed_struct_type " +
-                            "line in the same commit and say why in the KPKMP.md Execution log.",
+                        "Kotlin may cross only the KiteCodec-owned ffkmp_/kc_/KC_ boundary. " +
+                            "Remove the raw import, call or type. If a numeric ceiling must move " +
+                            "deliberately, update it in the same commit and explain why in the " +
+                            "KPKMP.md Execution log.",
                     )
                 },
             )
@@ -127,26 +109,16 @@ abstract class CheckCinteropCouplingTask : DefaultTask() {
             logger.lifecycle("$name: ${measured.counts.getValue(name)} (ceiling ${recorded.counts.getValue(name)})")
         }
         for (name in REPORTED_NAMES) {
-            logger.lifecycle("$name: ${measured.counts.getValue(name)} (component, reported only)")
+            logger.lifecycle("$name: ${measured.counts.getValue(name)} (reported only)")
         }
-        logger.lifecycle(
-            "struct types named in Kotlin: ${measured.namedStructTypes.size} of " +
-                "${recorded.allowedStructTypes.size} allowed",
-        )
-        val stale = recorded.allowedStructTypes - measured.namedStructTypes
-        if (stale.isNotEmpty()) {
-            logger.lifecycle(
-                "  allowed but no longer named (stale lines, removable in a normal commit): " +
-                    stale.sorted().joinToString(),
-            )
-        }
+        logger.lifecycle("raw FFmpeg struct types named in Kotlin: ${measured.namedStructTypes.size}")
     }
 
     /** What [measure] returns: the four counts plus the struct type names Kotlin actually names. */
     data class Measurement(val counts: Map<String, Int>, val namedStructTypes: Set<String>)
 
-    /** What [parseBaseline] returns: the two ceilings plus the allowed struct type names. */
-    data class Baseline(val counts: Map<String, Int>, val allowedStructTypes: Set<String>)
+    /** What [parseBaseline] returns: the two zero ceilings. */
+    data class Baseline(val counts: Map<String, Int>)
 
     companion object {
 
@@ -154,12 +126,10 @@ abstract class CheckCinteropCouplingTask : DefaultTask() {
         const val FFMPEG_TYPED_CROSSINGS: String = "ffmpeg_typed_crossings"
         const val FFKMP_CALL_SITES: String = "ffkmp_call_sites"
         const val DIRECT_LIBAV_CALL_SITES: String = "direct_libav_call_sites"
-        const val ALLOWED_STRUCT_TYPE: String = "allowed_struct_type"
-
         /** The ratcheted counts, in the order the baseline file lists them. */
         val RATCHETED_NAMES: List<String> = listOf(CINTEROP_IMPORT_LINES, FFMPEG_TYPED_CROSSINGS)
 
-        /** The reported-only components of [FFMPEG_TYPED_CROSSINGS]. */
+        /** The reported-only view of opaque helper traffic and the direct-call count. */
         val REPORTED_NAMES: List<String> = listOf(FFKMP_CALL_SITES, DIRECT_LIBAV_CALL_SITES)
 
         /** `ffmpeg.def`, relative to the measured source root. */
@@ -172,25 +142,12 @@ abstract class CheckCinteropCouplingTask : DefaultTask() {
         private val SKIPPED_DIRECTORY_NAMES = setOf("build", ".claude")
 
         /**
-         * An import out of the `ffmpeg` cinterop package that is coupling to FFmpeg.
-         *
-         * The negative lookahead is the load-bearing part, and B1.6 is what forced it. The `ffmpeg`
-         * cinterop module holds two quite different surfaces. One is FFmpeg itself: `AVFrame`,
-         * `avcodec_send_packet`, the `ffkmp_` helpers, every one of them naming or handling an
-         * FFmpeg type. The other is the OPAQUE surface, spelled `kc_` and `KC_`, whose header
-         * (`native/kitecodec-c/include/kitecodec_abi.h`) includes no FFmpeg header and names no
-         * FFmpeg type at all.
-         *
-         * Counting the second as coupling would make this ratchet punish the very migration it
-         * exists to protect. Measured at B1.6: adding the identity gate took the FFmpeg imports
-         * from 253 to 246 and added 26 `kc_`/`KC_` imports, and a ratchet that read that as 272
-         * would have failed a change whose net effect was to reduce the coupling.
-         *
-         * The opaque surface is deliberately not ratcheted here, in either direction. It is meant
-         * to grow, and `native/kitecodec-c/exported-symbols-baseline.txt` (installed by interlude
-         * item I-09) plus `symbol-audit.sh` are what hold it to a decided set.
+         * A direct FFmpeg import out of the `ffmpeg` cinterop package. The negative lookahead
+         * excludes all three spellings of the KiteCodec-owned opaque boundary.
          */
-        private val CINTEROP_IMPORT = Regex("""^import ffmpeg\.(?!kc_|KC_)""")
+        private val IMPORT_DECLARATION = Regex("""^import[ \t]+""")
+
+        private val CINTEROP_IMPORT = Regex("""^import[ \t]+ffmpeg\.(?!ffkmp_|kc_|KC_)""")
 
         private val HELPER_MENTION = Regex("""ffkmp_[A-Za-z0-9_]*""")
 
@@ -199,75 +156,203 @@ abstract class CheckCinteropCouplingTask : DefaultTask() {
          * it resolves, although the engine would backtrack into the right branch either way.
          */
         private val LIBAV_CALL = Regex(
-            """\b(?:avcodec|avdevice|avfilter|avformat|avutil|swresample|swscale|postproc|sws|swr|av)""" +
-                """_[A-Za-z0-9_]*\(""",
+            """(?<![A-Za-z0-9_])`?(?:avcodec|avdevice|avfilter|avformat|avutil|avio|""" +
+                """swresample|swscale|postproc|sws|swr|av)_[A-Za-z0-9_]*`?[ \t]*\(""",
         )
 
         /**
          * An FFmpeg CamelCase type token in C, with the `enum` keyword in front of it when it is
          * there. Group 1 empty means this occurrence proves the token is a struct type.
          */
-        private val DEF_TYPE_TOKEN = Regex("""(enum\s+)?\b((?:AV|Sws|Swr)[A-Z][a-z][A-Za-z0-9]*)\b""")
+        private val DEF_TYPE_TOKEN =
+            Regex("""(enum\s+)?\b((?:AV|Sws|Swr)[A-Z][A-Za-z0-9]*[a-z][A-Za-z0-9]*)\b""")
 
         /**
-         * Removes line comments, KDoc and (nested) block comments from Kotlin source, preserving
-         * string literals, character literals and line structure. Comments leave as one space so
-         * token boundaries survive. Kotlin block comments nest, and a `//`, `/*` or `*/` inside a
-         * quoted or raw string is content rather than a comment marker; both facts are handled
-         * here and covered by the task's tests, because this stripper decides what the ratchet
-         * can see.
+         * Removes Kotlin line comments, KDoc and nested block comments. Quoted content is kept:
+         * `//`, `/*` and `*/` inside ordinary strings, raw strings or character literals are not
+         * comments. Unescaped `${...}` in ordinary and raw strings re-enters code mode, so comments
+         * inside template expressions are stripped. Newlines survive for readable diagnostics.
          */
-        fun stripComments(text: String): String {
+        fun stripComments(text: String): String = lexKotlin(text, blankQuotedContent = false)
+
+        /**
+         * Returns only executable Kotlin text. String and character content is replaced with
+         * whitespace, while live template expressions and backtick identifiers remain code.
+         */
+        fun codeOnly(text: String): String = lexKotlin(text, blankQuotedContent = true)
+
+        private fun lexKotlin(text: String, blankQuotedContent: Boolean): String {
             val out = StringBuilder(text.length)
+            val stack = mutableListOf(LexerFrame(LexerMode.CODE))
+
+            fun appendBlanked(c: Char) {
+                out.append(if (c.isWhitespace()) c else ' ')
+            }
+
+            fun appendQuoted(c: Char) {
+                if (blankQuotedContent) appendBlanked(c) else out.append(c)
+            }
+
+            fun appendQuotedRange(start: Int, count: Int) {
+                repeat(count) { offset -> appendQuoted(text[start + offset]) }
+            }
+
+            fun appendBlankedRange(start: Int, count: Int) {
+                repeat(count) { offset -> appendBlanked(text[start + offset]) }
+            }
+
+            fun isIdentifierStart(c: Char): Boolean = c == '_' || c.isLetter()
+
+            fun isIdentifierPart(c: Char): Boolean = c == '_' || c.isLetterOrDigit()
+
             var i = 0
             val n = text.length
-            var blockDepth = 0
-            var inLine = false
-            var inString = false
-            var inRawString = false
-            var inChar = false
             while (i < n) {
                 val c = text[i]
-                when {
-                    inLine -> {
-                        if (c == '\n') { inLine = false; out.append(c) }
-                        i++
-                    }
-                    blockDepth > 0 -> {
-                        if (c == '/' && i + 1 < n && text[i + 1] == '*') { blockDepth++; i += 2 }
-                        else if (c == '*' && i + 1 < n && text[i + 1] == '/') { blockDepth--; i += 2 }
-                        else { if (c == '\n') out.append(c); i++ }
-                    }
-                    inRawString -> {
-                        out.append(c)
+                val frame = stack.last()
+                when (frame.mode) {
+                    LexerMode.RAW_STRING -> {
                         if (c == '"' && i + 2 < n && text[i + 1] == '"' && text[i + 2] == '"') {
-                            out.append("\"\""); i += 3; inRawString = false
-                        } else i++
-                    }
-                    inString -> {
-                        out.append(c)
-                        if (c == '\\' && i + 1 < n) { out.append(text[i + 1]); i += 2 }
-                        else { if (c == '"') inString = false; i++ }
-                    }
-                    inChar -> {
-                        out.append(c)
-                        if (c == '\\' && i + 1 < n) { out.append(text[i + 1]); i += 2 }
-                        else { if (c == '\'') inChar = false; i++ }
-                    }
-                    else -> when {
-                        c == '/' && i + 1 < n && text[i + 1] == '/' -> { inLine = true; out.append(' '); i += 2 }
-                        c == '/' && i + 1 < n && text[i + 1] == '*' -> { blockDepth = 1; out.append(' '); i += 2 }
-                        c == '"' && i + 2 < n && text[i + 1] == '"' && text[i + 2] == '"' -> {
-                            inRawString = true; out.append("\"\"\""); i += 3
+                            appendQuotedRange(i, 3)
+                            i += 3
+                            stack.removeAt(stack.lastIndex)
+                        } else if (c == '$' && i + 1 < n && text[i + 1] == '{') {
+                            out.append("${'$'}{")
+                            i += 2
+                            stack += LexerFrame(LexerMode.CODE, templateBraceDepth = 1)
+                        } else if (c == '$' && i + 1 < n && isIdentifierStart(text[i + 1])) {
+                            out.append(c)
+                            i++
+                            while (i < n && isIdentifierPart(text[i])) {
+                                out.append(text[i])
+                                i++
+                            }
+                        } else if (c == '$' && i + 1 < n && text[i + 1] == '`') {
+                            out.append("${'$'}`")
+                            i += 2
+                            stack += LexerFrame(LexerMode.BACKTICK_ID)
+                        } else {
+                            appendQuoted(c)
+                            i++
                         }
-                        c == '"' -> { inString = true; out.append(c); i++ }
-                        c == '\'' -> { inChar = true; out.append(c); i++ }
-                        else -> { out.append(c); i++ }
+                    }
+                    LexerMode.STRING -> {
+                        if (c == '\\' && i + 1 < n) {
+                            appendQuotedRange(i, 2)
+                            i += 2
+                        } else if (c == '$' && i + 1 < n && text[i + 1] == '{') {
+                            out.append("${'$'}{")
+                            i += 2
+                            stack += LexerFrame(LexerMode.CODE, templateBraceDepth = 1)
+                        } else if (c == '$' && i + 1 < n && isIdentifierStart(text[i + 1])) {
+                            out.append(c)
+                            i++
+                            while (i < n && isIdentifierPart(text[i])) {
+                                out.append(text[i])
+                                i++
+                            }
+                        } else if (c == '$' && i + 1 < n && text[i + 1] == '`') {
+                            out.append("${'$'}`")
+                            i += 2
+                            stack += LexerFrame(LexerMode.BACKTICK_ID)
+                        } else {
+                            appendQuoted(c)
+                            if (c == '"') stack.removeAt(stack.lastIndex)
+                            i++
+                        }
+                    }
+                    LexerMode.CHAR -> {
+                        if (c == '\\' && i + 1 < n) {
+                            appendQuotedRange(i, 2)
+                            i += 2
+                        } else {
+                            appendQuoted(c)
+                            if (c == '\'') stack.removeAt(stack.lastIndex)
+                            i++
+                        }
+                    }
+                    LexerMode.BACKTICK_ID -> {
+                        out.append(c)
+                        i++
+                        if (c == '`') stack.removeAt(stack.lastIndex)
+                    }
+                    LexerMode.CODE -> when {
+                        c == '/' && i + 1 < n && text[i + 1] == '/' -> {
+                            while (i < n && text[i] != '\n') {
+                                appendBlanked(text[i])
+                                i++
+                            }
+                        }
+                        c == '/' && i + 1 < n && text[i + 1] == '*' -> {
+                            appendBlankedRange(i, 2)
+                            i += 2
+                            var blockDepth = 1
+                            while (i < n && blockDepth > 0) {
+                                when {
+                                    text[i] == '/' && i + 1 < n && text[i + 1] == '*' -> {
+                                        appendBlankedRange(i, 2)
+                                        blockDepth++
+                                        i += 2
+                                    }
+                                    text[i] == '*' && i + 1 < n && text[i + 1] == '/' -> {
+                                        appendBlankedRange(i, 2)
+                                        blockDepth--
+                                        i += 2
+                                    }
+                                    else -> {
+                                        appendBlanked(text[i])
+                                        i++
+                                    }
+                                }
+                            }
+                        }
+                        c == '"' && i + 2 < n && text[i + 1] == '"' && text[i + 2] == '"' -> {
+                            appendQuotedRange(i, 3)
+                            i += 3
+                            stack += LexerFrame(LexerMode.RAW_STRING)
+                        }
+                        c == '"' -> {
+                            appendQuoted(c)
+                            i++
+                            stack += LexerFrame(LexerMode.STRING)
+                        }
+                        c == '\'' -> {
+                            appendQuoted(c)
+                            i++
+                            stack += LexerFrame(LexerMode.CHAR)
+                        }
+                        c == '`' -> {
+                            out.append(c)
+                            i++
+                            stack += LexerFrame(LexerMode.BACKTICK_ID)
+                        }
+                        frame.templateBraceDepth > 0 && c == '{' -> {
+                            frame.templateBraceDepth++
+                            out.append(c)
+                            i++
+                        }
+                        frame.templateBraceDepth > 0 && c == '}' -> {
+                            frame.templateBraceDepth--
+                            out.append(c)
+                            i++
+                            if (frame.templateBraceDepth == 0) stack.removeAt(stack.lastIndex)
+                        }
+                        else -> {
+                            out.append(c)
+                            i++
+                        }
                     }
                 }
             }
             return out.toString()
         }
+
+        private enum class LexerMode { CODE, STRING, RAW_STRING, CHAR, BACKTICK_ID }
+
+        private data class LexerFrame(
+            val mode: LexerMode,
+            var templateBraceDepth: Int = 0,
+        )
 
         /**
          * Recomputes the counts over [sourceDir]. [cDeclarationFiles] are the C headers and
@@ -285,7 +370,7 @@ abstract class CheckCinteropCouplingTask : DefaultTask() {
             val kotlinTexts = sourceDir.walkTopDown()
                 .onEnter { it.name !in SKIPPED_DIRECTORY_NAMES }
                 .filter { it.isFile && it.extension == "kt" }
-                .map { stripComments(it.readText()) }
+                .map { codeOnly(it.readText()) }
                 .toList()
 
             var importLines = 0
@@ -293,10 +378,11 @@ abstract class CheckCinteropCouplingTask : DefaultTask() {
             var libavCalls = 0
             for (text in kotlinTexts) {
                 for (line in text.lineSequence()) {
+                    val normalizedLine = line.trimStart()
                     // An import is a declaration of coupling, not a use of it: counted by count 1
                     // and excluded from the crossings so one import does not read as a call.
-                    if (line.startsWith("import ")) {
-                        if (CINTEROP_IMPORT.containsMatchIn(line)) importLines++
+                    if (IMPORT_DECLARATION.containsMatchIn(normalizedLine)) {
+                        if (CINTEROP_IMPORT.containsMatchIn(normalizedLine)) importLines++
                         continue
                     }
                     helperCalls += HELPER_MENTION.findAll(line).count()
@@ -313,7 +399,7 @@ abstract class CheckCinteropCouplingTask : DefaultTask() {
             return Measurement(
                 counts = mapOf(
                     CINTEROP_IMPORT_LINES to importLines,
-                    FFMPEG_TYPED_CROSSINGS to helperCalls + libavCalls,
+                    FFMPEG_TYPED_CROSSINGS to libavCalls,
                     FFKMP_CALL_SITES to helperCalls,
                     DIRECT_LIBAV_CALL_SITES to libavCalls,
                 ),
@@ -336,12 +422,11 @@ abstract class CheckCinteropCouplingTask : DefaultTask() {
         }
 
         /**
-         * Reads `name value` lines for the ratcheted counts and `allowed_struct_type Name` lines
-         * for the type allowlist, ignoring blank lines and everything from a `#` onwards.
+         * Reads `name value` lines for the ratcheted counts, ignoring blank lines and everything
+         * from a `#` onwards.
          */
         fun parseBaseline(baselineFile: File): Baseline {
             val recorded = LinkedHashMap<String, Int>()
-            val allowed = linkedSetOf<String>()
             baselineFile.readLines().forEachIndexed { index, raw ->
                 val line = raw.substringBefore('#').trim()
                 if (line.isEmpty()) return@forEachIndexed
@@ -351,19 +436,10 @@ abstract class CheckCinteropCouplingTask : DefaultTask() {
                         "${baselineFile.path}:${index + 1}: expected `name value`, found `$raw`.",
                     )
                 }
-                if (parts[0] == ALLOWED_STRUCT_TYPE) {
-                    if (!allowed.add(parts[1])) {
-                        throw GradleException(
-                            "${baselineFile.path}:${index + 1}: duplicate $ALLOWED_STRUCT_TYPE `${parts[1]}`.",
-                        )
-                    }
-                    return@forEachIndexed
-                }
                 if (parts[0] !in RATCHETED_NAMES || parts[1].toIntOrNull() == null) {
                     throw GradleException(
                         "${baselineFile.path}:${index + 1}: unknown line `$raw`. The ratcheted " +
-                            "counts are ${RATCHETED_NAMES.joinToString()}, and type names are " +
-                            "`$ALLOWED_STRUCT_TYPE Name` lines.",
+                            "counts are ${RATCHETED_NAMES.joinToString()}.",
                     )
                 }
                 recorded[parts[0]] = parts[1].toInt()
@@ -372,7 +448,7 @@ abstract class CheckCinteropCouplingTask : DefaultTask() {
             if (missing.isNotEmpty()) {
                 throw GradleException("${baselineFile.path}: no baseline for ${missing.joinToString()}.")
             }
-            return Baseline(recorded, allowed)
+            return Baseline(recorded)
         }
     }
 }

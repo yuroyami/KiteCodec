@@ -14,11 +14,12 @@
 
 #include "harness.h"
 #include "kitecodec_helpers.h"
+#include "kitecodec_handles.h"
 
 #include <errno.h>
 #include <signal.h>
+#include <stddef.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -101,7 +102,7 @@ static void expect_einval_in_child(const char *id, invalid_call call)
     KC_CHECKF(WIFEXITED(status), "%s child ended without an exit status", id);
     KC_EQ_INT(WEXITSTATUS(status), 0);
     KC_EQ_SIZE(received, sizeof(rc));
-    KC_EQ_INT(rc, AVERROR(EINVAL));
+    KC_EQ_INT(rc, -EINVAL);
     kc_detail("rc=%d", rc);
 }
 
@@ -158,7 +159,7 @@ static int invalid_codecctx_from_par(void)
 static int invalid_graph_build_video(void)
 {
     return ffkmp_graph_build_video(
-        NULL, NULL, NULL, "null", 16, 16, AV_PIX_FMT_YUV420P,
+        NULL, NULL, NULL, "null", 16, 16, ffkmp_pix_fmt_from_name("yuv420p"),
         1, 30, 30, 1, 1, 1
     );
 }
@@ -166,7 +167,7 @@ static int invalid_graph_build_video(void)
 static int invalid_graph_build_audio(void)
 {
     return ffkmp_graph_build_audio(
-        NULL, NULL, NULL, "anull", 48000, AV_SAMPLE_FMT_FLTP, 2,
+        NULL, NULL, NULL, "anull", 48000, ffkmp_sample_fmt_from_name("fltp"), 2,
         1, 48000, -1, -1, 0
     );
 }
@@ -199,19 +200,19 @@ static int invalid_graph_receive(void)
 
 static void control_audio_description_null(void)
 {
-    AVFilterGraph *graph = NULL;
-    AVFilterContext *source = NULL;
-    AVFilterContext *sources[1] = { NULL };
-    AVFilterContext *sink = NULL;
+    kc_filter_graph *graph = NULL;
+    kc_filter_ctx *source = NULL;
+    kc_filter_ctx *sources[1] = { NULL };
+    kc_filter_ctx *sink = NULL;
     const int sample_rates[1] = { 48000 };
-    const int sample_fmts[1] = { AV_SAMPLE_FMT_FLTP };
+    const int sample_fmts[1] = { ffkmp_sample_fmt_from_name("fltp") };
     const int channels[1] = { 2 };
     const int tb_nums[1] = { 1 };
     const int tb_dens[1] = { 48000 };
-    AVFrame *pushed;
-    AVFrame *pulled;
+    kc_frame *pushed;
+    kc_frame *pulled;
     int rc = ffkmp_graph_build_audio(
-        &graph, &source, &sink, NULL, 48000, AV_SAMPLE_FMT_FLTP, 2,
+        &graph, &source, &sink, NULL, 48000, ffkmp_sample_fmt_from_name("fltp"), 2,
         1, 48000, -1, -1, 0
     );
 
@@ -226,7 +227,7 @@ static void control_audio_description_null(void)
     rc = ffkmp_graph_build_audio_multi(
         &graph, sources, &sink, NULL, 1,
         sample_rates, sample_fmts, channels, tb_nums, tb_dens,
-        AV_SAMPLE_FMT_S16, 44100, 1
+        ffkmp_sample_fmt_from_name("s16"), 44100, 1
     );
     KC_EQ_INT(rc, 0);
     KC_NOT_NULL(graph);
@@ -235,7 +236,7 @@ static void control_audio_description_null(void)
 
     pushed = ffkmp_frame_alloc();
     KC_NOT_NULL(pushed);
-    ffkmp_frame_set_format(pushed, AV_SAMPLE_FMT_FLTP);
+    ffkmp_frame_set_format(pushed, ffkmp_sample_fmt_from_name("fltp"));
     ffkmp_frame_set_sample_rate(pushed, 48000);
     ffkmp_frame_set_nb_samples(pushed, 1024);
     ffkmp_frame_set_ch_layout_default(pushed, 2);
@@ -247,7 +248,7 @@ static void control_audio_description_null(void)
     pulled = ffkmp_frame_alloc();
     KC_NOT_NULL(pulled);
     KC_EQ_INT(ffkmp_graph_receive(sink, pulled), 0);
-    KC_EQ_INT(ffkmp_frame_format(pulled), AV_SAMPLE_FMT_S16);
+    KC_EQ_INT(ffkmp_frame_format(pulled), ffkmp_sample_fmt_from_name("s16"));
     KC_EQ_INT(ffkmp_frame_sample_rate(pulled), 44100);
     KC_EQ_INT(ffkmp_frame_channels(pulled), 1);
     ffkmp_frame_free(pulled);
@@ -258,11 +259,11 @@ static void control_audio_description_null(void)
 
 static void control_graph_send_null_frame(void)
 {
-    AVFilterGraph *graph = NULL;
-    AVFilterContext *source = NULL;
-    AVFilterContext *sink = NULL;
+    kc_filter_graph *graph = NULL;
+    kc_filter_ctx *source = NULL;
+    kc_filter_ctx *sink = NULL;
     int rc = ffkmp_graph_build_audio(
-        &graph, &source, &sink, "anull", 48000, AV_SAMPLE_FMT_FLTP, 2,
+        &graph, &source, &sink, "anull", 48000, ffkmp_sample_fmt_from_name("fltp"), 2,
         1, 48000, -1, -1, 0
     );
 
@@ -277,7 +278,7 @@ static void control_graph_send_null_frame(void)
 
 static void control_mux_packet_null(void)
 {
-    AVFormatContext *context = NULL;
+    kc_fmt_ctx *context = NULL;
     const kc_codec *codec;
     kc_codec_ctx *codec_context;
     kc_stream *stream;
@@ -317,7 +318,7 @@ static void control_mux_packet_null(void)
 
 static void control_output_format_null(void)
 {
-    AVFormatContext *context = NULL;
+    kc_fmt_ctx *context = NULL;
     int rc = ffkmp_fmt_alloc_output2(&context, "kitecodec-args.mp4", NULL);
 
     KC_EQ_INT(rc, 0);
@@ -329,8 +330,8 @@ static void control_output_format_null(void)
 
 static void control_codecctx_open_null_codec(void)
 {
-    const AVCodec *codec = avcodec_find_decoder(AV_CODEC_ID_PCM_S16LE);
-    AVCodecContext *context;
+    const kc_codec *codec = ffkmp_find_decoder_by_name("pcm_s16le");
+    kc_codec_ctx *context;
     int rc;
 
     KC_NOT_NULL(codec);
@@ -351,7 +352,7 @@ static void control_codecctx_open_null_codec(void)
 
 static void control_fmt_alloc_output2_null_path(void)
 {
-    AVFormatContext *context = NULL;
+    kc_fmt_ctx *context = NULL;
     int rc = ffkmp_fmt_alloc_output2(&context, NULL, "null");
 
     KC_EQ_INT(rc, 0);

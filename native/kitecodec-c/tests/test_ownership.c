@@ -65,6 +65,17 @@
 
 #include "kitecodec_helpers.h"
 
+#include <libavcodec/avcodec.h>
+#include <libavfilter/avfilter.h>
+#include <libavformat/avformat.h>
+#include <libavutil/channel_layout.h>
+#include <libavutil/dict.h>
+#include <libavutil/error.h>
+#include <libavutil/frame.h>
+#include <libavutil/mem.h>
+#include <libavutil/pixfmt.h>
+#include <libavutil/samplefmt.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

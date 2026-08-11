@@ -1,7 +1,5 @@
 package io.github.yuroyami.kitecodec
 
-import ffmpeg.AVFilterContext
-import ffmpeg.AVFilterGraph
 import ffmpeg.ffkmp_buffersink_set_frame_size
 import ffmpeg.ffkmp_buffersink_time_base
 import ffmpeg.ffkmp_frame_unref
@@ -12,6 +10,8 @@ import ffmpeg.ffkmp_graph_build_video_multi
 import ffmpeg.ffkmp_graph_free
 import ffmpeg.ffkmp_graph_receive
 import ffmpeg.ffkmp_graph_send
+import ffmpeg.kc_filter_ctx
+import ffmpeg.kc_filter_graph
 import kotlinx.atomicfu.atomic
 import kotlinx.cinterop.Arena
 import kotlinx.cinterop.CPointer
@@ -36,9 +36,9 @@ import kotlinx.coroutines.flow.flow
 private const val MAX_STARVED_ATTEMPTS = 2
 
 public actual class FilterGraph internal constructor(
-    private val graph: CPointer<AVFilterGraph>,
-    private val srcs: List<CPointer<AVFilterContext>>,
-    private val sink: CPointer<AVFilterContext>,
+    private val graph: CPointer<kc_filter_graph>,
+    private val srcs: List<CPointer<kc_filter_ctx>>,
+    private val sink: CPointer<kc_filter_ctx>,
     private val inputType: MediaType,
 ) : AutoCloseable {
 
@@ -228,7 +228,7 @@ public actual class FilterGraph internal constructor(
         outFrameHolder = null
         val a = Arena()
         try {
-            val gp = a.alloc<CPointerVar<AVFilterGraph>>().also { it.value = graph }
+            val gp = a.alloc<CPointerVar<kc_filter_graph>>().also { it.value = graph }
             ffkmp_graph_free(gp.ptr)
         } finally { a.clear() }
     }
@@ -246,9 +246,9 @@ public actual class FilterGraph internal constructor(
             // The FFmpeg identity gate, register item B1-02. Before the first allocation.
             requireCompatibleFFmpeg()
             val arena = Arena()
-            val graphVar = arena.allocPointerTo<AVFilterGraph>()
-            val srcVar = arena.allocPointerTo<AVFilterContext>()
-            val sinkVar = arena.allocPointerTo<AVFilterContext>()
+            val graphVar = arena.allocPointerTo<kc_filter_graph>()
+            val srcVar = arena.allocPointerTo<kc_filter_ctx>()
+            val sinkVar = arena.allocPointerTo<kc_filter_ctx>()
 
             val rc = ffkmp_graph_build_video(
                 graphVar.ptr, srcVar.ptr, sinkVar.ptr,
@@ -280,9 +280,9 @@ public actual class FilterGraph internal constructor(
             // The FFmpeg identity gate, register item B1-02. Before the first allocation.
             requireCompatibleFFmpeg()
             val arena = Arena()
-            val graphVar = arena.allocPointerTo<AVFilterGraph>()
-            val srcVar = arena.allocPointerTo<AVFilterContext>()
-            val sinkVar = arena.allocPointerTo<AVFilterContext>()
+            val graphVar = arena.allocPointerTo<kc_filter_graph>()
+            val srcVar = arena.allocPointerTo<kc_filter_ctx>()
+            val sinkVar = arena.allocPointerTo<kc_filter_ctx>()
 
             val outFmtAv = if (outputSampleFormat == SampleFormat.None) -1 else sampleFormatToAv(outputSampleFormat)
             val rc = ffkmp_graph_build_audio(
@@ -307,9 +307,9 @@ public actual class FilterGraph internal constructor(
             require(inputs.isNotEmpty()) { "Need at least one input" }
             memScoped {
                 val n = inputs.size
-                val graphVar = allocPointerTo<AVFilterGraph>()
-                val sinkVar = allocPointerTo<AVFilterContext>()
-                val srcsArr = allocArray<CPointerVar<AVFilterContext>>(n)
+                val graphVar = allocPointerTo<kc_filter_graph>()
+                val sinkVar = allocPointerTo<kc_filter_ctx>()
+                val srcsArr = allocArray<CPointerVar<kc_filter_ctx>>(n)
                 val widths = allocArray<IntVar>(n); val heights = allocArray<IntVar>(n)
                 val pixFmts = allocArray<IntVar>(n)
                 val tbN = allocArray<IntVar>(n); val tbD = allocArray<IntVar>(n)
@@ -347,9 +347,9 @@ public actual class FilterGraph internal constructor(
             require(inputs.isNotEmpty()) { "Need at least one input" }
             memScoped {
                 val n = inputs.size
-                val graphVar = allocPointerTo<AVFilterGraph>()
-                val sinkVar = allocPointerTo<AVFilterContext>()
-                val srcsArr = allocArray<CPointerVar<AVFilterContext>>(n)
+                val graphVar = allocPointerTo<kc_filter_graph>()
+                val sinkVar = allocPointerTo<kc_filter_ctx>()
+                val srcsArr = allocArray<CPointerVar<kc_filter_ctx>>(n)
                 val rates = allocArray<IntVar>(n); val fmts = allocArray<IntVar>(n)
                 val chans = allocArray<IntVar>(n)
                 val tbN = allocArray<IntVar>(n); val tbD = allocArray<IntVar>(n)

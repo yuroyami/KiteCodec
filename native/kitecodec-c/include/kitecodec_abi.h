@@ -8,10 +8,11 @@
  * four byte read 36 bytes past a 416 byte region. In the nondeterministic case it is silent.
  *
  * OPAQUE FROM BIRTH. This header includes no FFmpeg header and names no FFmpeg type. That is a
- * deliberate property and not an accident of what it happens to need: the opaque surface that B2
- * grows starts from here, so it starts clean. The report is flat plain data with fixed char arrays
- * and no pointers, because cinterop binds our own struct with real offsets and Kotlin reads it with
- * one nativeHeap.alloc plus plain field reads.
+ * deliberate property and not an accident of what it happens to need: S1.a.8 grew the opaque
+ * surface across the handle and helper headers, so these three headers are now the complete
+ * cinterop boundary. The report is flat plain data with fixed char arrays and no pointers, because
+ * cinterop binds our own struct with real offsets and Kotlin reads it with one nativeHeap.alloc plus
+ * plain field reads.
  *
  * NO TWO-DIMENSIONAL ARRAYS ANYWHERE IN THE REPORT. cinterop flattens `char names[6][16]` into a
  * single byte array, so `names[i]` would be byte i and not row i, which is a wrong reading that
@@ -24,14 +25,13 @@
  * compares against could differ between those copies. The same argument settles where the frozen
  * header numbers come from: kitecodec_abi.c is compiled in THE C ARCHIVE'S OWN compile, against the
  * same include tree as every helper unit in that archive, so within the archive the offsets and
- * these macros came from one set of headers. That sentence describes the archive's internal
- * consistency and nothing more: the cinterop half of the same klib processes the headers separately,
- * and the interlude (I-07) measured the two disagreeing when the C compile was stale while cinterop
- * regenerated. What holds the two halves together is the compile task tracking the version headers
- * by content, plus klib-metadata-diff.sh's two-bakings assertion, which reads the constant out of
- * the metadata and the frozen value out of the archive and refuses a mismatch. Nothing can recover
- * the header version after the fact, which is why freezing at compile time is the only correct
- * construction.
+ * these macros came from one set of headers. The archive is now the sole FFmpeg-header baking, and
+ * the compile task keeps its six version-header inputs content-tracked. cinterop parses no FFmpeg
+ * header; its metadata gate instead proves that all six former LIB version constants are absent and
+ * that every direct binding belongs to the `_ffkmp_` or `_kc_` boundary. The interlude's historical
+ * two-bakings comparison caught a stale archive before this reduction, but there is deliberately no
+ * second header baking to compare now. Nothing can recover the archive's header version after the
+ * fact, which is why freezing it at compile time remains the only correct construction.
  */
 
 #ifndef KITECODEC_ABI_H
@@ -39,10 +39,10 @@
 
 #include <stdint.h>
 
-/* The version of THIS C surface, not of FFmpeg. Major changes when a declaration in this header
+/* The version of THIS C surface, not of FFmpeg. Major changes when a declaration in its public headers
  * changes shape; minor when something is added compatibly. Read at runtime by kc_abi_version(). */
-#define KITECODEC_C_ABI_MAJOR 1
-#define KITECODEC_C_ABI_MINOR 1
+#define KITECODEC_C_ABI_MAJOR 2
+#define KITECODEC_C_ABI_MINOR 0
 
 /* The six libraries the gate covers, and their fixed order inside the report's arrays. Every array
  * in kc_ffmpeg_report is indexed by these, and kc_ffmpeg_library_name() names them. */

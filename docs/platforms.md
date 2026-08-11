@@ -17,7 +17,11 @@ KiteCodec links FFmpeg's libav\* libraries and ships none of their bytes. In a c
 
 ### Mode 1: dynamic against system FFmpeg
 
-This is the default, and what the macOS arm64 build does today. The Gradle build's `FFmpegPaths` finds your system FFmpeg, points cinterop at its headers and shared libraries, and links dynamically. Your users need FFmpeg installed at runtime.
+This is the default, and what the macOS arm64 build does today. The Gradle build's `FFmpegPaths`
+finds your system FFmpeg, compiles the C archive against its headers and links the shared libraries
+dynamically. The cinterop def parses only KiteCodec's opaque helper, handle and ABI headers. The
+module build still supplies the FFmpeg include path redundantly to cinterop, where that reduced
+header set does not use it. Your users need FFmpeg installed at runtime.
 
 === "macOS"
 
@@ -34,7 +38,7 @@ This is the default, and what the macOS arm64 build does today. The Gradle build
         libavfilter-dev libavutil-dev libswscale-dev libswresample-dev
     ```
 
-`FFmpegPaths` discovers the apt-installed libraries and points cinterop at them.
+`FFmpegPaths` discovers the apt-installed headers and libraries for the C archive and final link.
 
 ### Mode 2: vendored static (release)
 
@@ -48,7 +52,7 @@ git clone --depth 1 --branch n8.0 https://github.com/FFmpeg/FFmpeg vendor/ffmpeg
 ./gradlew :kitecodec-core:buildFFmpegForAll
 ```
 
-The Gradle task cross-compiles a pinned codec and filter set and drops `.a` libraries under `native-libs/<license>/<target>/` (`lgpl` or `gpl`). `FFmpegPaths` notices and switches cinterop to static linking; the resulting executable carries everything it needs, around 25 MB.
+The Gradle task cross-compiles a pinned codec and filter set and drops `.a` libraries under `native-libs/<license>/<target>/` (`lgpl` or `gpl`). `FFmpegPaths` notices, compiles the C archive against that tree and switches the final link to the static libraries; the resulting executable carries everything it needs, around 25 MB.
 
 The static profile is **LGPL by default**: no `--enable-gpl`, no libx264 / libx265. That is the App-Store- and closed-source-safe flavor.
 

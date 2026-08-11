@@ -9,6 +9,9 @@
  * The codecpar part of the FFmpeg helper layer: the def's 'AVCodecParameters' section(s). */
 
 #include "kitecodec_helpers.h"
+
+#include <libavcodec/avcodec.h>
+
 /* ════════════ AVCodecParameters ════════════ */
 
 KC_API int     ffkmp_codecpar_codec_type(AVCodecParameters *p) { return p ? (int)p->codec_type : -1; }

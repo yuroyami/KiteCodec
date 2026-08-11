@@ -3,9 +3,10 @@
 # The compatibility instrument for the `ffmpeg` cinterop surface.
 #
 # `apiCheck` guards kitecodec-core's own klib. It says nothing about the cinterop klib, which is
-# a separate artifact and is where every FFmpeg binding and every ffkmp_ helper lives. This script
-# is that missing guard: it dumps the cinterop klib's metadata, filters it, compares it against a
-# committed baseline, and reports which declarations were added and which were removed.
+# a separate artifact and is where KiteCodec's opaque kc_/ffkmp_ bindings live. This script is that
+# missing guard: it dumps the cinterop klib's metadata, first rejects any raw libav surface, then
+# filters it, compares it against a committed baseline, and reports which declarations were added
+# and which were removed.
 #
 # Why the filter. Every declaration carries a `@kotlinx/cinterop/internal/CCall(id =
 # "knifunptr_ffmpeg<N>_<name>")` annotation whose N is a sequence number over the whole module.
@@ -13,9 +14,9 @@
 # hundreds of meaningless lines. The numbers have no Kotlin meaning, so every line mentioning
 # `knifunptr_` is dropped before the comparison.
 #
-# What a real change looks like. A helper that cinterop sees as `static inline` gets a bridge stub
-# and carries only the `CCall(id = ...)` annotation. A helper that cinterop sees as an ordinary
-# external function additionally carries
+# What the historical B1.3 lift looked like. A helper that cinterop saw as `static inline` got a
+# bridge stub and carried only the `CCall(id = ...)` annotation. A helper that cinterop saw as an
+# ordinary external function additionally carried
 # `@kotlinx/cinterop/internal/CCall.Direct(name = "_<symbol>")`, which is the mechanical proof that
 # the call now goes straight to a real symbol instead of through a generated stub. So the B1.3 lift
 # shows up here as one added `CCall.Direct` line per lifted helper, with no declaration removed and
@@ -28,12 +29,16 @@
 #   ./scripts/klib-metadata-diff.sh --update            rewrite the baseline from the current klib
 #   ./scripts/klib-metadata-diff.sh --target macosArm64 pick another Kotlin/Native target directory
 #
+# Every mode, including `--update`, first enforces the post-S1.a.8 opaque boundary: none of the six
+# libav version constants may survive, and every direct binding must begin `_ffkmp_` or `_kc_`.
+#
 # `--update` is how a sub-phase that deliberately changes the cinterop surface re-baselines after
 # its own differential has been read and accepted. It is a normal commit, exactly like lowering a
 # coupling-ratchet number, and the Execution log entry says which declarations moved.
 #
 # Exit status: 0 when the klib matches the baseline, 2 on a usage error, 1 when the klib or the
-# tooling is missing, and 1 when anything differs, WITH OR WITHOUT `--check`. The two forms agree
+# tooling is missing, 1 when the opaque-boundary invariant fails, and 1 when anything differs,
+# WITH OR WITHOUT `--check`. The two forms agree
 # since the interlude (I-09): the bare form used to exit 0 on a real mismatch, and the plan's own
 # gate blocks invoked it bare in three places, so a red differential could scroll past a green
 # exit. The bare form still prints the full differential as its output (that is what it is for,
@@ -142,6 +147,62 @@ trap 'rm -rf "$WORK"' EXIT
 
 # Every line mentioning a knifunptr id is dropped, per the note at the top of this file.
 "$KLIB_TOOL" dump-metadata "$KLIB_DIR" | grep -v 'knifunptr_' > "$WORK/current.txt"
+
+# S1.a.8 deliberately removed every FFmpeg header from ffmpeg.def. The cinterop metadata must now
+# contain only KiteCodec-owned bindings: seeing any one of the former version constants proves a
+# raw FFmpeg header leaked back in, and seeing any other direct-binding prefix proves a raw C entry
+# point crossed the boundary. This runs before the --update branch so no write mode can bless a
+# forbidden dump. It is target-independent and therefore applies to every --target value.
+assert_opaque_metadata() {
+    local metadata="$1"
+    local failed=0
+    local name line binding
+    local direct_count=0
+
+    for name in \
+        LIBAVUTIL_VERSION_INT \
+        LIBAVFORMAT_VERSION_INT \
+        LIBAVCODEC_VERSION_INT \
+        LIBAVFILTER_VERSION_INT \
+        LIBSWSCALE_VERSION_INT \
+        LIBSWRESAMPLE_VERSION_INT
+    do
+        if grep -Eq "(^|[^A-Za-z0-9_])${name}([^A-Za-z0-9_]|$)" "$metadata"; then
+            echo "klib-metadata-diff.sh: forbidden raw libav constant in metadata: $name" >&2
+            failed=1
+        fi
+    done
+
+    while IFS= read -r line; do
+        binding="$(printf '%s\n' "$line" | sed -n 's/^.*CCall\.Direct(name = "\([^"]*\)".*$/\1/p')"
+        if [ -z "$binding" ]; then
+            echo "klib-metadata-diff.sh: unrecognised CCall.Direct annotation: $line" >&2
+            failed=1
+            continue
+        fi
+        direct_count=$((direct_count + 1))
+        case "$binding" in
+            _ffkmp_*|_kc_*) ;;
+            *)
+                echo "klib-metadata-diff.sh: forbidden direct binding in metadata: $binding" >&2
+                failed=1
+                ;;
+        esac
+    done < <(grep 'CCall\.Direct' "$metadata" || true)
+
+    if [ "$failed" != 0 ]; then
+        echo "klib-metadata-diff.sh: the cinterop metadata is not opaque." >&2
+        return 1
+    fi
+
+    echo "OPAQUE METADATA BOUNDARY"
+    echo "  raw libav version constants           0"
+    echo "  direct bindings                       $direct_count"
+    echo "  direct bindings outside _kc_/_ffkmp_  0"
+    echo
+}
+
+assert_opaque_metadata "$WORK/current.txt"
 
 digest() {
     if command -v shasum >/dev/null 2>&1; then
@@ -311,60 +372,14 @@ if [ "$DIRECT_ADDED" != "$DIRECT_ADDED_FFKMP" ]; then
 fi
 
 # ────────────────────────────────────────────────────────────────────────────────────────────────
-# The two bakings, compared rather than assumed equal (interlude item I-07). One klib holds two
-# independent processings of the same FFmpeg headers: the cinterop metadata, regenerated whenever
-# header content changes through cinterop's own up-to-date check, and the embedded C archive, whose
-# identity gate froze LIB*_VERSION_INT at ITS compile. The interlude measured the two disagreeing
-# at byte level when the C compile was stale. The compile task tracks the version headers by
-# content now, and this assertion is the artifact-level backstop: the constant is read out of the
-# metadata dump, the frozen value is read out of the archive by linking it and asking the report,
-# and a disagreement fails every mode of this script. Host-runnable targets only, which today is
-# exactly the one target this script covers.
-if [ "$TARGET" = "macosArm64" ]; then
-    KLIB_AVUTIL="$(sed -n 's/.*LIBAVUTIL_VERSION_INT: kotlin\/Int \/\* = \([0-9][0-9]*\) \*\/.*/\1/p' "$WORK/current.txt" | head -1)"
-    ARCHIVE="$REPO/kitecodec-core/build/kitecodec-c/macos_arm64/libkitecodec.a"
-    if [ -z "$KLIB_AVUTIL" ]; then
-        echo "klib-metadata-diff.sh: LIBAVUTIL_VERSION_INT not found in the metadata dump" >&2
-        exit 1
-    fi
-    if [ ! -f "$ARCHIVE" ]; then
-        echo "klib-metadata-diff.sh: no shipped archive at $ARCHIVE" >&2
-        echo "  build it first:  ./gradlew :kitecodec-core:cinteropFfmpegMacosArm64" >&2
-        exit 1
-    fi
-    cat > "$WORK/bakings.c" <<'PROBE'
-#include "kitecodec_abi.h"
-#include <stdio.h>
-int main(void) {
-    kc_ffmpeg_report r;
-    kc_ffmpeg_report_get(&r);
-    printf("%d\n", (r.header_major[KC_LIB_AVUTIL] << 16)
-                 | (r.header_minor[KC_LIB_AVUTIL] << 8)
-                 |  r.header_micro[KC_LIB_AVUTIL]);
-    return 0;
-}
-PROBE
-    FFMPEG_PREFIX="${KC_FFMPEG_PREFIX:-/opt/homebrew}"
-    if ! cc -I "$ROOT/include" "$WORK/bakings.c" "$ARCHIVE" \
-         -L "$FFMPEG_PREFIX/lib" -lavformat -lavcodec -lavutil -lavfilter -lswscale -lswresample \
-         -o "$WORK/bakings" 2> "$WORK/bakings.err"; then
-        echo "klib-metadata-diff.sh: could not link the two-bakings probe:" >&2
-        cat "$WORK/bakings.err" >&2
-        exit 1
-    fi
-    ARCHIVE_AVUTIL="$("$WORK/bakings")"
-    echo
-    echo "TWO BAKINGS, avutil version int"
-    echo "  cinterop metadata constant    $KLIB_AVUTIL"
-    echo "  archive's frozen expectation  $ARCHIVE_AVUTIL"
-    if [ "$KLIB_AVUTIL" != "$ARCHIVE_AVUTIL" ]; then
-        echo "klib-metadata-diff.sh: the two bakings inside the klib DISAGREE." >&2
-        echo "  The cinterop metadata and the embedded C archive saw different FFmpeg headers;" >&2
-        echo "  the archive is stale. Rebuild:" >&2
-        echo "    ./gradlew :kitecodec-core:cinteropFfmpegMacosArm64 --rerun-tasks" >&2
-        exit 1
-    fi
-fi
+# RETIRED AT S1.a.8: the interlude I-07 two-bakings probe used to compare
+# LIBAVUTIL_VERSION_INT parsed into cinterop metadata with the embedded archive's frozen identity
+# report. It caught a real stale C compile while both halves of the klib independently processed
+# the same FFmpeg headers, and that historical result remains valid evidence. S1.a.8 removed the
+# second processing entirely: ffmpeg.def now parses no FFmpeg header, the six LIB*_VERSION_INT
+# constants must be absent by the invariant above, and the compiled archive's identity gate is the
+# one intentional FFmpeg-header baking. Keeping the old link probe would require the raw metadata
+# leak this phase exists to forbid, so there is deliberately no host-only replacement here.
 
 # A mismatch is a failure in BOTH forms since the interlude (I-09): the bare form exiting 0 on a
 # real difference was measured to let the gate read green while the report above said red.

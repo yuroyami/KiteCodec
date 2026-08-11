@@ -51,6 +51,9 @@
 
 #include "kc_fuzz.h"
 
+#include <libavformat/avformat.h>
+#include <libavutil/error.h>
+
 #include <stdlib.h>
 
 /* Never opened. Named so that a stray file in the working directory would be traceable to this

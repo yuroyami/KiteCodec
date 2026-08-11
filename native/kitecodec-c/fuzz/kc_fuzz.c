@@ -7,6 +7,8 @@
 
 #include "kc_fuzz.h"
 
+#include <libavutil/log.h>
+
 #include <stdlib.h>
 #include <string.h>
 

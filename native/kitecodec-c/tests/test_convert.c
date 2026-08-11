@@ -53,6 +53,10 @@
 
 #include "kitecodec_helpers.h"
 
+#include <libavutil/frame.h>
+#include <libavutil/log.h>
+#include <libavutil/pixfmt.h>
+
 /* argv[0] of this process, so the invalid-format case can re-run itself in a child. */
 static const char *self_path;
 

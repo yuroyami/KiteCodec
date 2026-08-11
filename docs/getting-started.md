@@ -24,11 +24,11 @@ KiteCodec links against FFmpeg's libav* libraries. You need them present before 
         libavutil-dev libswscale-dev libswresample-dev
     ```
 
-    `FFmpegPaths` finds Homebrew on macOS (override with `kitecodec.macos.homebrew.prefix` in `gradle.properties`) or apt-installed libraries on Linux, then points cinterop at their headers and shared libraries. Your users need their own FFmpeg installed at runtime.
+    `FFmpegPaths` finds Homebrew on macOS (override with `kitecodec.macos.homebrew.prefix` in `gradle.properties`) or apt-installed libraries on Linux, compiles KiteCodec's C archive against their headers, and links their shared libraries. The cinterop def itself parses only KiteCodec's opaque helper, handle and ABI headers; the module build still passes the FFmpeg include path to cinterop redundantly, where the reduced header set leaves it unused. Your users need their own FFmpeg installed at runtime.
 
 === "Vendored static build"
 
-    For a release where you do not want a runtime FFmpeg dependency, build a minimal static FFmpeg from source with the Gradle task. It drops `.a` libraries under `native-libs/<license>/<target>/`, and `FFmpegPaths` switches the cinterop to static linking automatically.
+    For a release where you do not want a runtime FFmpeg dependency, build a minimal static FFmpeg from source with the Gradle task. It drops `.a` libraries under `native-libs/<license>/<target>/`; `FFmpegPaths` compiles the C archive against that tree and switches the final link to the static libraries automatically.
 
     The task expects the FFmpeg source tree at `vendor/ffmpeg`. Cloning it is a **mandatory first step**:
 

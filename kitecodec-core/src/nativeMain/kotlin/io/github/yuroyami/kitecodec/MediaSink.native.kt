@@ -1,11 +1,5 @@
 package io.github.yuroyami.kitecodec
 
-import ffmpeg.AVCodecContext
-import ffmpeg.AVFrame
-import ffmpeg.AVPacket
-import ffmpeg.avcodec_find_encoder_by_name
-import ffmpeg.avcodec_receive_packet
-import ffmpeg.avcodec_send_frame
 import ffmpeg.ffkmp_codec_first_sample_fmt
 import ffmpeg.ffkmp_codecctx_alloc
 import ffmpeg.ffkmp_codecctx_channels
@@ -14,7 +8,9 @@ import ffmpeg.ffkmp_codecctx_free
 import ffmpeg.ffkmp_codecctx_height
 import ffmpeg.ffkmp_codecctx_open
 import ffmpeg.ffkmp_codecctx_pix_fmt
+import ffmpeg.ffkmp_codecctx_receive_packet
 import ffmpeg.ffkmp_codecctx_sample_rate
+import ffmpeg.ffkmp_codecctx_send_frame
 import ffmpeg.ffkmp_codecctx_set_audio
 import ffmpeg.ffkmp_codecctx_set_global_header
 import ffmpeg.ffkmp_codecctx_set_opt
@@ -23,6 +19,7 @@ import ffmpeg.ffkmp_codecctx_time_base
 import ffmpeg.ffkmp_codecctx_width
 import ffmpeg.ffkmp_codecpar_copy_for_mux
 import ffmpeg.ffkmp_codecpar_from_context
+import ffmpeg.ffkmp_find_encoder_by_name
 import ffmpeg.ffkmp_frame_convert_pixfmt
 import ffmpeg.ffkmp_frame_format
 import ffmpeg.ffkmp_frame_free
@@ -40,8 +37,6 @@ import ffmpeg.ffkmp_packet_set_dts
 import ffmpeg.ffkmp_packet_set_pts
 import ffmpeg.ffkmp_packet_set_stream_index
 import ffmpeg.ffkmp_packet_unref
-import ffmpeg.AVFormatContext
-import ffmpeg.AVStream
 import ffmpeg.ffkmp_fmt_alloc_output2
 import ffmpeg.ffkmp_fmt_avoid_negative_ts
 import ffmpeg.ffkmp_fmt_free_output
@@ -58,6 +53,12 @@ import ffmpeg.ffkmp_stream_codecpar
 import ffmpeg.ffkmp_stream_index
 import ffmpeg.ffkmp_stream_set_time_base
 import ffmpeg.ffkmp_stream_time_base
+import ffmpeg.kc_codec
+import ffmpeg.kc_codec_ctx
+import ffmpeg.kc_fmt_ctx
+import ffmpeg.kc_frame
+import ffmpeg.kc_packet
+import ffmpeg.kc_stream
 import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
 import kotlinx.cinterop.CPointer
@@ -71,7 +72,7 @@ import kotlinx.cinterop.value
 import kotlinx.coroutines.flow.Flow
 
 public actual class MediaSink internal constructor(
-    private val ctx: CPointer<AVFormatContext>,
+    private val ctx: CPointer<kc_fmt_ctx>,
     private val outputPath: String,
 ) : AutoCloseable {
 
@@ -193,7 +194,7 @@ public actual class MediaSink internal constructor(
     }
 
     /** The time-base the OPENED context settled on; authoritative for all pts math. */
-    private fun codecCtxTimeBase(codecCtx: CPointer<AVCodecContext>): Rational = memScoped {
+    private fun codecCtxTimeBase(codecCtx: CPointer<kc_codec_ctx>): Rational = memScoped {
         val n = alloc<IntVar>(); val d = alloc<IntVar>()
         ffkmp_codecctx_time_base(codecCtx, n.ptr, d.ptr)
         Rational(n.value.takeIf { it != 0 } ?: 1, d.value.takeIf { it != 0 } ?: 1)
@@ -202,12 +203,12 @@ public actual class MediaSink internal constructor(
     /** Find + configure + open one encoder context; [configure] sets type-specific fields. */
     private inline fun newEncoderContext(
         codecName: String,
-        configure: (codec: CPointer<ffmpeg.AVCodec>, cc: CPointer<AVCodecContext>) -> Unit,
-    ): CPointer<AVCodecContext> {
+        configure: (codec: CPointer<kc_codec>, cc: CPointer<kc_codec_ctx>) -> Unit,
+    ): CPointer<kc_codec_ctx> {
         check(!headerWritten) { "Cannot add encoders after the muxer has started writing." }
         check(!closed) { "MediaSink is closed" }
 
-        val codec = avcodec_find_encoder_by_name(codecName)
+        val codec = ffkmp_find_encoder_by_name(codecName)
             ?: throw FFmpegException(FFmpegError.Internal("No encoder named '$codecName'"))
         val codecCtx = ffkmp_codecctx_alloc(codec)
             ?: throw FFmpegException(FFmpegError.Internal("avcodec_alloc_context3 returned NULL"))
@@ -225,7 +226,7 @@ public actual class MediaSink internal constructor(
     }
 
     /** Create the muxer stream for an opened encoder context and copy its parameters over. */
-    private fun newStreamFor(codecCtx: CPointer<AVCodecContext>): CPointer<AVStream> {
+    private fun newStreamFor(codecCtx: CPointer<kc_codec_ctx>): CPointer<kc_stream> {
         try {
             val stream = ffkmp_fmt_new_stream(ctx, null)
                 ?: throw FFmpegException(FFmpegError.Internal("avformat_new_stream returned NULL"))
@@ -266,7 +267,7 @@ public actual class MediaSink internal constructor(
         headerState = HeaderState.Written
     }
 
-    internal fun writePacket(packet: CPointer<AVPacket>): Unit = synchronized(muxLock) {
+    internal fun writePacket(packet: CPointer<kc_packet>): Unit = synchronized(muxLock) {
         ensureHeaderWritten()
         val rc = ffkmp_fmt_write_frame(ctx, packet)
         if (rc < 0) throw FFmpegException(avError(rc))
@@ -295,7 +296,7 @@ public actual class MediaSink internal constructor(
                 }
             } finally {
                 memScoped {
-                    val pp = alloc<CPointerVar<AVFormatContext>>().also { it.value = ctx }
+                    val pp = alloc<CPointerVar<kc_fmt_ctx>>().also { it.value = ctx }
                     ffkmp_fmt_free_output(pp.ptr)
                 }
             }
@@ -311,7 +312,7 @@ public actual class MediaSink internal constructor(
             // The FFmpeg identity gate, register item B1-02. Before the first allocation.
             requireCompatibleFFmpeg()
             val arena = kotlinx.cinterop.Arena()
-            val ctxVar = arena.allocPointerTo<AVFormatContext>()
+            val ctxVar = arena.allocPointerTo<kc_fmt_ctx>()
             val rc = ffkmp_fmt_alloc_output2(ctxVar.ptr, path, format)
             if (rc < 0) { arena.clear(); throw FFmpegException(avError(rc)) }
             val ctx = ctxVar.value
@@ -329,7 +330,7 @@ public actual class MediaSink internal constructor(
                 }
             } catch (t: Throwable) {
                 memScoped {
-                    val pp = alloc<CPointerVar<AVFormatContext>>().also { it.value = ctx }
+                    val pp = alloc<CPointerVar<kc_fmt_ctx>>().also { it.value = ctx }
                     ffkmp_fmt_free_output(pp.ptr)
                 }
                 throw t
@@ -345,8 +346,8 @@ public actual class MediaSink internal constructor(
  */
 internal class EncoderCore(
     private val sink: MediaSink,
-    private val codecCtx: CPointer<AVCodecContext>,
-    private val stream: CPointer<AVStream>,
+    private val codecCtx: CPointer<kc_codec_ctx>,
+    private val stream: CPointer<kc_stream>,
     private val codecTimeBase: Rational,
     private val isAudio: Boolean,
 ) {
@@ -369,7 +370,7 @@ internal class EncoderCore(
         else ffkmp_rescale_q(lastPts, codecTimeBase.num, codecTimeBase.den, 1, 1_000_000)
 
     /** Encode one frame, converting its pixel format to the encoder's if needed. Closes [frame]. */
-    fun encode(packet: CPointer<AVPacket>, frame: Frame) {
+    fun encode(packet: CPointer<kc_packet>, frame: Frame) {
         check(!closed) { "Encoder is closed" }
         restampPts(frame)
         try {
@@ -400,7 +401,7 @@ internal class EncoderCore(
      * Returns a freshly allocated frame the caller must free, or null when no conversion is needed.
      * Geometry mismatches are NOT silently rescaled; that is a caller error worth a clear message.
      */
-    private fun conversionFor(native: CPointer<AVFrame>): CPointer<AVFrame>? {
+    private fun conversionFor(native: CPointer<kc_frame>): CPointer<kc_frame>? {
         // Geometry is checked FIRST and unconditionally. Folding it into the pixel-format branch
         // would skip it whenever the formats already agree, and several encoders (mpeg4 among
         // them) happily accept a wrong-sized frame and produce a corrupt stream rather than
@@ -434,7 +435,7 @@ internal class EncoderCore(
     }
 
     /** Signal EOF to the encoder and write out everything it still buffers. */
-    fun finish(packet: CPointer<AVPacket>) {
+    fun finish(packet: CPointer<kc_packet>) {
         check(!closed) { "Encoder is closed" }
         sendAndDrain(packet, null)
     }
@@ -491,11 +492,11 @@ internal class EncoderCore(
      * `avcodec_send_frame` returning EAGAIN means the output queue is full; drain packets and
      * retry the SAME frame. The previous implementation dropped the frame on EAGAIN.
      */
-    private fun sendAndDrain(packet: CPointer<AVPacket>, frame: CPointer<AVFrame>?) {
+    private fun sendAndDrain(packet: CPointer<kc_packet>, frame: CPointer<kc_frame>?) {
         val eagain = FFErrors.EAGAIN
         val eof = FFErrors.EOF
         while (true) {
-            val sendRc = avcodec_send_frame(codecCtx, frame)
+            val sendRc = ffkmp_codecctx_send_frame(codecCtx, frame)
             when {
                 sendRc == 0 || sendRc == eof -> { drain(packet); return }
                 sendRc == eagain -> drain(packet)  // output full → drain, then resend
@@ -504,11 +505,11 @@ internal class EncoderCore(
         }
     }
 
-    private fun drain(packet: CPointer<AVPacket>) {
+    private fun drain(packet: CPointer<kc_packet>) {
         val eagain = FFErrors.EAGAIN
         val eof = FFErrors.EOF
         while (true) {
-            val recRc = avcodec_receive_packet(codecCtx, packet)
+            val recRc = ffkmp_codecctx_receive_packet(codecCtx, packet)
             if (recRc == eagain || recRc == eof) return
             if (recRc < 0) throw FFmpegException(avError(recRc))
             // The muxer may rewrite stream time-bases inside avformat_write_header (mp4 turns
@@ -545,7 +546,7 @@ internal class EncoderCore(
 }
 
 /** Allocate a packet, run [block] with it, free it after. */
-internal inline fun <T> withPacket(block: (CPointer<AVPacket>) -> T): T {
+internal inline fun <T> withPacket(block: (CPointer<kc_packet>) -> T): T {
     val packet = ffkmp_packet_alloc()
         ?: throw FFmpegException(FFmpegError.Internal("av_packet_alloc returned NULL"))
     try {
@@ -557,7 +558,7 @@ internal inline fun <T> withPacket(block: (CPointer<AVPacket>) -> T): T {
 
 public actual class CopyStream internal constructor(
     private val sink: MediaSink,
-    private val stream: CPointer<AVStream>,
+    private val stream: CPointer<kc_stream>,
     private val sourceTimeBase: Rational,
     internal val sourceIndex: Int,
 ) {
@@ -570,7 +571,7 @@ public actual class CopyStream internal constructor(
      * rescale from the source stream's time-base onto whatever the output muxer chose.
      * `av_interleaved_write_frame` takes ownership of the payload; the packet comes back blank.
      */
-    internal fun writeCopyPacket(packet: CPointer<AVPacket>) {
+    internal fun writeCopyPacket(packet: CPointer<kc_packet>) {
         // Header first, because avformat_write_header may rewrite the stream time-base we read below.
         sink.ensureHeaderWritten()
         ffkmp_packet_set_stream_index(packet, streamIndex)

@@ -27,6 +27,9 @@
 
 #include "kc_fuzz.h"
 
+#include <libavcodec/avcodec.h>
+#include <libavutil/error.h>
+
 #include <stdlib.h>
 
 /* Any decoder with a rich private option table works. H.264 is present in every FFmpeg build this

@@ -9,6 +9,11 @@
  * The format part of the FFmpeg helper layer: the def's 'AVFormatContext (input + output)' section(s). */
 
 #include "kitecodec_helpers.h"
+
+#include <libavformat/avformat.h>
+#include <libavutil/error.h>
+#include <libavutil/opt.h>
+
 /* ════════════ AVFormatContext (input + output) ════════════ */
 
 KC_API int  ffkmp_fmt_open_input(AVFormatContext **out, const char *path) {

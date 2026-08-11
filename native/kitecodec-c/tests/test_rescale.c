@@ -53,6 +53,14 @@
 
 #include "kitecodec_helpers.h"
 
+#include <libavcodec/avcodec.h>
+#include <libavfilter/avfilter.h>
+#include <libavformat/avformat.h>
+#include <libavutil/error.h>
+#include <libavutil/frame.h>
+#include <libavutil/pixdesc.h>
+#include <libavutil/pixfmt.h>
+
 /* ---- The two macro crossings ---- */
 
 /* FFmpeg spells its own error tags FFERRTAG(a,b,c,d) == -(int)MKTAG(a,b,c,d), and MKTAG packs the
