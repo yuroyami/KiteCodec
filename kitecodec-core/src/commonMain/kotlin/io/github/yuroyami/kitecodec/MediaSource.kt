@@ -3,9 +3,9 @@ package io.github.yuroyami.kitecodec
 import kotlinx.coroutines.flow.Flow
 
 /**
- * An opened input: a local file or a URL. It owns the AVFormatContext and the per-stream
- * resources, and closing it releases them all. Confine it to one coroutine context, because
- * libav* objects are not safe to call concurrently.
+ * An opened input: a local file or a URL. It owns the container cursor and per-stream resources,
+ * and closing it releases them all. Confine it to one coroutine context, because the underlying
+ * media objects are not safe to call concurrently.
  */
 public expect class MediaSource : AutoCloseable {
 
@@ -91,13 +91,37 @@ public expect class MediaSource : AutoCloseable {
      */
     public suspend fun extractFrame(atMicros: Long, stream: StreamInfo? = null): Frame
 
+    /**
+     * Opens the low-level demux cursor for exactly [streams]. The returned reader owns the source's
+     * cursor until it is closed; no batch decode or source-level seek may run concurrently.
+     */
+    @KiteCodecLowLevelApi
+    public fun openPacketReader(streams: List<StreamInfo>): PacketReader
+
+    /**
+     * Opens one independently driven decoder for [stream].
+     *
+     * A null [decoder] lets FFmpeg choose its default implementation by codec id. A non-null value
+     * selects that exact decoder name and refuses it unless it can decode this stream's codec. This
+     * is the selection seam used for FFmpeg-owned hardware decoders such as
+     * `h264_mediacodec`; it does not call a platform decoder API directly.
+     */
+    @KiteCodecLowLevelApi
+    @Throws(FFmpegException::class)
+    public fun openDecoder(
+        stream: StreamInfo,
+        threadCount: Int = 0,
+        lowDelay: Boolean = false,
+        decoder: CodecId? = null,
+    ): StreamDecoder
+
     override fun close()
 
     public companion object {
         /**
          * Open a local file or URL.
          *
-         * This is a blocking call. Network URLs run I/O inside `avformat_open_input`, so call it
+         * This is a blocking call. Network URLs perform I/O inside the native open, so call it
          * from a background dispatcher (`Dispatchers.IO` or your media dispatcher). Never call it
          * on the UI thread.
          */

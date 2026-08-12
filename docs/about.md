@@ -1,6 +1,9 @@
 # About KiteCodec
 
-**One coroutine-first Kotlin API for video and audio.** KiteCodec binds Kotlin/Native directly to FFmpeg's libav\* libraries, so you decode, encode, transcode and filter media from a single suspend-friendly surface. No `ffmpeg` subprocess, no JVM, no JNI layer, and constant memory regardless of input length.
+**One coroutine-first Kotlin API for video and audio.** KiteCodec binds to FFmpeg's libav\*
+libraries through Kotlin/Native cinterop or, on JVM and Android, a dynamically registered JNI
+adapter over the same opaque C helpers. There is no `ffmpeg` subprocess, and memory stays constant
+regardless of input length.
 
 This page covers the project's current status, its roadmap, the binding architecture, and the license. For the API itself, start with [Getting started](getting-started.md) or the [API reference](https://yuroyami.github.io/KiteCodec/api/).
 
@@ -14,14 +17,19 @@ Everything routes through a single demux pass. When you decode several streams, 
 
 ## Current Status
 
-KiteCodec is pre-1.0 and actively developed. The full **demux -> decode -> filter -> encode -> mux** pipeline is live for both video and audio, in a single pass, for every published target. The Kotlin library is complete; the binary distribution it needs is not.
+KiteCodec is pre-1.0 and actively developed. The full **demux -> decode -> filter -> encode -> mux**
+API is implemented for both video and audio, in a single pass. Kotlin/Native has the standing
+runtime evidence; JVM/Android actuals now share the common contracts, with host JNI tests and
+Android link/packaging checks. No target artifact has been publicly released.
 
-There is one status table for the whole project, and it lives in the [README](https://github.com/yuroyami/KiteCodec#targets). It records, per target, whether the target is in the published set, what CI builds and tests, and where FFmpeg comes from.
+There is one status table for the whole project, and it lives in the [README](https://github.com/yuroyami/KiteCodec#targets). It records, per target, whether a public artifact exists, what build/test evidence exists, and where FFmpeg comes from.
 
 The two things a reader most often needs from it:
 
 - **KiteCodec cannot be consumed from Maven Central today.** Neither `kitecodec-core` nor the Gradle plugin has been published, and the FFmpeg Release assets the plugin's default `FFmpegSource.Prebuilt` downloads do not exist. See [Release status](https://github.com/yuroyami/KiteCodec#release-status) for the blocker.
-- **There is no JVM target**, and no web target of any kind. `nativeMain` is the only implementation source set, and every published artifact is a Kotlin/Native klib.
+- **JVM and Android actuals exist in source.** The JVM lane loads a test-only macOS arm64 dylib;
+  Android is `minSdk 24` with `arm64-v8a` and `x86_64` JNI inputs and 16 KiB ELF/app packaging.
+  There is no public runtime jar or AAR, no Android playback claim, and no web target.
 
 !!! note "Frame ownership"
     Frames emitted by the public `Flow` APIs (`MediaSource.decodedFrames`, `MediaSource.decodeStreams`, `FilterGraph.process`) are **owned by the collector**. Each stays valid until you close it, so buffering operators such as `buffer()` and `toList()` are safe. Every collected frame must be closed, or its native buffers leak. Frames passed to a callback (`FilterGraph.feedInput`'s `onOutput`) are valid only for the duration of that call. `Frame.copy()` takes an O(1) owned snapshot. The native `AVFrame*` is deliberately not exposed in `commonMain`.
@@ -29,21 +37,25 @@ The two things a reader most often needs from it:
 ## What's next
 
 - **The FFmpeg binary release**: unblocking `release-binaries.yml` is what turns `FFmpegSource.Prebuilt` from a 404 into the default path, and is the prerequisite for publishing `kitecodec-core` at all.
-- **Android AAR**: a JNI substrate so `androidTarget` (regular Android apps on Kotlin/JVM) gets the same API, over the same `ffkmp_*` C helpers. FFmpegKit's retirement left that niche empty.
+- **Android runtime qualification and publication**: the JNI/AAR source and packaging model is in
+  place; playback qualification, physical-device evidence, consumer publication and app/UI
+  integration remain.
 - **Bitstream filters** (h264 to/from Annex B) so stream copy reaches MPEG-TS.
 - **Hardware decode and full hwframes pipelines**: zero-copy VideoToolbox / CUDA.
 - **iOS qualification**: the repository now has an LGPL mobile Apple FFmpeg build and local-consumption path for `iosArm64` and `iosSimulatorArm64`. It is a private/local substrate, not a public artifact or CI claim. Runtime and application qualification belong to the consuming player stages.
 
 ## Architecture
 
-### One opaque cinterop module
+### One opaque native boundary
 
-The binding is **one** cinterop module (`kitecodec-core/src/nativeInterop/cinterop/ffmpeg.def`), but
+The Kotlin/Native binding is **one** cinterop module (`kitecodec-core/src/nativeInterop/cinterop/ffmpeg.def`), but
 the def parses only KiteCodec's helper, handle and ABI headers. It no longer parses libav\*
 functions, constants or struct layouts. Eleven incomplete forward tags remain behind the eleven
 `kc_*` aliases, and Kotlin source is forbidden to name those tags directly. The aliases and
 `ffkmp_*` functions are the complete native boundary; the compiled C archive owns the direct
-FFmpeg headers and calls internally.
+FFmpeg headers and calls internally. JVM and Android reach that same boundary through
+`native/kitecodec-jni`: a dynamically registered method manifest, generation-tagged handles,
+copied arrays and typed error conversion.
 
 Earlier revisions consolidated every libav header into that one cinterop to avoid the duplicate
 `AVCodec` / `AVFrame` / `AVPacket` types produced by six separate cinterops. The opaque boundary
@@ -51,11 +63,13 @@ removes that type-sharing problem entirely while retaining one package and one a
 
 ### The `ffkmp_*` C helpers
 
-Kotlin consumes 169 C helpers, all prefixed `ffkmp_*`, through eleven opaque `kc_*` handle aliases.
+Kotlin consumes 171 C helpers, all prefixed `ffkmp_*`, through eleven opaque `kc_*` handle aliases.
 They live in `native/kitecodec-c/`, compiled per Kotlin/Native target into a static archive that the
 def names and cinterop embeds. ABI 2.0 is the breaking C-source boundary: 140 legacy declarations
 were respelled from raw FFmpeg pointer types to the aliases, and the seven wrappers plus five
 media-type accessors added compatibly at ABI 1.1 now carry every Kotlin call across that boundary.
+ABI 2.1 added packet cloning and VM attachment; ABI 2.2 adds selected-codec identity so a named
+decoder is verified against its stream before open.
 
 The helpers used to be `static inline` text inside the def, which meant no translation unit, no object
 file and no test. The C layer now has nine translation units, seven C test suites, three sanitizer
@@ -80,29 +94,34 @@ native/kitecodec-c/                  ← the C helper layer: nine units, its own
 ├── src/helpers_*.c                  ← maintained implementations, one per subsystem
 ├── src/kitecodec_abi.c              ← the identity gate itself
 ├── tests/ fuzz/ scripts/            ← seven suites, six fuzz targets and the audits
+native/kitecodec-jni/                ← dynamically registered JNI adapter; no libav headers
 kitecodec-core/src/
 ├── nativeInterop/cinterop/
 │   └── ffmpeg.def                   ← opaque cinterop; names the compiled helper archive
 ├── commonMain/kotlin/io/github/yuroyami/kitecodec/
 │   ├── FFmpeg.kt                    ← capability probing + Versions
 │   ├── MediaSource.kt               ← demuxer + decode flows (expect)
-│   ├── Frame.kt                     ← AVFrame wrapper
+│   ├── Frame.kt                     ← owned frame contract
 │   ├── FilterGraph.kt               ← video + audio graph wrappers
 │   ├── MediaSink.kt                 ← muxer + Video/AudioEncoder + specs
 │   ├── Transcoder.kt                ← high-level one-pass A/V pipeline (expect)
 │   ├── StreamInfo.kt / Errors.kt
 │   └── MediaType.kt / Rational.kt   ← value types for FFmpeg's small types
-└── nativeMain/kotlin/io/github/yuroyami/kitecodec/
+├── nativeMain/kotlin/io/github/yuroyami/kitecodec/
     ├── FFmpeg.native.kt
     ├── MediaSource.native.kt        ← single-pass multi-stream decode loop
     ├── Frame.native.kt              ← frame acquire / wrap
     ├── FilterGraph.native.kt        ← Flow + push-style graph driving
     ├── MediaSink.native.kt          ← muxer + shared encode core
     ├── Transcoder.native.kt         ← interleaved A/V orchestration
-    └── Internals.kt                 ← error mapping, format mapping
+│   └── Internals.kt                 ← error mapping, format mapping
+└── jvmAndAndroidMain/kotlin/io/github/yuroyami/kitecodec/
+    ├── *.jvm.kt                     ← JVM/Android actuals for the common API
+    └── Internals.jvm.kt             ← checked JNI handles, identity and error mapping
 ```
 
-Every `expect` class in `commonMain` has its `actual` in `nativeMain`. All public types live flat under `io.github.yuroyami.kitecodec`, with no internal subpackages.
+Every common contract has Kotlin/Native and JVM/Android actuals. All public types live flat under
+`io.github.yuroyami.kitecodec`, with no internal subpackages.
 
 ### Timestamp handling
 

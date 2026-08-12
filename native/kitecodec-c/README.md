@@ -17,21 +17,23 @@ ABI 1.1 added the compatible half of the opaque C surface: eleven forward-declar
 seven wrapper functions and five media-type accessors. ABI 2.0 completes the source break: the 140
 legacy declarations that named FFmpeg types now use those aliases, the public helper header includes
 no FFmpeg header, and Kotlin consumes the wrappers and accessors rather than raw libav functions,
-constants or struct layouts. ABI 2.1 adds the compatible packet clone and JavaVM handoff.
-The symbol set is 170 `ffkmp_` functions plus seven `kc_` identity functions, 177 total.
+constants or struct layouts. ABI 2.1 adds the compatible packet clone and JavaVM handoff. ABI 2.2
+adds the selected-codec-id accessor that rejects an incompatible named decoder before context
+allocation/open. The symbol set is 171 `ffkmp_` functions plus seven `kc_` identity functions,
+178 total.
 
 ## Layout
 
 | Path | What it is |
 |---|---|
-| `include/kitecodec_helpers.h` | Four standard includes plus `kitecodec_handles.h`, the `KC_API` macro, then 170 opaque helper declarations. It includes no FFmpeg header; each implementation unit owns the libav headers it uses. Lifted from the def at B1.3, an ordinary maintained source since the interlude. |
+| `include/kitecodec_helpers.h` | Four standard includes plus `kitecodec_handles.h`, the `KC_API` macro, then 171 opaque helper declarations. It includes no FFmpeg header; each implementation unit owns the libav headers it uses. Lifted from the def at B1.3, an ordinary maintained source since the interlude. |
 | `include/kitecodec_handles.h` | Eleven forward-declared opaque aliases and no FFmpeg include. ABI 2.0 uses them throughout the public helper declarations and Kotlin cinterop surface. |
 | `src/helpers_*.c` | Nine units, one per subsystem. Lifted from the def body at B1.3, ordinary maintained sources since the interlude. |
 | `include/kitecodec_abi.h` | HAND WRITTEN. The FFmpeg identity gate's contract. Includes no FFmpeg header and names no FFmpeg type. |
 | `include/kitecodec_ffmpeg_versions.h` | HAND WRITTEN, private. The only place the gate reaches into FFmpeg, and the one file the identity test replaces. |
 | `src/kitecodec_abi.c` | HAND WRITTEN. The gate: the frozen header macros, the runtime comparison, the report, the diagnostic bypass. |
 | `scripts/build-host.sh` | Builds the host test binaries for one variant. |
-| `scripts/symbol-audit.sh` | Proves what the compiled archive needs, exports and keeps private, and checks all 192 normalized public C declaration records. |
+| `scripts/symbol-audit.sh` | Proves what the compiled archive needs, exports and keeps private, and checks all 193 normalized public C declaration records. |
 | `scripts/check-deleted-surface.sh` | Proves nothing in either repository refers to a helper whose status is deleted. |
 | `deleted-surface.txt` | The deleted helper surface: 15 names, one status each. The single copy of the list, and the file to edit when a plan item resurrects one. |
 | `scripts/run-c-tests.sh` | Runs the seven suites for one variant, or in the `interpose` mode: the plain binaries with allocation accounting REQUIRED, so a blinded interposer fails instead of recording partials. |
@@ -39,7 +41,7 @@ The symbol set is 170 `ffkmp_` functions plus seven `kc_` identity functions, 17
 | `scripts/replay-corpus.sh` | Replays every committed fuzz seed through the replay driver under ASan and UBSan. Added by B1.5. |
 | `scripts/run-fuzz.sh` | Runs the six libFuzzer targets. Refuses with one sentence on a host whose clang has no fuzzer runtime, which is every clang here. |
 | `klib-metadata-baseline.txt` | Its baseline: the filtered metadata dump of that klib. |
-| `signature-baseline.txt` | The 192-record C declaration baseline: 170 helper prototypes, eleven opaque aliases, seven ABI prototypes, three ABI enums and the complete report type. |
+| `signature-baseline.txt` | The 193-record C declaration baseline: 171 helper prototypes, eleven opaque aliases, seven ABI prototypes, three ABI enums and the complete report type. |
 | `fuzz/fuzz_*.c` | The six fuzz targets of plan section 15.2 B1.5, one per C entry point that parses a caller's string. |
 | `fuzz/kc_fuzz.h`, `fuzz/kc_fuzz.c` | The input contract and the three helpers every target shares, so the corpus and the split cannot drift apart. |
 | `fuzz/replay_main.c` | The `main()` that makes each target an ordinary sanitized regression test here. libFuzzer supplies its own in CI. |
@@ -115,9 +117,10 @@ governs the dynamic symbol table and not static linking: an unmarked helper stil
 the link that embeds the archive. So `KC_API` is not what makes the cinterop work. It is what makes
 the exported set a decision instead of an accident, and `symbol-audit.sh` is what checks the
 decision, by comparing the archive's external symbols with the header's `KC_API` declarations and
-finding them equal at 177: 170 `ffkmp_` helpers plus the seven `kc_` functions of the identity gate
+finding them equal at 178: 171 `ffkmp_` helpers plus the seven `kc_` functions of the identity gate
 below. ABI 2.0 left the then-existing names unchanged while respelling the 140 FFmpeg-typed
-declarations to the eleven opaque aliases; ABI 2.1 adds two compatible names. Kotlin consumes the
+declarations to the eleven opaque aliases; ABI 2.1 adds two compatible names and ABI 2.2 adds
+`ffkmp_codec_id`. Kotlin consumes the
 seven wrappers and five media-type accessors added at ABI 1.1. No raw libav function, constant or
 struct layout crosses the cinterop boundary;
 the eleven incomplete forward tags remain only as the private identities behind the aliases.
@@ -378,14 +381,14 @@ Add a suite by adding its source to `tests/` and its stem to the `TESTS` list in
 
 ## The seven suites, and what each one earns
 
-279 cases per variant, 837 case runs across plain, ASan and TSan. Before S1.a.7, the historical
+280 cases per variant, 840 case runs across plain, ASan and TSan. Before S1.a.7, the historical
 six-suite gate recorded 240 cases at B1.2 and B1.3, then 234 at B1.4, when six cases went with the
 helpers B1.4 deleted, four in `test_ownership.c` and two in `test_rescale.c`, then 250 at B1.6, when
 `test_identity.c` arrived with 16. I-12 added the NULL-key and out-of-range-stream guard cases to
 `test_ownership.c`, bringing the same six suites to 252; S1.a.7 adds `test_args.c`'s 22 cases to
 reach 274. B1.6 added the identity table row and left the prose at 234, so the table was right and
 the prose was wrong for two sub-phases. S1.c.1 adds three packet-clone ownership cases and two JVM
-attach identity cases, reaching the current 279.
+attach identity cases, reaching 279. S1.c.2 adds the selected-codec-id control, reaching 280.
 
 | Suite | Cases | What it establishes | Register item |
 |---|---|---|---|
@@ -395,7 +398,7 @@ attach identity cases, reaching the current 279.
 | `test_strerror_thread.c` | 24 | Both halves of the thread affinity contract, over 4 threads and 256 rendezvous-synchronised rounds, clean under TSan. | B1-09 |
 | `test_convert.c` | 25 | Conversion correctness against an independently computed oracle, and the per call allocation cost as a number. | B1-23 |
 | `test_identity.c` | 18 | One case per identity verdict against five doctored header trees, the true build, all three diagnostic-bypass conditions, NULL/host VM attach and a forced Android rejection followed by its accepting setter control. | B1-02, B1-21, S1.c.1 |
-| `test_args.c` | 22 | One invalid vector for each of the 16 newly guarded entry points, plus six positive controls for arguments whose NULL meaning is part of FFmpeg's contract. | R-B2-guards, S1.a.7 |
+| `test_args.c` | 23 | One invalid vector for each of the 16 newly guarded entry points, six positive controls for arguments whose NULL meaning is part of FFmpeg's contract, and the null/selected codec-id control. | R-B2-guards, S1.a.7, S1.c.2 |
 
 Each suite proved load bearing by mutation against copies of the helper sources in a
 scratch directory, never against the files in the repository. Dropping `sws_freeContext` from the

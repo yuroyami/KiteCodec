@@ -13,7 +13,7 @@ linkerOpts.osx = -lavformat -lavcodec -lavfilter -lavutil -lswscale -lswresample
 linkerOpts.ios = -lavformat -lavcodec -lavfilter -lavutil -lswscale -lswresample
 linkerOpts.linux = -lavformat -lavcodec -lavfilter -lavutil -lswscale -lswresample
 linkerOpts.mingw = -lavformat -lavcodec -lavfilter -lavutil -lswscale -lswresample
-# MediaCodec wrapper pulls in AMediaCodec (mediandk) + JNI glue; zlib + log are NDK staples.
+# The native-codec wrapper pulls in mediandk + JNI glue; zlib + log are NDK staples.
 linkerOpts.android = -lavformat -lavcodec -lavfilter -lavutil -lswscale -lswresample -lmediandk -landroid -llog -lz
 # The FFmpeg helper layer, which used to be 949 lines of `static inline` C in this file. It is
 # now compiled per target by :kitecodec-core:compileKiteCodecCFor<Target> and embedded in this

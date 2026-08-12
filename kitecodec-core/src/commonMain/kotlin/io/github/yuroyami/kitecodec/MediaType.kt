@@ -11,12 +11,9 @@ public enum class MediaType {
 
 /**
  * The pixel format of a video frame, named exactly as FFmpeg names it (`yuv420p`, `nv12`, …).
- * The native implementation translates the name to an `AV_PIX_FMT_*` value.
+ * The platform bridge translates the name to an `AV_PIX_FMT_*` value.
  */
-// No @JvmInline: it is a JVM-only annotation carrying @OptionalExpectation, and
-// kitecodec-core has no JVM target, so the common metadata compile rejects it.
-// Kotlin/Native needs no annotation for a value class. Re-add it (and this will
-// fail to compile until you do) if a JVM target is ever added.
+@JvmInline
 public value class PixelFormat(public val name: String) {
     public companion object {
         public val Yuv420p : PixelFormat = PixelFormat("yuv420p")
@@ -43,6 +40,7 @@ public value class PixelFormat(public val name: String) {
  * Audio sample format. Planar variants store each channel in its own plane; packed variants
  * interleave channels. `s16` / `s16p` is the most common decoder output.
  */
+@JvmInline
 public value class SampleFormat(public val name: String) {
     /**
      * Name-based heuristic (`…p` suffix). It is correct for every FFmpeg sample format name,
@@ -62,6 +60,7 @@ public value class SampleFormat(public val name: String) {
 }
 
 /** Codec identifier: symbolic name (`h264`, `aac`, `libx264`). Matches `avcodec_find_*_by_name`. */
+@JvmInline
 public value class CodecId(public val name: String) {
     public companion object {
         public val H264   : CodecId = CodecId("h264");        public val Hevc   : CodecId = CodecId("hevc")

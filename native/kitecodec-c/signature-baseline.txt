@@ -1,9 +1,9 @@
 # The normalized public C declaration baseline of KiteCodec (S1.a.8).
 #
-# Exact scope: 170 helper KC_API prototypes, eleven opaque handle typedefs, seven
+# Exact scope: 171 helper KC_API prototypes, eleven opaque handle typedefs, seven
 # ABI KC_API prototypes, three ABI enum definitions and the full kc_ffmpeg_report
 # typedef. Comments and preprocessor lines are absent; whitespace is normalized;
-# records are sorted without deduplication. There must be exactly 192 records.
+# records are sorted without deduplication. There must be exactly 193 records.
 #
 # THE MOVE (also in KPKMP.md section 9's ratchet move table): change the public
 # declaration deliberately, run ./scripts/symbol-audit.sh
@@ -28,6 +28,7 @@ KC_API int ffkmp_avseek_flag_any(void);
 KC_API int ffkmp_avseek_flag_backward(void);
 KC_API int ffkmp_codec_first_pix_fmt(const kc_codec *codec);
 KC_API int ffkmp_codec_first_sample_fmt(const kc_codec *codec);
+KC_API int ffkmp_codec_id(const kc_codec *codec);
 KC_API int ffkmp_codec_supports_pix_fmt(const kc_codec *codec, int fmt);
 KC_API int ffkmp_codecctx_channels(kc_codec_ctx *c);
 KC_API int ffkmp_codecctx_frame_size(kc_codec_ctx *c);

@@ -4,7 +4,8 @@
  *   - one function per manifest row, named exactly as the row names it;
  *   - resolve every incoming token with kj_handle_get and return immediately on NULL (the typed
  *     exception is already pending);
- *   - call exactly one kc_ or ffkmp_ helper (two only when a size query pairs with a copy);
+ *   - operate only through kc_ or ffkmp_ helpers; bounded compositions are allowed where a row
+ *     assembles one identity report, graph, or copied Java value;
  *   - mint outgoing objects with kj_handle_put; convert text with kj_util; NEVER include a libav
  *     header, NEVER spell a direct FFmpeg call (scripts/source-discipline.sh fails the build).
  */
@@ -146,3 +147,43 @@ JNIEXPORT jlong JNICALL kj_abi_live_handles(JNIEnv *env, jclass cls)
     (void)env; (void)cls;
     return (jlong)kj_handle_live_count();
 }
+
+JNIEXPORT jlong JNICALL kj_abi_rescale(JNIEnv *env, jclass cls, jlong value,
+                                       jint sn, jint sd, jint dn, jint dd)
+{
+    (void)env; (void)cls;
+    return (jlong)ffkmp_rescale_q((int64_t)value, (int)sn, (int)sd, (int)dn, (int)dd);
+}
+
+JNIEXPORT jstring JNICALL kj_abi_pixel_format_name(JNIEnv *env, jclass cls, jint value)
+{ (void)cls; return kj_string_new(env, ffkmp_pix_fmt_name((int)value)); }
+
+JNIEXPORT jint JNICALL kj_abi_pixel_format_value(JNIEnv *env, jclass cls, jstring name)
+{
+    char *c = kj_string_dup(env, name); int out;
+    (void)cls; if (c == NULL) return -1; out = ffkmp_pix_fmt_from_name(c); free(c); return (jint)out;
+}
+
+JNIEXPORT jstring JNICALL kj_abi_sample_format_name(JNIEnv *env, jclass cls, jint value)
+{ (void)cls; return kj_string_new(env, ffkmp_sample_fmt_name((int)value)); }
+
+JNIEXPORT jint JNICALL kj_abi_sample_format_value(JNIEnv *env, jclass cls, jstring name)
+{
+    char *c = kj_string_dup(env, name); int out;
+    (void)cls; if (c == NULL) return -1; out = ffkmp_sample_fmt_from_name(c); free(c); return (jint)out;
+}
+
+JNIEXPORT jint JNICALL kj_abi_seek_flag_backward(JNIEnv *env, jclass cls)
+{ (void)env; (void)cls; return (jint)ffkmp_avseek_flag_backward(); }
+JNIEXPORT jint JNICALL kj_abi_seek_flag_any(JNIEnv *env, jclass cls)
+{ (void)env; (void)cls; return (jint)ffkmp_avseek_flag_any(); }
+JNIEXPORT jint JNICALL kj_abi_disposition_default(JNIEnv *env, jclass cls)
+{ (void)env; (void)cls; return (jint)ffkmp_disposition_default(); }
+JNIEXPORT jint JNICALL kj_abi_disposition_forced(JNIEnv *env, jclass cls)
+{ (void)env; (void)cls; return (jint)ffkmp_disposition_forced(); }
+JNIEXPORT jint JNICALL kj_abi_disposition_hearing(JNIEnv *env, jclass cls)
+{ (void)env; (void)cls; return (jint)ffkmp_disposition_hearing_impaired(); }
+JNIEXPORT jint JNICALL kj_abi_disposition_visual(JNIEnv *env, jclass cls)
+{ (void)env; (void)cls; return (jint)ffkmp_disposition_visual_impaired(); }
+JNIEXPORT jint JNICALL kj_abi_disposition_attached(JNIEnv *env, jclass cls)
+{ (void)env; (void)cls; return (jint)ffkmp_disposition_attached_pic(); }

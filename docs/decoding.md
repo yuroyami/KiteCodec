@@ -257,7 +257,17 @@ try {
 
 ## Status and platforms
 
-`nativeMain` is the only implementation source set, so decoding is the same code on every target; what differs is which FFmpeg it links. Which targets are published, and what CI actually builds and tests, is in the [README's target table](https://github.com/yuroyami/KiteCodec#targets). KiteCodec is Kotlin/Native only and requires FFmpeg to be present. See [Platform support](platforms.md) for how to source it and [Getting started](getting-started.md) for the current install path.
+The decoding contracts have Kotlin/Native and JVM/Android actuals. Native uses cinterop; JVM and
+Android use opaque, generation-tagged JNI handles. The JVM proof loads a test-only macOS dylib,
+while Android currently has source/link/AAR-packaging evidence only; no playback or physical-device
+qualification. Nothing is publicly published. See [Platform support](platforms.md) for the exact
+matrix and [Getting started](getting-started.md) for the repository-local path.
+
+The low-level decoder API also accepts an exact FFmpeg decoder name. On an Android FFmpeg build,
+`source.openDecoder(stream, decoder = CodecId("h264_mediacodec"))` selects FFmpeg's named
+MediaCodec decoder after the bridge has attached the app VM. It verifies that the named decoder
+matches the stream before opening. KiteCodec does not call Android's codec API directly, and this
+selection seam is not by itself a device playback result.
 
 ## Next
 

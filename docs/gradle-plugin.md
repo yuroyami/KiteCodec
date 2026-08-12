@@ -1,13 +1,22 @@
 # Gradle plugin
 
-`kitecodec-gradle-plugin` provisions the FFmpeg binaries KiteCodec links against, so consumer projects do not build FFmpeg from source. KiteCodec's published klib contains **no FFmpeg bytes**. The plugin supplies them at your build time. It also keeps the FFmpeg license (LGPL or GPL) separate from KiteCodec's own Apache-2.0 artifact.
+`kitecodec-gradle-plugin` provisions the FFmpeg binaries that a KiteCodec Kotlin/Native consumer
+links against, so the consumer does not build FFmpeg from source. The native `kitecodec-core` klib
+contains **no FFmpeg bytes**. The plugin supplies them at build time and keeps the FFmpeg license
+(LGPL or GPL) separate from KiteCodec's own Apache-2.0 code.
 
 !!! warning "Not published, and `Prebuilt` has nothing to fetch"
     The plugin lives in the KiteCodec repository (`kitecodec-gradle-plugin/`) and is not on the Gradle Plugin Portal yet. Neither are the FFmpeg Release assets that `FFmpegSource.Prebuilt` downloads. The [README's release status](https://github.com/yuroyami/KiteCodec#release-status) is the single place that tracks what exists. Use `FFmpegSource.System` on a desktop host or a complete `FFmpegSource.Local` tree after local publication. The DSL below is the supported surface.
 
+The JVM and regular Android actuals are a separate JNI/AAR path in this repository. Their source,
+host tests and local Android packaging model exist, but there is no public JVM jar or Android AAR.
+This plugin does not turn that local proof into a JVM/Android distribution.
+
 ## Apply and configure
 
-Apply the plugin alongside the Kotlin Multiplatform plugin, then configure the `kitecodec { }` extension. The library dependency and the plugin are both required, as explained below.
+For a Kotlin/Native consumer, apply the plugin alongside the Kotlin Multiplatform plugin, then
+configure the `kitecodec { }` extension. The library dependency and plugin are both required for
+that native link, as explained below.
 
 ```kotlin
 import io.github.yuroyami.kitecodec.gradle.FFmpegLicense
@@ -35,13 +44,15 @@ kitecodec {
 }
 ```
 
-For every Kotlin/Native target you enable, the plugin maps the target to the matching FFmpeg build. It makes sure the binaries are present before the native link runs, and it adds the `-L<libdir>` linker flag so the link resolves.
+For every Kotlin/Native target you enable, the plugin maps the target to the matching FFmpeg build.
+It makes sure the binaries are present before the native link runs, and it adds the `-L<libdir>`
+linker flag so the link resolves.
 
-!!! warning "The plugin is not optional"
-    The Maven coordinate alone does not produce a working build. The `kitecodec-core` klib contains no FFmpeg bytes, and its `ffmpeg.def` declares `linkerOpts` as bare `-lavformat -lavcodec …` with no `-L`. Without the plugin, the final native link fails on unresolved libav\* symbols.
+!!! warning "The plugin is not optional for Kotlin/Native"
+    The Maven coordinate alone does not produce a working native link. The `kitecodec-core` klib contains no FFmpeg bytes, and its `ffmpeg.def` declares `linkerOpts` as bare `-lavformat -lavcodec …` with no `-L`. Without the plugin, the final native link fails on unresolved libav\* symbols.
 
 !!! warning "The `license` choice is mandatory"
-    The FFmpeg flavor decides your app's legal obligations, so the plugin does not choose one for you. If any non-Android Kotlin/Native target is wired and `license` is unset, configuration fails and prints the DSL snippet to add. Android-only projects are exempt, because Android always uses the LGPL MediaCodec build. Selecting `GPL` logs a warning that describes the GPL-3.0 obligations it places on your whole app.
+    The FFmpeg flavor decides your app's legal obligations, so the plugin does not choose one for you. If any non-Android Kotlin/Native target is wired and `license` is unset, configuration fails and prints the DSL snippet to add. Android Kotlin/Native-only projects are exempt, because those targets always use the LGPL MediaCodec build. Selecting `GPL` logs a warning that describes the GPL-3.0 obligations it places on your whole app.
 
 ## The DSL
 
@@ -52,14 +63,14 @@ Everything lives under `kitecodec { ffmpeg { ... } }`:
 | `version` | `String` | `"n8.0"` | FFmpeg release to provision. The value is pinned: the plugin fetches exactly this tag's builds. |
 | `source` | `FFmpegSource` | `Prebuilt` | Where FFmpeg comes from (below). |
 | `localRoot` | `DirectoryProperty` | **none** | Required with `Local`. Root of `<localRoot>/<license.id>/<target-triple>/{include,lib}`. |
-| `license` | `FFmpegLicense` | **none, required** | License flavor for desktop targets. You must set it explicitly, or the build fails. Android targets always use the LGPL MediaCodec build. |
+| `license` | `FFmpegLicense` | **none, required** | License flavor for desktop targets. You must set it explicitly, or the build fails. Android Kotlin/Native targets always use the LGPL MediaCodec build. |
 | `repo` | `String` | `"yuroyami/KiteCodec"` | GitHub `owner/repo` whose Releases host the prebuilt archives. Override it to self-host. |
 | `pinnedSha256` | `MapProperty<String, String>` | empty | SHA-256 per Release asset name, for example `pinnedSha256.put("ffmpeg-n8.0-lgpl-macos-arm64.zip", "<sha256>")`. A pinned value is authoritative: the published `.sha256` is not fetched, and a download that does not match fails the build. |
 
 ### `FFmpegSource`
 
 - **`Prebuilt`** is the default. It downloads a pinned static build from the configured repo's GitHub Releases and caches it under the Gradle user home. It needs no FFmpeg on the machine. KiteCodec has published no assets yet, so against the default `repo` it currently fails: at configuration time for a target outside the intended five, and with an HTTP 404 for the rest. Point `repo` at your own Releases to use it today.
-- **`System`** links a system FFmpeg that is already installed. That means Homebrew on macOS, where you can override the prefix with the `kitecodec.macos.homebrew.prefix` Gradle property, or the apt-installed libraries on Linux. It links dynamically and is a convenience for development. It fails with a clear error when it finds no system install. It is not available for targets that have no system install path: iOS, Windows and Android.
+- **`System`** links a system FFmpeg that is already installed. That means Homebrew on macOS, where you can override the prefix with the `kitecodec.macos.homebrew.prefix` Gradle property, or the apt-installed libraries on Linux. It links dynamically and is a convenience for development. It fails with a clear error when it finds no system install. It is not available for Kotlin/Native targets that have no system install path: iOS, Windows and Android Native.
 - **`Local`** performs no download. It requires `localRoot` and validates `include/libavformat/avformat.h` plus all six `libav*.a` archives under `<localRoot>/<license.id>/<target-triple>/` for every wired target during configuration. A missing target produces one diagnostic naming its exact files. Local macOS searches that tree first, the configured Homebrew `lib` second, and links the desktop static stack. Local iOS links only that tree plus SDK zlib. Local with GPL on any iOS target is rejected before tree validation with `iOS GPL refusal: FFmpegLicense.GPL is unsupported for iOS; use LGPL.`
 - **`BuildFromSource`** is only meaningful inside the KiteCodec checkout itself, which ships the `:buildFFmpegFor<Target>` tasks. In a consumer project it fails with instructions to use `Prebuilt`, `System` or `Local`.
 
@@ -83,7 +94,14 @@ The cache is shared across projects on the machine: one download per FFmpeg vers
 
 ## Android targets
 
-Android Kotlin/Native targets (`androidNativeArm64` / `Arm32` / `X64`) always map to the LGPL MediaCodec build. Setting `license = FFmpegLicense.GPL` affects desktop targets only. There is no GPL Android build.
+Android Kotlin/Native targets (`androidNativeArm64` / `Arm32` / `X64`) always map to the LGPL
+native-codec FFmpeg build. Setting `license = FFmpegLicense.GPL` affects desktop targets only. There
+is no GPL Android build.
+
+The regular Android KMP target is different: it uses the shared JVM/Android actuals and a JNI
+library packaged by the local AAR model for `arm64-v8a` and `x86_64` at `minSdk 24`. That model is
+checked for 16 KiB ELF/app packaging constraints in the repository; it is not published, and this
+page does not claim Android playback for either ABI. The x86_64 arm is link/package evidence only.
 
 ## Related
 

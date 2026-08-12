@@ -25,7 +25,9 @@ kotlin {
     // the macOS host proof, while iOS remains a library target with no command-line executable.
     val applePhoneTargetsOnly = providers.gradleProperty("kitecodec.applePhoneTargetsOnly")
         .map { it.toBoolean() }.getOrElse(false)
-    val executables = if (applePhoneTargetsOnly) {
+    val phoneTargetsOnly = providers.gradleProperty("kitecodec.phoneTargetsOnly")
+        .map { it.toBoolean() }.getOrElse(false)
+    val executables = if (applePhoneTargetsOnly || phoneTargetsOnly) {
         mapOf(macosArm64() to TargetTriple.MacosArm64)
     } else {
         mapOf(

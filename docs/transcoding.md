@@ -29,7 +29,12 @@ Transcoder.transcode(
 )
 ```
 
-The call opens the file through libavformat, demuxes it **once**, routes packets to per-stream libavcodec decoders, pushes video frames through a libavfilter graph, resamples and chunks audio through a second graph, encodes with the codecs you named, and interleaves both streams into the output as they are produced. There is no `ffmpeg` subprocess, no JVM, and no JNI layer. Memory stays constant regardless of how long the input is.
+The call opens the file through libavformat, demuxes it **once**, routes packets to per-stream
+libavcodec decoders, pushes video frames through a libavfilter graph, resamples and chunks audio
+through a second graph, encodes with the codecs you named, and interleaves both streams into the
+output as they are produced. There is no `ffmpeg` subprocess. Kotlin/Native reaches the opaque C
+helpers through cinterop; JVM and Android actuals reach them through JNI. Memory stays constant
+regardless of how long the input is.
 
 `transcode` is a `suspend fun`, so call it from a coroutine. It suspends until the whole file is written, and it honors cancellation at the demux loop.
 
@@ -114,7 +119,7 @@ The `options` map passes codec-specific settings straight through (`preset`, `cr
 - Always present, every profile: `CodecId("mpeg4")`, `CodecId.Mjpeg`, `CodecId.Png`
 - Software video encoders: `CodecId.Libx264`, `CodecId.Libx265` (GPL builds only), `libsvtav1` (LGPL, royalty-free AV1)
 - Generic codec ids: `CodecId.H264`, `CodecId.Hevc`, `CodecId.Av1`, `CodecId.Vp9`
-- Hardware video encoders: `CodecId.H264VideoToolbox`, `CodecId.HevcVideoToolbox`, `CodecId.H264MediaCodec`, `CodecId.HevcMediaCodec`
+- Hardware video encoders with standing runtime evidence: `CodecId.H264VideoToolbox`, `CodecId.HevcVideoToolbox` on the qualified macOS profile. MediaCodec names exist in the Android FFmpeg profile, but this stage only claims named-decoder selection through `openDecoder`, not Android encoder or playback qualification.
 
 !!! tip "Probe before you encode"
     Whether a given encoder is present depends on how FFmpeg was built. Check at runtime rather than hard-coding a name:
@@ -124,7 +129,6 @@ The `options` map passes codec-specific settings straight through (`preset`, `cr
 
     val codec = listOf(
         CodecId.H264VideoToolbox,
-        CodecId.H264MediaCodec,
         CodecId.Libx264,
         CodecId("mpeg4"),
     ).first { FFmpeg.hasEncoder(it.name) }

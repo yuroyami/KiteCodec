@@ -270,6 +270,10 @@ KC_API const kc_codec* ffkmp_find_encoder_by_name(const char *name);
  * later; a NULL name returns NULL.
  */
 KC_API const kc_codec* ffkmp_find_decoder_by_name(const char *name);
+/* The codec id implemented by a selected static codec descriptor. NULL returns zero. This lets
+ * callers reject a named decoder that cannot decode the stream before allocating/opening a
+ * context, instead of using avcodec_open2 as a compatibility probe. */
+KC_API int ffkmp_codec_id(const kc_codec *codec);
 KC_API const char* ffkmp_codec_id_name(int id);
 KC_API int ffkmp_codecctx_pix_fmt(kc_codec_ctx *c);
 KC_API int ffkmp_codecctx_width(kc_codec_ctx *c);

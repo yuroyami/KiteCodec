@@ -1,0 +1,213 @@
+package io.github.yuroyami.kitecodec
+
+@KiteCodecLowLevelApi
+public actual class Packet internal constructor(
+    internal var token: Long,
+    public actual val timeBase: Rational,
+) : AutoCloseable {
+    internal fun checkOpen(): Long {
+        check(token != 0L) { "Packet is closed" }
+        return token
+    }
+
+    public actual val streamIndex: Int get() = Internals.packetStreamIndex(checkOpen())
+    public actual val pts: Long get() = Internals.packetPts(checkOpen())
+    public actual val dts: Long get() = Internals.packetDts(checkOpen())
+    public actual val duration: Long get() = Internals.packetDuration(checkOpen())
+    public actual val isKeyframe: Boolean get() = Internals.packetIsKeyframe(checkOpen())
+    public actual val sizeBytes: Int get() = Internals.packetSize(checkOpen())
+    public actual val bytePosition: Long get() = Internals.packetPosition(checkOpen())
+    public actual val hasPts: Boolean get() = pts != FrameInfo.NOPTS
+    public actual val ptsMicros: Long?
+        get() = if (hasPts) Internals.rescaleQ(pts, timeBase, Rational.Tb_us) else null
+    public actual val dtsMicros: Long?
+        get() = dts.takeIf { it != FrameInfo.NOPTS }?.let { Internals.rescaleQ(it, timeBase, Rational.Tb_us) }
+    public actual val durationMicros: Long?
+        get() = duration.takeIf { it > 0L }?.let { Internals.rescaleQ(it, timeBase, Rational.Tb_us) }
+
+    @KiteCodecLowLevelApi
+    @Throws(FFmpegException::class)
+    public actual fun copy(): Packet = Packet(Internals.packetClone(checkOpen()), timeBase)
+
+    actual override fun close() {
+        val owned = token
+        if (owned == 0L) return
+        token = 0L
+        Internals.packetFree(owned)
+    }
+}
+
+@KiteCodecLowLevelApi
+public actual enum class SeekDirection { Backward, Forward, Any }
+
+@KiteCodecLowLevelApi
+public actual class PacketReader internal constructor(
+    private val source: MediaSource,
+    private val formatToken: Long,
+    private val timeBaseByStream: Map<Int, Rational>,
+) : AutoCloseable {
+    private var scratch = Internals.packetAlloc()
+
+    @Throws(FFmpegException::class)
+    public actual fun read(): Packet? {
+        check(scratch != 0L) { "PacketReader is closed" }
+        while (true) {
+            val rc = Internals.fmtReadFrame(formatToken, scratch)
+            if (rc == Internals.errorEof) return null
+            if (rc < 0) throw FFmpegException(avError(rc))
+            val timeBase = timeBaseByStream[Internals.packetStreamIndex(scratch)]
+            if (timeBase == null) {
+                Internals.packetUnref(scratch)
+                continue
+            }
+            val owned = Internals.packetAlloc()
+            try {
+                Internals.packetMoveRef(owned, scratch)
+                return Packet(owned, timeBase)
+            } catch (error: Throwable) {
+                Internals.packetFree(owned)
+                throw error
+            }
+        }
+    }
+
+    @Throws(FFmpegException::class)
+    public actual fun seek(micros: Long, direction: SeekDirection, notEarlierThan: Long?) {
+        check(scratch != 0L) { "PacketReader is closed" }
+        val target = source.toAbsoluteMicros(micros)
+        val min = notEarlierThan?.let(source::toAbsoluteMicros) ?: Long.MIN_VALUE
+        val max = if (direction == SeekDirection.Forward) Long.MAX_VALUE else target
+        val flags = when (direction) {
+            SeekDirection.Backward -> Internals.seekFlagBackward
+            SeekDirection.Forward -> 0
+            SeekDirection.Any -> Internals.seekFlagAny
+        }
+        val rc = Internals.fmtSeekFile(formatToken, -1, min, target, max, flags)
+        if (rc < 0) throw FFmpegException(avError(rc))
+    }
+
+    actual override fun close() {
+        val owned = scratch
+        if (owned == 0L) return
+        scratch = 0L
+        try {
+            Internals.packetFree(owned)
+        } finally {
+            try {
+                source.restoreStreamDiscardDefaults()
+            } finally {
+                source.endPacketReader()
+            }
+        }
+    }
+}
+
+@KiteCodecLowLevelApi
+public actual class StreamDecoder internal constructor(
+    public actual val stream: StreamInfo,
+    private var codecContext: Long,
+) : AutoCloseable {
+    private var landing = Internals.frameAlloc()
+
+    public actual var isDrained: Boolean = false
+        private set
+
+    @Throws(FFmpegException::class)
+    public actual fun send(packet: Packet?): Boolean {
+        check(codecContext != 0L) { "StreamDecoder is closed" }
+        val rc = Internals.codecCtxSendPacket(codecContext, packet?.checkOpen() ?: 0L)
+        return when (rc) {
+            0, Internals.errorEof, FFmpegError.AVERROR_INVALIDDATA -> true
+            Internals.errorEagain -> false
+            else -> if (rc < 0) throw FFmpegException(avError(rc)) else true
+        }
+    }
+
+    @Throws(FFmpegException::class)
+    public actual fun receive(): Frame? {
+        check(codecContext != 0L) { "StreamDecoder is closed" }
+        val rc = Internals.codecCtxReceiveFrame(codecContext, landing)
+        when (rc) {
+            Internals.errorEof -> {
+                isDrained = true
+                return null
+            }
+            Internals.errorEagain, FFmpegError.AVERROR_INVALIDDATA -> return null
+        }
+        if (rc < 0) throw FFmpegException(avError(rc))
+        Internals.frameUseBestEffort(landing)
+        return Frame(
+            token = Internals.frameClone(landing),
+            ownsToken = true,
+            streamIndex = stream.index,
+            streamType = stream.type,
+            streamTimeBase = stream.timeBase,
+        )
+    }
+
+    public actual fun flush() {
+        check(codecContext != 0L) { "StreamDecoder is closed" }
+        Internals.codecCtxFlush(codecContext)
+        isDrained = false
+    }
+
+    actual override fun close() {
+        val context = codecContext
+        if (context == 0L) return
+        codecContext = 0L
+        val frame = landing
+        landing = 0L
+        if (frame != 0L) Internals.frameFree(frame)
+        Internals.codecCtxFree(context)
+    }
+
+    internal companion object {
+        fun open(
+            formatToken: Long,
+            stream: StreamInfo,
+            threadCount: Int,
+            lowDelay: Boolean,
+            requestedDecoder: CodecId?,
+        ): StreamDecoder {
+            val streamToken = Internals.fmtStream(formatToken, stream.index)
+            var parameters = 0L
+            var codec = 0L
+            try {
+                parameters = Internals.streamCodecPar(streamToken)
+                val codecId = Internals.codecParId(parameters)
+                codec = if (requestedDecoder == null) {
+                    Internals.findDecoderById(codecId)
+                } else {
+                    Internals.findDecoderByName(requestedDecoder.name)
+                }
+                if (codec == 0L) {
+                    val what = requestedDecoder?.let { "named '${it.name}'" } ?: "for codec id $codecId"
+                    throw FFmpegException(FFmpegError.Internal("No decoder $what"))
+                }
+                if (requestedDecoder != null && Internals.codecId(codec) != codecId) {
+                    throw FFmpegException(
+                        FFmpegError.Internal(
+                            "Decoder '${requestedDecoder.name}' cannot decode stream codec id $codecId",
+                        ),
+                    )
+                }
+
+                val context = Internals.codecCtxAlloc(codec)
+                try {
+                    check0(Internals.codecCtxFromPar(context, parameters), "avcodec_parameters_to_context")
+                    Internals.codecCtxSetThreads(context, threadCount, stream.type == MediaType.Video)
+                    Internals.codecCtxSetLowDelay(context, lowDelay)
+                    check0(Internals.codecCtxOpen(context, codec), "avcodec_open2")
+                    return StreamDecoder(stream, context)
+                } catch (error: Throwable) {
+                    Internals.codecCtxFree(context)
+                    throw error
+                }
+            } finally {
+                if (codec != 0L) Internals.codecRelease(codec)
+                if (parameters != 0L) Internals.borrowedRelease(parameters, Internals.KIND_CODEC_PAR)
+                Internals.borrowedRelease(streamToken, Internals.KIND_STREAM)
+            }
+        }
+    }
+}

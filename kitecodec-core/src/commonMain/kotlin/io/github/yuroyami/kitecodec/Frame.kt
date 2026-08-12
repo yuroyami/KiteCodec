@@ -1,7 +1,8 @@
 package io.github.yuroyami.kitecodec
 
 /**
- * One decoded frame (video or audio). Wraps an `AVFrame*`. Close it to release the buffers.
+ * One decoded frame (video or audio), backed by an opaque native owner. Close it to release the
+ * buffers.
  *
  * **Ownership rule.** Frames emitted by the public `Flow` APIs ([MediaSource.decodedFrames],
  * [MediaSource.decodeStreams], [FilterGraph.process]) are owned by the collector. Each frame
@@ -10,9 +11,8 @@ package io.github.yuroyami.kitecodec
  * handed to a callback ([FilterGraph.feedInput]'s `onOutput`) are valid only for that call.
  * Call [copy] to take an owned snapshot of one.
  *
- * The native pointer is intentionally not exposed in commonMain. Pipeline operators
- * ([FilterGraph], encoders) accept Frames directly and pull the pointer through `internal`
- * accessors on the native side.
+ * The native representation is intentionally not exposed. Pipeline operators ([FilterGraph],
+ * encoders) accept Frames directly and resolve their platform handle internally.
  */
 public expect class Frame : AutoCloseable {
 
@@ -99,3 +99,30 @@ public expect class Frame : AutoCloseable {
         ): Frame
     }
 }
+
+/**
+ * [FrameInfo.pts] converted to microseconds on the stream's own timeline. Null when the frame
+ * carries no timestamp.
+ *
+ * The conversion uses FFmpeg's overflow-safe rational rescale rather than multiplying a timestamp
+ * by one million directly. The value still includes the container's start offset; a player that
+ * presents a zero-based position subtracts [MediaSource.startTimeMicros] at its timeline boundary.
+ */
+@KiteCodecLowLevelApi
+public val Frame.ptsMicros: Long?
+    get() = info.let {
+        if (it.hasPts) rescaleQ(it.pts, it.timeBase, Rational.Tb_us) else null
+    }
+
+/**
+ * [FrameInfo.duration] converted to microseconds. Null when the decoder supplied no duration.
+ * A duration is an interval, so no container start offset applies to it.
+ */
+@KiteCodecLowLevelApi
+public val Frame.durationMicros: Long?
+    get() = info.let {
+        if (it.duration > 0L) rescaleQ(it.duration, it.timeBase, Rational.Tb_us) else null
+    }
+
+/** Platform-backed overflow-safe equivalent of FFmpeg's `av_rescale_q`. */
+internal expect fun rescaleQ(value: Long, source: Rational, destination: Rational): Long

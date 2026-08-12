@@ -16,6 +16,7 @@ ffkmp_buffersink_set_frame_size
 ffkmp_buffersink_time_base
 ffkmp_codec_first_pix_fmt
 ffkmp_codec_first_sample_fmt
+ffkmp_codec_id
 ffkmp_codec_id_name
 ffkmp_codec_supports_pix_fmt
 ffkmp_codecctx_alloc

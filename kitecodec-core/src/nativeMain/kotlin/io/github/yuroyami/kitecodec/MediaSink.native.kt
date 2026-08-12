@@ -107,6 +107,7 @@ public actual class MediaSink internal constructor(
 
     private val headerWritten: Boolean get() = synchronized(muxLock) { headerState == HeaderState.Written }
 
+    @Throws(FFmpegException::class)
     public actual fun addVideoEncoder(spec: VideoEncoderSpec): VideoEncoder {
         val codecCtx = newEncoderContext(spec.codec.name) { codec, cc ->
             ffkmp_codecctx_set_video(
@@ -136,6 +137,7 @@ public actual class MediaSink internal constructor(
         return VideoEncoder(core)
     }
 
+    @Throws(FFmpegException::class)
     public actual fun addCopyStream(source: MediaSource, stream: StreamInfo): CopyStream {
         check(!headerWritten) { "Cannot add streams after the muxer has started writing." }
         check(!closed) { "MediaSink is closed" }
@@ -154,6 +156,7 @@ public actual class MediaSink internal constructor(
         return CopyStream(sink = this, stream = outStream, sourceTimeBase = stream.timeBase, sourceIndex = stream.index)
     }
 
+    @Throws(FFmpegException::class)
     public actual fun addAudioEncoder(spec: AudioEncoderSpec): AudioEncoder {
         var negotiatedFormat = spec.sampleFormat
         val codecCtx = newEncoderContext(spec.codec.name) { codec, cc ->
@@ -242,6 +245,7 @@ public actual class MediaSink internal constructor(
         }
     }
 
+    @Throws(FFmpegException::class)
     public actual fun setMetadata(metadata: Map<String, String>) {
         check(!headerWritten) { "Metadata must be set before the muxer writes its header." }
         check(!closed) { "MediaSink is closed" }
@@ -308,6 +312,7 @@ public actual class MediaSink internal constructor(
     }
 
     public actual companion object {
+        @Throws(FFmpegException::class)
         public actual fun open(path: String, format: String?, options: Map<String, String>): MediaSink {
             // The FFmpeg identity gate, register item B1-02. Before the first allocation.
             requireCompatibleFFmpeg()
@@ -612,6 +617,7 @@ public actual class VideoEncoder internal constructor(
 ) : AutoCloseable {
 
     public actual suspend fun drive(input: Flow<Frame>, onProgress: ((framesEncoded: Long) -> Unit)?, progressEveryNFrames: Int) {
+        require(progressEveryNFrames > 0) { "progressEveryNFrames must be positive" }
         core.ensureHeaderWritten()
         withPacket { packet ->
             input.collect { frame ->

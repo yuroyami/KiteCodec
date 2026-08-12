@@ -6,6 +6,7 @@ plugins {
     // Pin the Kotlin Gradle plugin version once at the root so :kitecodec-gradle-plugin can apply
     // kotlin.jvm without re-declaring a version (both ids resolve to the same KGP on the classpath).
     alias(libs.plugins.kotlin.jvm).apply(false)
+    alias(libs.plugins.android.kmp.library).apply(false)
     // Applied (not deferred) at the root so `dokkaGenerate` aggregates every
     // library module into one API site at build/dokka/html (deployed to /api/).
     alias(libs.plugins.dokka)
@@ -65,7 +66,8 @@ apiValidation {
     // Only :kitecodec-core is a published library with a guarded API surface.
     ignoredProjects += listOf("kitecodec-sample", "kitecodec-gradle-plugin")
 
-    // :kitecodec-core is Kotlin/Native-only, so its API surface lives in klibs.
+    // Native declarations remain guarded in klibs. S1.c.2 also installs the JVM dump once the
+    // phone-superset target is registered; the validator discovers that JVM surface normally.
     @OptIn(kotlinx.validation.ExperimentalBCVApi::class)
     klib {
         enabled = true

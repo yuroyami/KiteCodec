@@ -184,30 +184,30 @@ public actual class MediaSource internal constructor(
         require(all.distinctBy { it.index }.size == all.size) { "Duplicate stream indices" }
 
         beginDemux()
+        val decoders = mutableListOf<DecoderState>()
         try {
             val copyByIndex = copy.associateBy { it.index }
-            val decoders = decode.map { DecoderState.open(ctx, it) }
+            decode.forEach { stream -> decoders += DecoderState.open(ctx, stream) }
+            // Frame first, packet second: if the second alloc throws, the frame remains visible
+            // to this try/finally and is released.
+            val frame = FrameOps.acquire()
             try {
-                // Frame first, packet second: if the second alloc throws, the first is
-                // released by its own factory's failure path plus this try/finally shape.
-                val frame = FrameOps.acquire()
-                try {
-                    withPacket { packet ->
-                        try {
-                            pump(decoders, copyByIndex, packet, frame, onFrame, onPacket)
-                        } catch (_: StopDemux) {
-                            // A callback decided it has everything it needs (trim end bound,
-                            // frame found). Buffered decoder frames sit after the stop point,
-                            // so they are deliberately not flushed. Continue to normal teardown.
-                        }
+                withPacket { packet ->
+                    try {
+                        pump(decoders, copyByIndex, packet, frame, onFrame, onPacket)
+                    } catch (_: StopDemux) {
+                        // A callback decided it has everything it needs (trim end bound,
+                        // frame found). Buffered decoder frames sit after the stop point,
+                        // so they are deliberately not flushed. Continue to normal teardown.
                     }
-                } finally {
-                    frame.close()
                 }
             } finally {
-                decoders.forEach { it.free() }
+                frame.close()
             }
         } finally {
+            // Preserve already-opened contexts when a later decoder fails to construct. This
+            // single cleanup also owns the normal path; native decoder frees are not repeated.
+            decoders.forEach { it.free() }
             endDemux()
         }
     }
@@ -394,7 +394,7 @@ public actual class MediaSource internal constructor(
      * when done.
      */
     @KiteCodecLowLevelApi
-    public fun openPacketReader(streams: List<StreamInfo>): PacketReader {
+    public actual fun openPacketReader(streams: List<StreamInfo>): PacketReader {
         require(streams.isNotEmpty()) { "Need at least one stream to read" }
         require(streams.distinctBy { it.index }.size == streams.size) { "Duplicate stream indices" }
 
@@ -430,16 +430,18 @@ public actual class MediaSource internal constructor(
      *        frame-level threading, without which real-time 4K is not possible.
      * @param lowDelay stops the decoder holding frames back for reordering. Right for audio in a
      *        player, wrong for video, where it costs decode efficiency.
-     */
+    */
     @KiteCodecLowLevelApi
-    public fun openDecoder(
+    @Throws(FFmpegException::class)
+    public actual fun openDecoder(
         stream: StreamInfo,
-        threadCount: Int = 0,
-        lowDelay: Boolean = false,
+        threadCount: Int,
+        lowDelay: Boolean,
+        decoder: CodecId?,
     ): StreamDecoder {
         check(!isClosed) { "MediaSource is closed" }
         require(stream.type.isAv) { "Only video and audio streams can be decoded, got ${stream.type}" }
-        return StreamDecoder.open(ctx, stream, threadCount, lowDelay)
+        return StreamDecoder.open(ctx, stream, threadCount, lowDelay, decoder)
     }
 
     actual override fun close() {
@@ -463,6 +465,7 @@ public actual class MediaSource internal constructor(
     }
 
     public actual companion object {
+        @Throws(FFmpegException::class)
         public actual fun open(path: String): MediaSource {
             // The FFmpeg identity gate, register item B1-02. First statement, before anything
             // allocates: an incompatible runtime is rejected here rather than corrupting memory

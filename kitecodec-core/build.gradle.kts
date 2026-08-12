@@ -1,14 +1,19 @@
 import com.vanniktech.maven.publish.JavadocJar
 import com.vanniktech.maven.publish.KotlinMultiplatform
+import com.android.build.api.variant.KotlinMultiplatformAndroidComponentsExtension
 import io.github.yuroyami.kitecodec.buildtools.BuildFFmpegTask
+import io.github.yuroyami.kitecodec.buildtools.CompareCodecContractTask
 import io.github.yuroyami.kitecodec.buildtools.CompileKiteCodecCTask
 import io.github.yuroyami.kitecodec.buildtools.FFmpegLicense
 import io.github.yuroyami.kitecodec.buildtools.FFmpegPaths
 import io.github.yuroyami.kitecodec.buildtools.StaticLinkFlags
 import io.github.yuroyami.kitecodec.buildtools.TargetTriple
 import io.github.yuroyami.kitecodec.buildtools.IOS_GPL_REFUSAL
+import io.github.yuroyami.kitecodec.buildtools.KiteCodecJvmTestArgumentProvider
 import io.github.yuroyami.kitecodec.buildtools.LinkKiteCodecJniTask
+import io.github.yuroyami.kitecodec.buildtools.PrepareKiteCodecJniHarnessTask
 import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.testing.Test
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 // Named explicitly because inside a Gradle Kotlin script `java` resolves to the java extension,
 // so `java.io.File(...)` does not compile.
@@ -16,13 +21,32 @@ import java.io.File
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
-    alias(libs.plugins.kotlinx.atomicfu)
+    alias(libs.plugins.android.kmp.library)
     alias(libs.plugins.dokka)
     alias(libs.plugins.maven.publish)
 }
 
+// BCV 0.18.1 emits a second trailing LF for JVM dumps. Canonicalize the declared build output so
+// apiDump, apiCheck and Git's blank-at-EOF whitespace gate all consume the same one-LF bytes.
+tasks.configureEach {
+    if (name == "jvmApiBuild") {
+        doLast {
+            val dump = outputs.files.singleFile
+            val current = dump.readText()
+            val canonical = current.trimEnd('\r', '\n') + "\n"
+            if (current != canonical) {
+                dump.writeText(canonical)
+            }
+        }
+    }
+}
+
 kotlin {
     jvmToolchain(21)
+
+    // Keep Kotlin's normal native/Apple hierarchy while adding the two deliberate sharing edges
+    // below. An explicit template is required once a project also configures dependsOn manually.
+    applyDefaultHierarchyTemplate()
 
     // Published library: every public declaration states its visibility and return type.
     explicitApi()
@@ -55,6 +79,11 @@ kotlin {
      *                                        Register macosArm64, iosArm64 and
      *                                        iosSimulatorArm64 on an arm64 Mac. Local publication
      *                                        only; remote publication always refuses this scope.
+     *   -Pkitecodec.phoneTargetsOnly=true
+     *                                        Register macosArm64, iosArm64, iosSimulatorArm64,
+     *                                        JVM and the ordinary Android JVM library target on an
+     *                                        arm64 Mac. Local publication only; remote publication
+     *                                        always refuses this scope.
      */
     val stableTargetsOnly = providers.gradleProperty("kitecodec.stableTargetsOnly")
         .map { it.toBoolean() }.getOrElse(false)
@@ -62,10 +91,13 @@ kotlin {
         .map { it.toBoolean() }.getOrElse(false)
     val applePhoneTargetsOnly = providers.gradleProperty("kitecodec.applePhoneTargetsOnly")
         .map { it.toBoolean() }.getOrElse(false)
+    val phoneTargetsOnly = providers.gradleProperty("kitecodec.phoneTargetsOnly")
+        .map { it.toBoolean() }.getOrElse(false)
     val selectedTargetScopes = listOf(
         "kitecodec.stableTargetsOnly" to stableTargetsOnly,
         "kitecodec.hostTargetsOnly" to hostTargetsOnly,
         "kitecodec.applePhoneTargetsOnly" to applePhoneTargetsOnly,
+        "kitecodec.phoneTargetsOnly" to phoneTargetsOnly,
     ).filter { it.second }.map { it.first }
     if (selectedTargetScopes.size > 1) {
         throw GradleException(
@@ -84,8 +116,8 @@ kotlin {
      *       run as if kitecodec.requireAllTargets=true, so a publication can never silently
      *       drop a target.
      * Exceptions: publishToMavenLocal also accepts -Pkitecodec.hostTargetsOnly=true (the CI
-     * consumer-e2e smoke path) or the arm64-Mac applePhoneTargetsOnly scope. Remote publishes
-     * never accept either experimental scope.
+     * consumer-e2e smoke path), the arm64-Mac applePhoneTargetsOnly scope or the S1.c
+     * phoneTargetsOnly superset. Remote publishes never accept an experimental scope.
      * Checked against gradle.startParameter.taskNames, which is simple and configuration-cache safe.
      */
     val corePublishTaskNames = gradle.startParameter.taskNames.filter { name ->
@@ -103,11 +135,18 @@ kotlin {
                 "be used with publishToMavenLocal; remote publication is forbidden.",
         )
     }
+    if (corePublishRequested && phoneTargetsOnly && !onlyLocalPublishes) {
+        throw GradleException(
+            "Phone-superset selector refusal: -Pkitecodec.phoneTargetsOnly=true may only " +
+                "be used with publishToMavenLocal; remote publication is forbidden.",
+        )
+    }
     if (
         corePublishRequested &&
         !stableTargetsOnly &&
         !(hostTargetsOnly && onlyLocalPublishes) &&
-        !(applePhoneTargetsOnly && onlyLocalPublishes)
+        !(applePhoneTargetsOnly && onlyLocalPublishes) &&
+        !(phoneTargetsOnly && onlyLocalPublishes)
     ) {
         throw GradleException(
             """
@@ -130,20 +169,46 @@ kotlin {
             |smoke publish, -Pkitecodec.hostTargetsOnly=true is accepted for publishToMavenLocal.
             |On an arm64 Mac, -Pkitecodec.applePhoneTargetsOnly=true is accepted only for a local
             |macOS/iPhone/simulator proof and only with publishToMavenLocal.
+            |-Pkitecodec.phoneTargetsOnly=true is accepted only for the one local
+            |macOS/iPhone/simulator/JVM/Android phone-superset publication.
             """.trimMargin(),
         )
     }
 
-    // Every Kotlin/Native target gets the same single consolidated cinterop. Each resolves its
-    // own FFmpeg install via FFmpegPaths.resolve(...): vendored static if available, else system.
-    val knTargetMap: Map<KotlinNativeTarget, TargetTriple> = if (applePhoneTargetsOnly) {
+    fun requireArm64Mac(selector: String) {
         val osName = System.getProperty("os.name").lowercase()
         val osArch = System.getProperty("os.arch").lowercase()
         if ("mac" !in osName || osArch !in setOf("aarch64", "arm64")) {
-            throw GradleException(
-                "kitecodec.applePhoneTargetsOnly=true requires an arm64 Mac; found $osName/$osArch.",
-            )
+            throw GradleException("$selector=true requires an arm64 Mac; found $osName/$osArch.")
         }
+    }
+
+    if (phoneTargetsOnly) {
+        requireArm64Mac("kitecodec.phoneTargetsOnly")
+        jvm()
+        android {
+            namespace = "io.github.yuroyami.kitecodec"
+            compileSdk = 36
+            minSdk = 24
+            withHostTest {}
+            withDeviceTestBuilder {
+                sourceSetTreeName = "test"
+            }.configure {
+                instrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+            }
+            optimization {
+                consumerKeepRules.apply {
+                    publish = true
+                    file("consumer-rules.pro")
+                }
+            }
+        }
+    }
+
+    // Every Kotlin/Native target gets the same single consolidated cinterop. Each resolves its
+    // own FFmpeg install via FFmpegPaths.resolve(...): vendored static if available, else system.
+    val knTargetMap: Map<KotlinNativeTarget, TargetTriple> = if (phoneTargetsOnly || applePhoneTargetsOnly) {
+        if (applePhoneTargetsOnly) requireArm64Mac("kitecodec.applePhoneTargetsOnly")
         mapOf(
             macosArm64() to TargetTriple.MacosArm64,
             iosArm64() to TargetTriple.IosArm64,
@@ -212,7 +277,30 @@ kotlin {
     // A publish run implies it (see the publish guard above): every target the publication claims
     // must actually have compiled against a real FFmpeg.
     val requireAllTargets = providers.gradleProperty("kitecodec.requireAllTargets")
-        .map { it.toBoolean() }.getOrElse(false) || corePublishRequested
+        .map { it.toBoolean() }.getOrElse(false) || corePublishRequested || phoneTargetsOnly
+
+    if (phoneTargetsOnly) {
+        listOf(
+            TargetTriple.MacosArm64,
+            TargetTriple.IosArm64,
+            TargetTriple.IosSimulatorArm64,
+            TargetTriple.AndroidArm64,
+            TargetTriple.AndroidX64,
+        ).forEach { triple ->
+            val install = rootDir.resolve("native-libs/lgpl/${triple.dirName}")
+            val missing = BuildFFmpegTask.REQUIRED_LIBS.filterNot { library ->
+                install.resolve("lib/$library.a").isFile
+            }
+            val hasHeaders = install.resolve("include/libavformat/avformat.h").isFile
+            val hasProvenance = install.resolve(BuildFFmpegTask.CONFIGURE_EVIDENCE_RELATIVE_PATH).isFile
+            if (missing.isNotEmpty() || !hasHeaders || !hasProvenance) {
+                throw GradleException(
+                    "kitecodec.phoneTargetsOnly=true requires its complete vendored ${triple.dirName} FFmpeg tree. " +
+                        "Run :kitecodec-core:buildFFmpegFor${triple.gradleSuffix} first.",
+                )
+            }
+        }
+    }
 
     knTargetMap.forEach { (target, triple) ->
         val license = if (triple.isAndroid) FFmpegLicense.LGPL else selectedLicense
@@ -372,6 +460,30 @@ kotlin {
         commonTest.dependencies {
             implementation(kotlin("test"))
         }
+        if (phoneTargetsOnly) {
+            val commonMain = getByName("commonMain")
+            val commonTest = getByName("commonTest")
+            val jvmAndAndroidMain = maybeCreate("jvmAndAndroidMain").apply {
+                dependsOn(commonMain)
+            }
+            getByName("jvmMain").dependsOn(jvmAndAndroidMain)
+            getByName("androidMain").dependsOn(jvmAndAndroidMain)
+
+            val codecContractTest = maybeCreate("codecContractTest").apply {
+                dependsOn(commonTest)
+            }
+            getByName("macosArm64Test").dependsOn(codecContractTest)
+            getByName("jvmTest").dependsOn(codecContractTest)
+            getByName("androidDeviceTest").apply {
+                dependsOn(codecContractTest)
+                dependencies {
+                    implementation(kotlin("test"))
+                    implementation(libs.androidx.test.core)
+                    implementation(libs.androidx.test.runner)
+                    implementation(libs.androidx.test.ext.junit)
+                }
+            }
+        }
     }
 }
 
@@ -500,6 +612,19 @@ run {
     val konanDataDirProvider = providers.environmentVariable("KONAN_DATA_DIR")
         .orElse(providers.systemProperty("user.home").map { home -> "$home/.konan" })
         .map(::File)
+    val macosFfmpegInclude = rootDir.resolve("native-libs/lgpl/macos-arm64/include")
+    val macosFfmpegLib = rootDir.resolve("native-libs/lgpl/macos-arm64/lib")
+    val macosJniLinkFlags = listOf(
+        "-lavformat", "-lavcodec", "-lavfilter", "-lavutil", "-lswscale", "-lswresample",
+        "-lSvtAv1Enc", "-lvpx", "-laom", "-lopus", "-lmp3lame",
+        "-lwebpmux", "-lwebp", "-lsharpyuv",
+        "-lass", "-lharfbuzz", "-lgraphite2", "-lfreetype", "-lfribidi", "-lpng16",
+        "-lz", "-lbz2", "-llzma", "-liconv", "-lc++",
+        "-framework", "CoreGraphics", "-framework", "CoreText",
+        "-framework", "CoreFoundation", "-framework", "CoreMedia",
+        "-framework", "CoreVideo", "-framework", "VideoToolbox",
+        "-framework", "AudioToolbox",
+    )
     val androidHelperTasks = LinkKiteCodecJniTask.ANDROID_ABI_RECIPES.associateWith { arm ->
         val ffmpegInclude = rootDir.resolve("native-libs/lgpl/${arm.ffmpegDirName}/include")
         val ffmpegLib = rootDir.resolve("native-libs/lgpl/${arm.ffmpegDirName}/lib")
@@ -526,7 +651,7 @@ run {
         }
     }
 
-    tasks.register<LinkKiteCodecJniTask>(
+    val macosJniLink = tasks.register<LinkKiteCodecJniTask>(
         "linkKiteCodecJniMacosArm64",
     ) {
         group = "kitecodec"
@@ -536,28 +661,17 @@ run {
         val helperCompile = tasks.named<CompileKiteCodecCTask>("compileKiteCodecCForMacosArm64")
         dependsOn(helperCompile)
         helperArchive.from(helperCompile.flatMap { it.outputDir.file(CompileKiteCodecCTask.ARCHIVE_NAME) })
-        ffmpegLibDir.set(rootDir.resolve("native-libs/lgpl/macos-arm64/lib"))
+        ffmpegLibDir.set(macosFfmpegLib)
         compiler.set("/usr/bin/clang")
         extraIncludeDirs.set(
             javaHome.map { listOf("${it.absolutePath}/include", "${it.absolutePath}/include/darwin") },
         )
         libSearchDirs.set(listOf("/opt/homebrew/lib"))
-        linkFlags.set(
-            listOf(
-                "-lavformat", "-lavcodec", "-lavfilter", "-lavutil", "-lswscale", "-lswresample",
-                "-lSvtAv1Enc", "-lvpx", "-laom", "-lopus", "-lmp3lame",
-                "-lwebpmux", "-lwebp", "-lsharpyuv",
-                "-lass", "-lharfbuzz", "-lgraphite2", "-lfreetype", "-lfribidi", "-lpng16",
-                "-lz", "-lbz2", "-llzma", "-liconv", "-lc++",
-                "-framework", "CoreGraphics", "-framework", "CoreText",
-                "-framework", "CoreFoundation", "-framework", "CoreMedia",
-                "-framework", "CoreVideo", "-framework", "VideoToolbox",
-                "-framework", "AudioToolbox",
-            ),
-        )
+        linkFlags.set(macosJniLinkFlags)
         exportControlFile.set(jniDir.resolve("exports.macos"))
         exportControlKind.set(LinkKiteCodecJniTask.ExportControlKind.MACHO_EXPORTED_SYMBOLS)
-        outputLibrary.set(layout.buildDirectory.file("kitecodec-jni/macos-arm64/libkitecodec_jni.dylib"))
+        outputDirectory.set(layout.buildDirectory.dir("kitecodec-jni/macos-arm64"))
+        outputLibrary.set(outputDirectory.file("libkitecodec_jni.dylib"))
     }
 
     // The two Android arms, exactly the S1.c.1 step 6 recipe. ANDROID_NDK_HOME is read at
@@ -565,7 +679,7 @@ run {
     // fails the arm at execution with the producer task named in the message.
     val ndkHome = providers.environmentVariable("ANDROID_NDK_HOME")
         .orElse("/Users/macbook/WORKSTATION/AndroidSDK/ndk/29.0.14206865")
-    LinkKiteCodecJniTask.ANDROID_ABI_RECIPES.forEach { arm ->
+    val androidJniLinks = LinkKiteCodecJniTask.ANDROID_ABI_RECIPES.associateWith { arm ->
         val helperCompile = androidHelperTasks.getValue(arm)
         tasks.register<LinkKiteCodecJniTask>(arm.linkTaskName) {
             group = "kitecodec"
@@ -583,7 +697,171 @@ run {
             linkFlags.set(LinkKiteCodecJniTask.androidLinkFlags(arm))
             exportControlFile.set(jniDir.resolve("exports.map"))
             exportControlKind.set(LinkKiteCodecJniTask.ExportControlKind.ELF_VERSION_SCRIPT)
-            outputLibrary.set(layout.buildDirectory.file(arm.outputRelativePath))
+            outputDirectory.set(layout.buildDirectory.dir("kitecodec-jni/${arm.ffmpegDirName}"))
+            outputLibrary.set(outputDirectory.file("${arm.abiDirectory}/libkitecodec_jni.so"))
+        }
+    }
+
+    val phoneTargetsOnly = providers.gradleProperty("kitecodec.phoneTargetsOnly")
+        .map { it.toBoolean() }.getOrElse(false)
+    if (phoneTargetsOnly) {
+        val prepareMajorMismatchHeaders = tasks.register<PrepareKiteCodecJniHarnessTask>(
+            "prepareKiteCodecJniMajorMismatchHeaders",
+        ) {
+            group = "verification"
+            description = "Generates an unrenamed overlay from the hermetic major-mismatch fake header."
+            sourceDirectory.set(opaqueInclude)
+            mutationSourceFile.set(
+                rootDir.resolve(
+                    "native/kitecodec-c/tests/fake_headers/major_mismatch/kitecodec_ffmpeg_versions.h",
+                ),
+            )
+            relativeFile.set("kitecodec_ffmpeg_versions.h")
+            expectedText.set("#define KC_CASE kc_major_mismatch\n#include \"../kc_rename.h\"\n\n")
+            replacementText.set("")
+            outputDirectory.set(layout.buildDirectory.dir("generated/kitecodec-jni-harness/major-mismatch/include"))
+        }
+        val mismatchHelperCompile = tasks.register<CompileKiteCodecCTask>(
+            "compileKiteCodecCForJniMacosArm64MajorMismatch",
+        ) {
+            konanTargetName.set("macos_arm64")
+            sourceDir.set(rootDir.resolve("native/kitecodec-c/src"))
+            includeDir.set(prepareMajorMismatchHeaders.flatMap { it.outputDirectory })
+            // The generated fake header's include_next resolves the production copy second.
+            ffmpegIncludeDirs.set(listOf(opaqueInclude.absolutePath, macosFfmpegInclude.absolutePath))
+            ffmpegVersionHeaders.from(
+                listOf("libavutil", "libavcodec", "libavformat", "libavfilter", "libswscale", "libswresample")
+                    .flatMap { library ->
+                        listOf("version.h", "version_major.h").map { "$macosFfmpegInclude/$library/$it" }
+                    } + "$macosFfmpegInclude/libavutil/ffversion.h",
+            )
+            buildDefines.set(
+                mapOf(
+                    CompileKiteCodecCTask.DEFINE_FFMPEG_REF to BuildFFmpegTask.DEFAULT_SOURCE_REF,
+                    CompileKiteCodecCTask.DEFINE_FFMPEG_LICENSE to FFmpegLicense.LGPL.dirName,
+                    CompileKiteCodecCTask.DEFINE_FFMPEG_DIR to macosFfmpegLib.absolutePath,
+                ),
+            )
+            konanDataDir.fileProvider(konanDataDirProvider)
+            outputDir.set(layout.buildDirectory.dir("kitecodec-c-jni-major-mismatch/macos_arm64"))
+        }
+        val mismatchJniLink = tasks.register<LinkKiteCodecJniTask>(
+            "linkKiteCodecJniMacosArm64MajorMismatch",
+        ) {
+            group = "verification"
+            description = "Links a test-only JNI dylib with a genuinely major-mismatched identity helper."
+            jniSources.from(fileTree(jniDir) { include("*.c", "*.h", "methods.def") })
+            opaqueIncludeDir.set(opaqueInclude)
+            dependsOn(mismatchHelperCompile)
+            helperArchive.from(
+                mismatchHelperCompile.flatMap { it.outputDir.file(CompileKiteCodecCTask.ARCHIVE_NAME) },
+            )
+            ffmpegLibDir.set(macosFfmpegLib)
+            compiler.set("/usr/bin/clang")
+            extraIncludeDirs.set(
+                javaHome.map { listOf("${it.absolutePath}/include", "${it.absolutePath}/include/darwin") },
+            )
+            libSearchDirs.set(listOf("/opt/homebrew/lib"))
+            linkFlags.set(macosJniLinkFlags)
+            exportControlFile.set(jniDir.resolve("exports.macos"))
+            exportControlKind.set(LinkKiteCodecJniTask.ExportControlKind.MACHO_EXPORTED_SYMBOLS)
+            outputDirectory.set(layout.buildDirectory.dir("kitecodec-jni-harness/major-mismatch/macos-arm64"))
+            outputLibrary.set(outputDirectory.file("libkitecodec_jni_major_mismatch.dylib"))
+        }
+
+        val prepareCorruptJni = tasks.register<PrepareKiteCodecJniHarnessTask>(
+            "prepareKiteCodecJniCorruptDescriptorSources",
+        ) {
+            group = "verification"
+            description = "Generates an isolated JNI tree with one invalid RegisterNatives descriptor."
+            sourceDirectory.set(jniDir)
+            mutationSourceFile.set(jniDir.resolve("methods.def"))
+            relativeFile.set("methods.def")
+            expectedText.set(
+                """KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeAbiVersion",       "()I",                    kj_abi_version)""",
+            )
+            replacementText.set(
+                """KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeAbiVersion",       "()J",                    kj_abi_version)""",
+            )
+            outputDirectory.set(layout.buildDirectory.dir("generated/kitecodec-jni-harness/corrupt-descriptor"))
+        }
+        val normalHelperCompile = tasks.named<CompileKiteCodecCTask>("compileKiteCodecCForMacosArm64")
+        val corruptJniLink = tasks.register<LinkKiteCodecJniTask>(
+            "linkKiteCodecJniMacosArm64CorruptDescriptor",
+        ) {
+            group = "verification"
+            description = "Links a test-only JNI dylib whose RegisterNatives descriptor must fail."
+            jniSources.from(
+                prepareCorruptJni.flatMap { it.outputDirectory }.map { directory -> directory.asFileTree },
+            )
+            opaqueIncludeDir.set(opaqueInclude)
+            dependsOn(normalHelperCompile)
+            helperArchive.from(
+                normalHelperCompile.flatMap { it.outputDir.file(CompileKiteCodecCTask.ARCHIVE_NAME) },
+            )
+            ffmpegLibDir.set(macosFfmpegLib)
+            compiler.set("/usr/bin/clang")
+            extraIncludeDirs.set(
+                javaHome.map { listOf("${it.absolutePath}/include", "${it.absolutePath}/include/darwin") },
+            )
+            libSearchDirs.set(listOf("/opt/homebrew/lib"))
+            linkFlags.set(macosJniLinkFlags)
+            exportControlFile.set(prepareCorruptJni.flatMap { it.outputDirectory.file("exports.macos") })
+            exportControlKind.set(LinkKiteCodecJniTask.ExportControlKind.MACHO_EXPORTED_SYMBOLS)
+            outputDirectory.set(layout.buildDirectory.dir("kitecodec-jni-harness/corrupt-descriptor/macos-arm64"))
+            outputLibrary.set(outputDirectory.file("libkitecodec_jni_corrupt_descriptor.dylib"))
+        }
+
+        val jvmTranscriptFile = layout.buildDirectory.file("contract-transcripts/jvm.txt")
+        val macosTranscriptFile = layout.buildDirectory.file("contract-transcripts/macosArm64.txt")
+
+        tasks.named<Test>("jvmTest") {
+            dependsOn(macosJniLink, mismatchJniLink, corruptJniLink)
+            val testRuntimeClasspath = classpath
+            jvmArgumentProviders.add(
+                objects.newInstance<KiteCodecJvmTestArgumentProvider>().apply {
+                    normalJniLibrary.set(macosJniLink.flatMap { it.outputLibrary })
+                    mismatchJniLibrary.set(mismatchJniLink.flatMap { it.outputLibrary })
+                    corruptJniLibrary.set(corruptJniLink.flatMap { it.outputLibrary })
+                    contractTranscript.set(jvmTranscriptFile)
+                    probeClasspath.from(testRuntimeClasspath)
+                },
+            )
+            outputs.file(jvmTranscriptFile).withPropertyName("codecContractTranscript")
+        }
+        tasks.named<org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest>("macosArm64Test") {
+            environment(
+                "KITECODEC_CONTRACT_TRANSCRIPT",
+                macosTranscriptFile.get().asFile.absolutePath,
+            )
+            outputs.file(macosTranscriptFile).withPropertyName("codecContractTranscript")
+            doFirst {
+                val parent = macosTranscriptFile.get().asFile.parentFile
+                if (!parent.isDirectory && !parent.mkdirs()) {
+                    throw GradleException("Could not create codec-contract transcript directory: $parent")
+                }
+            }
+        }
+        tasks.register<CompareCodecContractTask>("compareJvmNativeContract") {
+            group = "verification"
+            description = "Compares JVM and macOS codec-contract transcripts byte for byte."
+            dependsOn("jvmTest", "macosArm64Test")
+            jvmTranscript.set(jvmTranscriptFile)
+            macosArm64Transcript.set(macosTranscriptFile)
+        }
+
+        extensions.configure<KotlinMultiplatformAndroidComponentsExtension> {
+            onVariants { variant ->
+                val jniLibs = checkNotNull(variant.sources.jniLibs) {
+                    "AGP did not expose jniLibs sources for Kotlin Multiplatform Android variant ${variant.name}."
+                }
+                androidJniLinks.values.forEach { linkTask ->
+                    jniLibs.addGeneratedSourceDirectory(
+                        linkTask,
+                        LinkKiteCodecJniTask::outputDirectory,
+                    )
+                }
+            }
         }
     }
 }

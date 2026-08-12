@@ -13,8 +13,10 @@ import ffmpeg.ffkmp_codecctx_receive_frame
 import ffmpeg.ffkmp_codecctx_send_packet
 import ffmpeg.ffkmp_codecctx_set_low_delay
 import ffmpeg.ffkmp_codecctx_set_threads
+import ffmpeg.ffkmp_codec_id
 import ffmpeg.ffkmp_codecpar_codec_id
 import ffmpeg.ffkmp_find_decoder_by_id
+import ffmpeg.ffkmp_find_decoder_by_name
 import ffmpeg.ffkmp_fmt_read_frame
 import ffmpeg.ffkmp_fmt_seek_file
 import ffmpeg.ffkmp_fmt_stream
@@ -32,6 +34,7 @@ import ffmpeg.ffkmp_packet_duration
 import ffmpeg.ffkmp_packet_dts
 import ffmpeg.ffkmp_packet_free
 import ffmpeg.ffkmp_packet_is_keyframe
+import ffmpeg.ffkmp_packet_clone
 import ffmpeg.ffkmp_packet_move_ref
 import ffmpeg.ffkmp_packet_pos
 import ffmpeg.ffkmp_packet_pts
@@ -65,10 +68,10 @@ import kotlinx.cinterop.ExperimentalForeignApi
  */
 @KiteCodecLowLevelApi
 @OptIn(ExperimentalForeignApi::class)
-public class Packet internal constructor(
+public actual class Packet internal constructor(
     internal val native: CPointer<kc_packet>,
     /** The stream's time base, so the caller can convert [pts] without looking the stream up. */
-    public val timeBase: Rational,
+    public actual val timeBase: Rational,
 ) : AutoCloseable {
 
     private var closed = false
@@ -86,24 +89,24 @@ public class Packet internal constructor(
         check(!closed) { "Packet is closed" }
     }
 
-    public val streamIndex: Int get() { checkOpen(); return ffkmp_packet_stream_index(native) }
+    public actual val streamIndex: Int get() { checkOpen(); return ffkmp_packet_stream_index(native) }
 
     /** Presentation timestamp in [timeBase] units, or [FrameInfo.NOPTS] when the container gave none. */
-    public val pts: Long get() { checkOpen(); return ffkmp_packet_pts(native) }
+    public actual val pts: Long get() { checkOpen(); return ffkmp_packet_pts(native) }
 
-    public val dts: Long get() { checkOpen(); return ffkmp_packet_dts(native) }
+    public actual val dts: Long get() { checkOpen(); return ffkmp_packet_dts(native) }
 
     /** Duration in [timeBase] units. 0 when unknown, which is common and not an error. */
-    public val duration: Long get() { checkOpen(); return ffkmp_packet_duration(native) }
+    public actual val duration: Long get() { checkOpen(); return ffkmp_packet_duration(native) }
 
-    public val isKeyframe: Boolean get() { checkOpen(); return ffkmp_packet_is_keyframe(native) != 0 }
+    public actual val isKeyframe: Boolean get() { checkOpen(); return ffkmp_packet_is_keyframe(native) != 0 }
 
-    public val sizeBytes: Int get() { checkOpen(); return ffkmp_packet_size(native) }
+    public actual val sizeBytes: Int get() { checkOpen(); return ffkmp_packet_size(native) }
 
     /** Byte offset in the container, or -1. Useful for progress when timestamps are broken. */
-    public val bytePosition: Long get() { checkOpen(); return ffkmp_packet_pos(native) }
+    public actual val bytePosition: Long get() { checkOpen(); return ffkmp_packet_pos(native) }
 
-    public val hasPts: Boolean get() = pts != FrameInfo.NOPTS
+    public actual val hasPts: Boolean get() = pts != FrameInfo.NOPTS
 
     /**
      * [pts] converted to microseconds on the stream's own timeline. Null when there is no pts.
@@ -112,7 +115,7 @@ public class Packet internal constructor(
      * multiply on a fine time base: a nanosecond-timescale mp4 passes it after about two and a
      * half hours. This one goes through `av_rescale_q`, which carries a 128 bit intermediate.
      */
-    public val ptsMicros: Long?
+    public actual val ptsMicros: Long?
         get() = if (hasPts) ffmpeg.ffkmp_rescale_q(pts, timeBase.num, timeBase.den, 1, 1_000_000) else null
 
     /**
@@ -122,7 +125,7 @@ public class Packet internal constructor(
      * why a player watches them: they are what the demuxer's read position actually is. Overflow
      * safe on the same grounds as [ptsMicros].
      */
-    public val dtsMicros: Long?
+    public actual val dtsMicros: Long?
         get() = if (dts != FrameInfo.NOPTS) {
             ffmpeg.ffkmp_rescale_q(dts, timeBase.num, timeBase.den, 1, 1_000_000)
         } else null
@@ -134,12 +137,21 @@ public class Packet internal constructor(
      * offset applies to it. Zero means unknown, which is common and not an error, and reads as null
      * here rather than as an instantaneous packet.
      */
-    public val durationMicros: Long?
+    public actual val durationMicros: Long?
         get() = if (duration > 0) {
             ffmpeg.ffkmp_rescale_q(duration, timeBase.num, timeBase.den, 1, 1_000_000)
         } else null
 
-    override fun close() {
+    @KiteCodecLowLevelApi
+    @Throws(FFmpegException::class)
+    public actual fun copy(): Packet {
+        checkOpen()
+        val cloned = ffkmp_packet_clone(native)
+            ?: throw FFmpegException(FFmpegError.Internal("packet clone failed"))
+        return Packet(cloned, timeBase)
+    }
+
+    actual override fun close() {
         if (closed) return
         closed = true
         ffkmp_packet_free(native)
@@ -148,7 +160,7 @@ public class Packet internal constructor(
 
 /** Which way a seek may land relative to the target. */
 @KiteCodecLowLevelApi
-public enum class SeekDirection {
+public actual enum class SeekDirection {
     /** At or before the target, on a keyframe. What a player wants before decoding forward. */
     Backward,
 
@@ -177,7 +189,7 @@ public enum class SeekDirection {
  */
 @KiteCodecLowLevelApi
 @OptIn(ExperimentalForeignApi::class)
-public class PacketReader internal constructor(
+public actual class PacketReader internal constructor(
     private val source: MediaSource,
     private val ctx: CPointer<kc_fmt_ctx>,
     private val timeBaseByStream: Map<Int, Rational>,
@@ -193,7 +205,8 @@ public class PacketReader internal constructor(
      * @return an owned packet, or null at the end of the container. Null is the signal to start the
      *         decoder drain, by sending a null packet to each decoder.
      */
-    public fun read(): Packet? {
+    @Throws(FFmpegException::class)
+    public actual fun read(): Packet? {
         check(!closed) { "PacketReader is closed" }
         while (true) {
             val rc = ffkmp_fmt_read_frame(ctx, scratch)
@@ -233,10 +246,11 @@ public class PacketReader internal constructor(
      * @param micros where to seek to, on the content-relative timeline the rest of the API uses.
      * @param notEarlierThan a lower bound on where the seek may land. Null means no bound.
      */
-    public fun seek(
+    @Throws(FFmpegException::class)
+    public actual fun seek(
         micros: Long,
-        direction: SeekDirection = SeekDirection.Backward,
-        notEarlierThan: Long? = null,
+        direction: SeekDirection,
+        notEarlierThan: Long?,
     ) {
         check(!closed) { "PacketReader is closed" }
         val target = source.toAbsoluteMicros(micros)
@@ -251,7 +265,7 @@ public class PacketReader internal constructor(
         if (rc < 0) throw FFmpegException(avError(rc))
     }
 
-    override fun close() {
+    actual override fun close() {
         if (closed) return
         closed = true
         ffkmp_packet_free(scratch)
@@ -281,8 +295,8 @@ public class PacketReader internal constructor(
  */
 @KiteCodecLowLevelApi
 @OptIn(ExperimentalForeignApi::class)
-public class StreamDecoder internal constructor(
-    public val stream: StreamInfo,
+public actual class StreamDecoder internal constructor(
+    public actual val stream: StreamInfo,
     private val codecCtx: CPointer<kc_codec_ctx>,
 ) : AutoCloseable {
 
@@ -299,7 +313,7 @@ public class StreamDecoder internal constructor(
      * Set when [receive] sees end of stream, which happens after `send(null)` has been drained.
      * Cleared by [flush], because a flushed decoder accepts input again.
      */
-    public var isDrained: Boolean = false
+    public actual var isDrained: Boolean = false
         private set
 
     /**
@@ -312,7 +326,8 @@ public class StreamDecoder internal constructor(
      * @return true when the packet was consumed. False means the decoder's output queue is full:
      *         call [receive] until it returns null, then offer this same packet again.
      */
-    public fun send(packet: Packet?): Boolean {
+    @Throws(FFmpegException::class)
+    public actual fun send(packet: Packet?): Boolean {
         check(!closed) { "StreamDecoder is closed" }
         packet?.checkOpen()
         val rc = ffkmp_codecctx_send_packet(codecCtx, packet?.native)
@@ -336,7 +351,8 @@ public class StreamDecoder internal constructor(
      *         [isDrained] says so. The frame is an O(1) clone, so it shares its buffers with nothing
      *         the decoder will reuse, and the caller may queue it. Close it exactly once.
      */
-    public fun receive(): Frame? {
+    @Throws(FFmpegException::class)
+    public actual fun receive(): Frame? {
         check(!closed) { "StreamDecoder is closed" }
         val rc = ffkmp_codecctx_receive_frame(codecCtx, landing)
         if (rc == FFErrors.EOF) {
@@ -371,13 +387,13 @@ public class StreamDecoder internal constructor(
      *
      * Clears [isDrained]: the decoder is ready for input again, wherever the caller seeks to.
      */
-    public fun flush() {
+    public actual fun flush() {
         check(!closed) { "StreamDecoder is closed" }
         ffkmp_codecctx_flush(codecCtx)
         isDrained = false
     }
 
-    override fun close() {
+    actual override fun close() {
         if (closed) return
         closed = true
         ffkmp_frame_free(landing)
@@ -390,14 +406,27 @@ public class StreamDecoder internal constructor(
             stream: StreamInfo,
             threadCount: Int,
             lowDelay: Boolean,
+            decoder: CodecId?,
         ): StreamDecoder {
             val streamPtr = ffkmp_fmt_stream(ctx, stream.index.toUInt())
                 ?: throw FFmpegException(FFmpegError.Internal("Stream ${stream.index} disappeared"))
             val codecpar = ffkmp_stream_codecpar(streamPtr)
                 ?: throw FFmpegException(FFmpegError.Internal("Stream ${stream.index} missing codecpar"))
             val codecId = ffkmp_codecpar_codec_id(codecpar)
-            val codec = ffkmp_find_decoder_by_id(codecId)
-                ?: throw FFmpegException(FFmpegError.Internal("No decoder for codec id $codecId"))
+            val codec = if (decoder == null) {
+                ffkmp_find_decoder_by_id(codecId)
+                    ?: throw FFmpegException(FFmpegError.Internal("No decoder for codec id $codecId"))
+            } else {
+                ffkmp_find_decoder_by_name(decoder.name)
+                    ?: throw FFmpegException(FFmpegError.Internal("No decoder named ${decoder.name}"))
+            }
+            if (decoder != null && ffkmp_codec_id(codec) != codecId) {
+                throw FFmpegException(
+                    FFmpegError.Internal(
+                        "Decoder '${decoder.name}' cannot decode stream codec id $codecId",
+                    ),
+                )
+            }
 
             val codecCtx = ffkmp_codecctx_alloc(codec)
                 ?: throw FFmpegException(FFmpegError.Internal("avcodec_alloc_context3 returned NULL"))
@@ -408,11 +437,13 @@ public class StreamDecoder internal constructor(
                 ffkmp_codecctx_set_threads(codecCtx, threadCount, if (stream.type == MediaType.Video) 1 else 0)
                 ffkmp_codecctx_set_low_delay(codecCtx, if (lowDelay) 1 else 0)
                 check0(ffkmp_codecctx_open(codecCtx, codec), "avcodec_open2")
+                // Construction allocates the landing frame. Keep it inside this ownership guard
+                // so a landing-frame OOM cannot strand an already-open codec context.
+                return StreamDecoder(stream, codecCtx)
             } catch (t: Throwable) {
                 ffkmp_codecctx_free(codecCtx)
                 throw t
             }
-            return StreamDecoder(stream, codecCtx)
         }
     }
 }

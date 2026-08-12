@@ -2,6 +2,7 @@ package io.github.yuroyami.kitecodec.buildtools
 
 import org.gradle.api.DefaultTask
 import org.gradle.api.GradleException
+import org.gradle.api.file.FileSystemOperations
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
@@ -11,13 +12,129 @@ import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.InputFile
 import org.gradle.api.tasks.InputFiles
-import org.gradle.api.tasks.OutputFile
+import org.gradle.api.tasks.Classpath
+import org.gradle.api.tasks.Internal
+import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 import org.gradle.process.ExecOperations
+import org.gradle.process.CommandLineArgumentProvider
 import java.io.File
+import java.nio.charset.StandardCharsets
 import javax.inject.Inject
+
+/**
+ * Supplies the path-valued JVM-test properties without stringifying Gradle [Provider] objects.
+ * Gradle asks for these arguments when it starts the test JVM, after the three dylibs exist. The
+ * dylibs are real content-tracked inputs; the transcript is the test task's declared output.
+ */
+abstract class KiteCodecJvmTestArgumentProvider : CommandLineArgumentProvider {
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val normalJniLibrary: RegularFileProperty
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val mismatchJniLibrary: RegularFileProperty
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val corruptJniLibrary: RegularFileProperty
+
+    /** Declared as the owning Test task's output; retained here only to materialize its path. */
+    @get:Internal
+    abstract val contractTranscript: RegularFileProperty
+
+    /** The real JVM test runtime, not Gradle's often-minimal worker-process java.class.path. */
+    @get:Classpath
+    abstract val probeClasspath: ConfigurableFileCollection
+
+    override fun asArguments(): Iterable<String> = listOf(
+        "-Dkitecodec.jni.path=${normalJniLibrary.get().asFile.absolutePath}",
+        "-Dkitecodec.jni.mismatch.path=${mismatchJniLibrary.get().asFile.absolutePath}",
+        "-Dkitecodec.jni.corrupt.path=${corruptJniLibrary.get().asFile.absolutePath}",
+        "-Dkitecodec.contract.transcript=${contractTranscript.get().asFile.absolutePath}",
+        "-Dkitecodec.jni.probe.classpath=${probeClasspath.asPath}",
+    )
+}
+
+/**
+ * Makes an isolated generated copy of a JNI/opaque-header tree and performs one exact mutation.
+ * The exact-once gate is load bearing: a renamed or duplicated manifest/header record must fail the
+ * harness producer instead of silently turning a falsifiability arm into a normal-library test.
+ */
+abstract class PrepareKiteCodecJniHarnessTask @Inject constructor(
+    private val fileSystemOperations: FileSystemOperations,
+) : DefaultTask() {
+
+    @get:InputDirectory
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val sourceDirectory: DirectoryProperty
+
+    /** File whose bytes are transformed into [relativeFile]; it may be an overlay outside the tree. */
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val mutationSourceFile: RegularFileProperty
+
+    @get:Input
+    abstract val relativeFile: Property<String>
+
+    @get:Input
+    abstract val expectedText: Property<String>
+
+    @get:Input
+    abstract val replacementText: Property<String>
+
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+
+    @TaskAction
+    fun prepare() {
+        val sourceRoot = sourceDirectory.get().asFile
+        val outputRoot = outputDirectory.get().asFile.canonicalFile
+        fileSystemOperations.sync {
+            from(sourceRoot)
+            into(outputRoot)
+        }
+
+        val target = outputRoot.resolve(relativeFile.get()).canonicalFile
+        if (!target.toPath().startsWith(outputRoot.toPath()) || !target.isFile) {
+            throw GradleException(
+                "Harness mutation target '${relativeFile.get()}' is not a file inside " +
+                    outputRoot.absolutePath,
+            )
+        }
+        val original = mutationSourceFile.get().asFile.readText(StandardCharsets.UTF_8)
+        target.writeText(
+            replaceExactlyOnce(original, expectedText.get(), replacementText.get(), relativeFile.get()),
+            StandardCharsets.UTF_8,
+        )
+    }
+
+    companion object {
+        internal fun replaceExactlyOnce(
+            source: String,
+            expected: String,
+            replacement: String,
+            label: String,
+        ): String {
+            if (expected.isEmpty()) {
+                throw GradleException("Harness mutation for '$label' has an empty expected value.")
+            }
+            val first = source.indexOf(expected)
+            val second = if (first >= 0) source.indexOf(expected, first + expected.length) else -1
+            if (first < 0 || second >= 0) {
+                val count = if (first < 0) 0 else 2
+                throw GradleException(
+                    "Harness mutation for '$label' expected exactly one source occurrence; found $count${if (second >= 0) "+" else ""}.",
+                )
+            }
+            return source.replaceRange(first, first + expected.length, replacement)
+        }
+    }
+}
 
 /**
  * Compiles the `native/kitecodec-jni` adapter and links ONE shared JNI library against the opaque
@@ -82,12 +199,24 @@ abstract class LinkKiteCodecJniTask @Inject constructor(
     @get:Input
     abstract val libSearchDirs: ListProperty<String>
 
-    @get:OutputFile
+    /**
+     * The generated-source root consumed by Android's `jniLibs` source API. It is deliberately
+     * one level above the ABI directory, so AGP packages `arm64-v8a/...` and `x86_64/...` rather
+     * than flattening either ABI out of the AAR.
+     */
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+
+    /** The shared library inside [outputDirectory]. The directory is the Gradle output. */
+    @get:Internal
     abstract val outputLibrary: RegularFileProperty
 
     @TaskAction
     fun link() {
-        val out = outputLibrary.get().asFile
+        val outputRoot = outputDirectory.get().asFile.canonicalFile
+        val out = outputLibrary.get().asFile.canonicalFile
+        assertOutputLibraryInsideDirectory(outputRoot, out)
+        outputRoot.mkdirs()
         out.parentFile.mkdirs()
         val sources = jniSources.files.filter { it.name.endsWith(".c") }.sortedBy { it.name }
         if (sources.isEmpty()) throw GradleException("no kj_*.c sources found for $name")
@@ -173,6 +302,17 @@ abstract class LinkKiteCodecJniTask @Inject constructor(
                 listOf("-Wl,--version-script=${file.absolutePath}")
             ExportControlKind.MACHO_EXPORTED_SYMBOLS ->
                 listOf("-Wl,-exported_symbols_list,${file.absolutePath}")
+        }
+
+        internal fun assertOutputLibraryInsideDirectory(outputDirectory: File, outputLibrary: File) {
+            val directoryPath = outputDirectory.canonicalFile.toPath()
+            val libraryPath = outputLibrary.canonicalFile.toPath()
+            if (libraryPath == directoryPath || !libraryPath.startsWith(directoryPath)) {
+                throw GradleException(
+                    "output library ${outputLibrary.absolutePath} must be inside output directory " +
+                        outputDirectory.absolutePath,
+                )
+            }
         }
     }
 }

@@ -1,8 +1,8 @@
 package io.github.yuroyami.kitecodec
 
 /**
- * Marks API that hands out native pointers, manual lifetimes, or a stage of the pipeline that the
- * caller must drive itself.
+ * Marks API that hands out opaque native-backed owners, manual lifetimes, or a stage of the
+ * pipeline that the caller must drive itself.
  *
  * The rest of KiteCodec is safe by construction: one call transcodes a file, and a `Frame` from a
  * `Flow` is owned by whoever collected it. The declarations behind this annotation are not like
@@ -15,7 +15,7 @@ package io.github.yuroyami.kitecodec
  *
  * - You drive the stages. Nothing here pumps itself.
  * - You own what you are given, and you close it exactly once.
- * - A pointer handed to you inside a scoped block is invalid the moment that block returns.
+ * - An object handed to you inside a scoped block is invalid the moment that block returns.
  * - There is no stability promise on these signatures before 1.0.
  *
  * If a plain transcode, remux, thumbnail or decode-to-frames does what you need, use those instead.
@@ -23,7 +23,7 @@ package io.github.yuroyami.kitecodec
  */
 @RequiresOptIn(
     level = RequiresOptIn.Level.ERROR,
-    message = "Low-level KiteCodec API: native pointers, manual lifetimes, and no stability promise. " +
+    message = "Low-level KiteCodec API: native-backed handles, manual lifetimes, and no stability promise. " +
         "Opt in with @OptIn(KiteCodecLowLevelApi::class) if you are building a player or another " +
         "pipeline that must drive demuxing and decoding as separate stages.",
 )

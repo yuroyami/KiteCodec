@@ -1,15 +1,25 @@
 # Platform support
 
-Decode, encode, transcode, remux, and filter video and audio from shared Kotlin code. Transcode means decode and then re-encode. Remux means copy the existing streams into a different container. The API lives in `commonMain`. Every target binds to the same FFmpeg libav\* libraries underneath. KiteCodec is Kotlin/Native only today. There is no JVM or Android-app artifact yet.
+Decode, encode, transcode, remux, and filter video and audio from shared Kotlin code. Transcode
+means decode and then re-encode. Remux means copy the existing streams into a different container.
+The API lives in `commonMain`: Kotlin/Native actuals use cinterop, while JVM and Android actuals
+use a dynamically registered JNI bridge over the same opaque FFmpeg helper boundary. No target
+artifact is publicly available yet.
 
 ## Target matrix
 
-There is one target table for the project and it lives in the [README](https://github.com/yuroyami/KiteCodec#targets). It records, per target, whether the target is in the published set, exactly what CI builds and tests, and where FFmpeg comes from. This page covers the part it does not: how to obtain an FFmpeg for each target, and what is inside the one KiteCodec builds.
+There is one target table for the project and it lives in the [README](https://github.com/yuroyami/KiteCodec#targets). It records, per target, whether a public artifact exists, exactly what build/test evidence exists, and where FFmpeg comes from. This page covers the part it does not: how to obtain an FFmpeg for each target, and what is inside the one KiteCodec builds.
 
 Two points decide whether KiteCodec is usable for you:
 
-- `nativeMain` is the only implementation source set. Every target is the same eight files of Kotlin compiled N ways; what differs is which FFmpeg gets linked. There is **no JVM target**, no Android AAR, and no `js` or `wasmJs` target of any kind.
-- The published set is five triples: `macosArm64`, `linuxX64`, `androidNativeArm64`, `androidNativeArm32`, `androidNativeX64`. `mingwX64` builds and tests in CI but is not published and has no prebuilt asset. `iosArm64` and `iosSimulatorArm64` now have a local/private build path on arm64 macOS, with no public artifact or CI claim. `iosX64`, `macosX64` and `linuxArm64` are not qualified.
+- Kotlin/Native implementations live in `nativeMain`; the JVM and regular Android implementations
+  share `jvmAndAndroidMain`. The JVM proof loads a test-only macOS arm64 dylib. The Android model
+  is `minSdk 24` and packages `arm64-v8a` plus `x86_64` JNI inputs with 16 KiB alignment/packaging
+  checks. There is no public JVM jar or Android AAR, no Android playback claim, and no `js` or
+  `wasmJs` target.
+- Nothing is published. The native target rows, the local mobile-Apple path, and the JVM/Android
+  source-and-host gates are evidence tiers, not a public artifact set. `mingwX64` builds and tests
+  in CI but has no prebuilt asset; `iosX64`, `macosX64` and `linuxArm64` remain unqualified.
 
 ## FFmpeg is a prerequisite
 
@@ -58,7 +68,9 @@ Configure and make never see the checkout path or final output path. The task co
 
 The static profile is **LGPL by default**: no `--enable-gpl`, no libx264 / libx265. That is the App-Store- and closed-source-safe flavor.
 
-The set is deliberately small. If a codec is not listed here, it is not in the artifact. The authoritative list is `sharedCoreArgs()` in [`BuildFFmpegTask.kt`](https://github.com/yuroyami/KiteCodec/blob/main/buildSrc/src/main/kotlin/BuildFFmpegTask.kt); as of `n8.0`:
+The set is deliberately small. If a codec is not listed here, it is not in the generated FFmpeg
+profile. This table describes compiled profile contents, not per-target runtime qualification. The
+authoritative list is `sharedCoreArgs()` in [`BuildFFmpegTask.kt`](https://github.com/yuroyami/KiteCodec/blob/main/buildSrc/src/main/kotlin/BuildFFmpegTask.kt); as of `n8.0`:
 
 | | Desktop LGPL | Desktop GPL | Mobile Apple LGPL | Android LGPL |
 |---|---|---|---|---|
@@ -128,7 +140,7 @@ Then build with `-Pkitecodec.ffmpeg.license=gpl` (matching the flavor directory)
 
 Windows builds, tests, and e2e-transcodes in CI via Option A, against a BtbN tag, asset name and SHA-256 pinned in the workflow. There is no one-command onboarding path on a bare Windows machine, no system-FFmpeg discovery, and no prebuilt KiteCodec asset for `mingw-x64`. You stage the tree yourself.
 
-## Android NDK build profile
+## Android FFmpeg profiles
 
 Kotlin/Native treats the Android NDK as just another native family, so the entire decode → filter → encode → mux pipeline (and `Remuxer`) compiles untouched for `androidNativeArm64`, `androidNativeArm32`, and `androidNativeX64`.
 
@@ -139,17 +151,28 @@ export ANDROID_NDK_HOME=~/Library/Android/sdk/ndk/<version>
 ./gradlew :kitecodec-core:compileKotlinAndroidNativeArm64  # the klib
 ```
 
-The Android FFmpeg profile is deliberately different from the desktop one:
+The same Android FFmpeg profile also supplies the JNI libraries for the regular Android target.
+It is deliberately different from the desktop one:
 
 - **LGPL only.** No `--enable-gpl`, no libx264 / libx265. Play-Store-safe and closed-source-safe.
-- **MediaCodec hardware codecs** (`h264_mediacodec`, `hevc_mediacodec`) replace the GPL software encoders. Reach them through the `CodecId.H264MediaCodec` / `CodecId.HevcMediaCodec` companions.
+- **FFmpeg's MediaCodec wrappers** (`h264_mediacodec`, `hevc_mediacodec`) replace the GPL software encoders in the generated profile. KiteCodec reaches them only by an FFmpeg codec name; it does not call the Android codec API directly.
 - **Full software decode set** (h264 / hevc / vp8 / vp9 / av1, plus audio) identical to desktop.
 
-!!! warning "MediaCodec needs a JavaVM"
-    FFmpeg's MediaCodec wrapper needs the app's `JavaVM` handed over via `av_jni_set_java_vm` before the first `*_mediacodec` codec opens. The upcoming Android substrate owns that call. Until it lands, MediaCodec hardware encode is not wired up for a plain app.
+!!! warning "Named Android codecs and the JavaVM"
+    The regular Android loader checks the complete FFmpeg identity before attaching the app's
+    `JavaVM`. The low-level API can then request an exact FFmpeg decoder name, for example
+    `source.openDecoder(stream, decoder = CodecId("h264_mediacodec"))`, and verifies that decoder
+    against the stream before open. This is not a direct platform-codec call. The present evidence
+    is source, host tests, two JNI link arms and packaging checks; it does not qualify device
+    playback or a hardware encoder.
 
-!!! note "Not an AAR yet"
-    This produces a Kotlin/Native `.klib` for KMP code targeting Android native, not an `.aar` a regular Kotlin/JVM Android app can `implementation(...)`. The JVM path needs a JNI bridge over the same `ffkmp_*` C helpers; that substrate is the next milestone and shares this exact FFmpeg build.
+!!! note "Two Android target models"
+    The `compileKotlinAndroidNative*` flow above produces Kotlin/Native `.klib` files. Separately,
+    `-Pkitecodec.phoneTargetsOnly=true` registers JVM, a regular Android KMP target and the three
+    local Apple targets. Its AAR model packages exactly `arm64-v8a` and `x86_64` JNI libraries at
+    `minSdk 24`. Both arms are link- and package-checked with 16 KiB constraints; x86_64 has no
+    runtime qualification. No AAR is public, and the selector is a Maven-local proof scope refused
+    by remote publication.
 
 ## Licensing
 
@@ -172,9 +195,11 @@ For distribution obligations (shipping license texts, offering FFmpeg source, th
 
 ### Picking an encoder per platform
 
-`CodecId` exposes the relevant encoders as companions. Software (libx264) is GPL; hardware (VideoToolbox, MediaCodec) is LGPL-safe.
+`CodecId` exposes the relevant FFmpeg names as companions. Software libx264 is GPL; the standing
+hardware-encoder runtime evidence here is VideoToolbox on the qualified macOS desktop profile.
+The Android profile contains MediaCodec wrappers, but this stage does not qualify device encoding.
 
-=== "App-Store-safe (hardware)"
+=== "Qualified macOS hardware"
 
     ```kotlin
     // macOS desktop profile: VideoToolbox
@@ -183,9 +208,6 @@ For distribution obligations (shipping license texts, offering FFmpeg source, th
         width = 1280, height = 720,
         frameRate = Rational.Fps30,
     )
-
-    // Android: MediaCodec
-    VideoEncoderSpec(codec = CodecId.H264MediaCodec, width = 1280, height = 720, frameRate = Rational.Fps30)
     ```
 
 === "GPL software (libx264)"
@@ -204,7 +226,6 @@ Encoder availability is resolved at runtime. Probe before you commit to a codec:
 ```kotlin
 val codec = listOf(
     CodecId.H264VideoToolbox,   // macOS desktop profile, LGPL-safe
-    CodecId.H264MediaCodec,     // Android, LGPL-safe
     CodecId.Libx264,            // GPL builds only
     CodecId("mpeg4"),           // always present, every profile
 ).first { FFmpeg.hasEncoder(it.name) }

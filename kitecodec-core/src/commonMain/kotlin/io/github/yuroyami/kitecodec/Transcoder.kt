@@ -13,7 +13,7 @@ public data class TranscodeProgress(
 /**
  * High-level pipeline: open input → decode → optionally filter → encode → mux. The equivalent of
  * `ffmpeg -ss 12 -to 45 -i in.mp4 -vf "scale=…" -c:v libx264 -c:a aac out.mp4` as one
- * native-Kotlin call with proper cancellation and typed errors.
+ * Kotlin call with proper cancellation and typed errors.
  *
  * All selected streams are demuxed in a single pass. Their packets are interleaved into the
  * output as they are produced, so memory use stays constant regardless of input length.

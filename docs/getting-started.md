@@ -1,10 +1,17 @@
 # Getting Started
 
-Learn how to install FFmpeg, wire the module, probe what your build can do, inspect a media file, and run your first transcode with KiteCodec: a coroutine-first Kotlin/Native binding to FFmpeg's libav* libraries.
+Learn how to install FFmpeg, wire the module, probe what your build can do, inspect a media file,
+and run your first transcode with KiteCodec: a coroutine-first Kotlin Multiplatform API over
+FFmpeg's libav* libraries.
 
 !!! warning "Before you start"
 
-    KiteCodec is **Kotlin/Native only**. There is no JVM target, no Android AAR, and no web target. Nothing is publicly published yet, so this guide uses the in-repository path or a private `publishToMavenLocal` proof. You build against an FFmpeg you install, a vendored static build the Gradle tasks produce, or that same complete tree through the plugin's no-network `FFmpegSource.Local`. The consumer-project build script and the [release status](https://github.com/yuroyami/KiteCodec#release-status) are in the README. The [target table](https://github.com/yuroyami/KiteCodec#targets) records what CI verifies.
+    Kotlin/Native, JVM and Android actuals exist in source, but nothing is publicly published. The
+    JVM gate uses a test-only macOS arm64 dylib; the Android `minSdk 24` model packages
+    `arm64-v8a` and `x86_64` JNI inputs with 16 KiB checks but has no public AAR or Android playback
+    qualification. This guide therefore uses the established in-repository Kotlin/Native path or
+    a private `publishToMavenLocal` proof. There is no web target. The consumer script, release
+    status and per-target evidence are in the [README](https://github.com/yuroyami/KiteCodec#targets).
 
 ## Step 1: Get FFmpeg
 
@@ -48,7 +55,12 @@ KiteCodec links against FFmpeg's libav* libraries. You need them present before 
 
 !!! tip "Android"
 
-    Android uses a different FFmpeg profile (LGPL only, MediaCodec hardware codecs). Cross-compile it with the NDK before building the klib. See [Platform support](platforms.md) for the `buildFFmpegForAndroidArm64` flow.
+    Android uses a separate LGPL-only FFmpeg profile with FFmpeg's MediaCodec wrappers. The
+    Kotlin/Native flow cross-compiles that profile before building a klib. The regular Android
+    source model uses the same profile through JNI, packages only `arm64-v8a` and `x86_64`, and
+    reaches a platform codec only through an FFmpeg name such as `h264_mediacodec`. The current
+    proof stops at source, host tests, link and packaging; it is not a public install or playback
+    result. See [Platform support](platforms.md) for both target models.
 
 !!! tip "Mobile Apple local trees"
 
@@ -64,7 +76,8 @@ KiteCodec links against FFmpeg's libav* libraries. You need them present before 
 
 ## Step 2: Wire the module
 
-Nothing is published, so there are two routes.
+Nothing is published, so the runnable instructions below cover repository-local Kotlin/Native.
+The JVM/Android actuals are compile/test inputs here, not public consumer coordinates.
 
 **Inside the KiteCodec repository.** The `:kitecodec-sample` module already depends on `:kitecodec-core` and is the fastest way to run the API against real arguments. Everything below works from a plain clone.
 
@@ -91,7 +104,11 @@ Nothing is published, so there are two routes.
 
 For a private consumer proof, publish the three Apple variants locally in a separate invocation with `./gradlew publishToMavenLocal -Pkitecodec.applePhoneTargetsOnly=true`. Then configure the consumer plugin with `source = FFmpegSource.Local`, `license = FFmpegLicense.LGPL` and `localRoot` pointing at this checkout's absolute `native-libs` directory. Its fixed layout is `<localRoot>/<license.id>/<target-triple>/{include,lib}`. The plugin validates every wired tree and performs no download. This selector is local-only; any remote `publish` task refuses it during configuration.
 
-Once `kitecodec-core` and the [Gradle plugin](gradle-plugin.md) are publicly published, the consumer build script replaces the composite build. It is written out in full in the [README](https://github.com/yuroyami/KiteCodec#install); the short version is that the plugin is mandatory (the klib's `ffmpeg.def` carries no `-L`, so the coordinate alone will not link) and so is the `license` choice.
+Once `kitecodec-core` and the [Gradle plugin](gradle-plugin.md) are publicly published, a native
+consumer build script can replace the composite build. It is written out in full in the
+[README](https://github.com/yuroyami/KiteCodec#install); the plugin is mandatory for Kotlin/Native
+because the klib's `ffmpeg.def` carries no `-L`, and so is the `license` choice. This is not a
+promise that a JVM jar or Android AAR is already available.
 
 !!! note "`kitecodec-gpl` does not exist"
 
@@ -181,7 +198,6 @@ fun main() = runBlocking {
     ```kotlin
     val codec = listOf(
         CodecId.H264VideoToolbox,   // macOS desktop profile, LGPL-safe
-        CodecId.H264MediaCodec,     // Android, LGPL-safe
         CodecId.Libx264,            // GPL builds only
         CodecId("mpeg4"),           // always present
     ).first { FFmpeg.hasEncoder(it.name) }

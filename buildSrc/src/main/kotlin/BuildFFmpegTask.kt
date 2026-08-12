@@ -546,7 +546,7 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
     data class FFmpegRefSite(val where: String, val ref: String)
 
     companion object {
-        /** minSdk the native libs are built against: AMediaCodec needs 21+, 24 is a safe floor. */
+        /** minSdk the native libs are built against: the native-codec bridge needs 21+, 24 is a safe floor. */
         const val ANDROID_API = 24
 
         /** The FFmpeg tag `vendor/ffmpeg` is expected to be checked out at. */

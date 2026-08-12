@@ -11,6 +11,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 The library is source-only for now. Nothing has been published, not `kitecodec-core`, not the Gradle plugin, and not the FFmpeg Release assets the plugin's `FFmpegSource.Prebuilt` default downloads. Release state and the per-target table live in the [README](https://github.com/yuroyami/KiteCodec#release-status) rather than being restated here.
 
 ### Added
+- **JVM and Android actuals over a dynamically registered JNI bridge.** The common decode,
+  playback, frame, filter, sink, remux and transcode contracts now have JVM/Android
+  implementations over generation-tagged opaque handles. The bridge validates the full FFmpeg
+  identity before attaching the VM, maps native failures into the public typed error hierarchy,
+  copies Java arrays at the boundary, and invalidates borrowed descendants when their parent
+  closes. A test-only macOS arm64 dylib drives JVM contract and registration tests. The local
+  Android target is `minSdk 24` and feeds `arm64-v8a` plus `x86_64` JNI libraries into the AAR
+  model with 16 KiB ELF alignment and packaging-model checks. This is source and host/build
+  evidence only: no jar or AAR is public, no Android playback or UI surface is claimed, and
+  MediaCodec selection is only through FFmpeg named decoders such as `h264_mediacodec`.
 - **A local-only mobile Apple substrate.** On an arm64 Mac, `-Pkitecodec.applePhoneTargetsOnly=true` registers exactly macosArm64, iosArm64 and iosSimulatorArm64, is mutually exclusive with the standing target selectors, is accepted only by `publishToMavenLocal` and is refused by remote publication before repository work. The iOS FFmpeg tasks use the shared STANDARD software-playback set, `--disable-autodetect`, SDK zlib and SDK cross flags, with no desktop third-party stack, GPL build, hardware encode or VideoToolbox. `BuildFFmpegTask`, repository path resolution, the Apple-phone selector and Local-plugin validation refuse their iOS GPL cases before tree lookup with the stable diagnostic `iOS GPL refusal: FFmpegLicense.GPL is unsupported for iOS; use LGPL.` `FFmpegSource.Local` consumes a complete `<localRoot>/<license>/<target>/{include,lib}` tree without network access, validates all six archives and headers for every wired target, links iOS with exactly zlib and puts the local macOS search path before its host fallback. Nothing was publicly published or released.
 - **The FFmpeg helper layer is real C now, with its own build, tests, sanitizer runs and fuzz targets.** It used to be 949 lines of text inside `kitecodec-core/src/nativeInterop/cinterop/ffmpeg.def`, which had no translation unit and therefore no object file, no test, no sanitizer run and no coverage; 19 of the 176 helpers were never called from Kotlin at all. The extraction produced `native/kitecodec-c/`: nine translation units, one per subsystem, compiled per Kotlin/Native target into a static archive that cinterop embeds, with `KC_API` on the exported helpers and `-fvisibility=hidden` on everything else. The generator and `scripts/verify-lift.sh` proved that historical move byte for byte and were then retired; these are ordinary maintained sources now. The opaque migration below subsequently changed the def and Kotlin call sites without changing the public Kotlin API.
 - **The compatible half of the opaque C surface, ABI 1.1.** `kitecodec_handles.h` adds the eleven forward-declared aliases `kc_codec`, `kc_codec_ctx`, `kc_codec_par`, `kc_dict`, `kc_dict_entry`, `kc_filter_ctx`, `kc_filter_graph`, `kc_fmt_ctx`, `kc_frame`, `kc_packet` and `kc_stream`, with no FFmpeg include. The helper surface adds the seven wrappers `ffkmp_codecctx_send_packet`, `ffkmp_codecctx_receive_frame`, `ffkmp_codecctx_send_frame`, `ffkmp_codecctx_receive_packet`, `ffkmp_find_encoder_by_name`, `ffkmp_find_decoder_by_name` and `ffkmp_filter_exists`, plus the five accessors `ffkmp_media_type_video`, `ffkmp_media_type_audio`, `ffkmp_media_type_subtitle`, `ffkmp_media_type_data` and `ffkmp_media_type_attachment`. Those twelve functions were compatible additions: the export set moved from 163 to 175, comprising 169 `ffkmp_` and six `kc_` symbols, and the C ABI moved from 1.0 to 1.1. They remained dormant from Kotlin until the ABI 2.0 migration adopted them.
@@ -101,14 +111,15 @@ Everything below grew from `0.0.1` and is listed for orientation rather than as 
 - `FilterGraph`: single- and multi-input video/audio graphs (overlay, amix), encoder-ready audio output, `setOutputFrameSize` for AAC's 1024-sample framing.
 - `Remuxer.remux`: lossless container rewrite with keyframe-snapped trim.
 - Capability probing (`FFmpeg.versions`, `hasEncoder`/`hasDecoder`/`hasFilter`, `buildConfiguration`).
-- Hardware encode via `h264_videotoolbox` (verified on macOS arm64; `allow_sw` for VMs) and MediaCodec codec ids for Android.
+- Hardware encode via `h264_videotoolbox` (verified on macOS arm64; `allow_sw` for VMs). Android exposes FFmpeg MediaCodec names, but this changelog does not turn them into an Android playback or encoder qualification.
 - FFmpeg build tasks (`buildFFmpegFor<Target>[Gpl]`): vendored static FFmpeg cross-compile, LGPL by default with a GPL opt-in flavour, Android NDK MediaCodec profile.
 - `kitecodec-gradle-plugin`: provisions prebuilt/system FFmpeg for consumer builds with SHA-256 verification (in-repo; not yet published).
 - Documentation site (MkDocs Material) and CI (macOS / Ubuntu / Windows unit + e2e, plus a vendored-LGPL job that exercises the shipped profile).
 
 ### Known gaps
-- Publishing is wired but not yet executed, no artifacts on Maven Central until the first release run (needs Central Portal credentials + signing key in CI). The BCV `apiDump` baseline must be generated on a machine with FFmpeg present for all targets.
-- No Android AAR for JVM apps (JNI substrate planned); `kitecodec-gpl` artifact is a skeleton.
+- Remote publishing has produced no artifact; Maven Central still needs a real release run with Central Portal credentials and signing in CI. The KLIB and JVM API dumps are committed and `apiCheck` guards them locally.
+- No public JVM runtime jar or Android AAR yet; the JNI/AAR source and packaging proof is local,
+  and there is no Android playback, physical-device, Compose or Android View qualification.
 - No custom AVIO (in-memory/pipe sources and sinks), no chapter read/write, no subtitle decode (copy only). Channel layouts expose the native order mask, but named/custom layout objects, `extended_data` access and more than 8 channels remain absent.
 - No hardware decode / hwframes pipelines; no bitstream filters on the copy path (MPEG-TS Annex B unsupported).
 - iOS targets lack CI verification.

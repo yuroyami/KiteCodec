@@ -4,12 +4,12 @@
  * NULL pointer reach FFmpeg or an immediate dereference. Each invalid call runs in a child so
  * the unguarded reproduction records its signal without killing the driver. Pass one row id as
  * argv[1] to reproduce a single vector; the gate invokes the binary without an id and runs all
- * twenty-two cases.
+ * twenty-three cases.
  *
- * The final six cases are load-bearing nullable controls. They prevent the new refusals from
+ * The final seven cases are load-bearing controls. Six prevent the new refusals from
  * rejecting positions whose existing contracts deliberately use NULL: the default audio filter,
  * graph EOF, mux flush, output-format inference, a context-retained codec and pathless output
- * allocation with an explicit format.
+ * allocation with an explicit format; the seventh pins selected-codec identity and its NULL rule.
  */
 
 #include "harness.h"
@@ -362,6 +362,19 @@ static void control_fmt_alloc_output2_null_path(void)
     kc_detail("rc=%d", rc);
 }
 
+static void control_codec_id(void)
+{
+    const kc_codec *codec = ffkmp_find_decoder_by_name("pcm_s16le");
+    int id;
+
+    KC_EQ_INT(ffkmp_codec_id(NULL), 0);
+    KC_NOT_NULL(codec);
+    id = ffkmp_codec_id(codec);
+    KC_EQ_INT(id != 0, 1);
+    KC_EQ_STR(ffkmp_codec_id_name(id), "pcm_s16le");
+    kc_detail("id=%d name=%s", id, ffkmp_codec_id_name(id));
+}
+
 static const invalid_case invalid_cases[] = {
     { "invalid_frame_get_buffer", "ffkmp_frame_get_buffer refuses a NULL frame", invalid_frame_get_buffer },
     { "invalid_codecpar_from_context", "ffkmp_codecpar_from_context refuses NULL arguments", invalid_codecpar_from_context },
@@ -388,6 +401,7 @@ static const control_case control_cases[] = {
     { "control_output_format_null", "output allocation accepts a NULL format for inference", control_output_format_null },
     { "control_codecctx_open_null_codec", "codec open accepts NULL when the context remembers its codec", control_codecctx_open_null_codec },
     { "control_fmt_alloc_output2_null_path", "output allocation accepts a NULL path with an explicit format", control_fmt_alloc_output2_null_path },
+    { "control_codec_id", "codec id is null-safe and identifies selected pcm_s16le", control_codec_id },
 };
 
 static int selected(const char *focus, const char *id)

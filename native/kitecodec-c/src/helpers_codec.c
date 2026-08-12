@@ -126,6 +126,9 @@ KC_API const kc_codec* ffkmp_find_encoder_by_name(const char *name) {
 KC_API const kc_codec* ffkmp_find_decoder_by_name(const char *name) {
     return name ? avcodec_find_decoder_by_name(name) : NULL;
 }
+KC_API int ffkmp_codec_id(const kc_codec *codec) {
+    return codec ? (int)codec->id : 0;
+}
 /* The CODEC's canonical name ("av1", "opus", "mov_text"), independent of which decoder
    implementation this build happens to register for it; avcodec_find_decoder would answer
    "libdav1d"/"libopus" and would answer NOTHING at all for streams with no decoder compiled

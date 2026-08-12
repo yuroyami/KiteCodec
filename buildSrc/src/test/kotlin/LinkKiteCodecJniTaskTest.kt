@@ -68,6 +68,106 @@ class LinkKiteCodecJniTaskTest {
     }
 
     @Test
+    fun generatedSourceOutputTracksTheRootAndForbidsALeafOrEscape() {
+        val root = Files.createTempDirectory("kitecodec-jni-output-model-test").toFile()
+        try {
+            val exportControl = root.resolve("exports.map").apply {
+                writeText("{ global: JNI_OnLoad; local: *; };\n")
+            }
+            val task = newLinkTask(
+                ProjectBuilder.builder().build(),
+                "linkAndroidArm64",
+                root,
+                exportControl,
+                LinkKiteCodecJniTask.ExportControlKind.ELF_VERSION_SCRIPT,
+            )
+            val outputRoot = task.outputDirectory.get().asFile
+            val outputLibrary = task.outputLibrary.get().asFile
+
+            assertTrue(outputRoot in task.outputs.files.files, "generated-source root is not a task output")
+            assertTrue(outputLibrary !in task.outputs.files.files, "contained leaf must not overlap the directory output")
+            LinkKiteCodecJniTask.assertOutputLibraryInsideDirectory(outputRoot, outputLibrary)
+
+            val leafFailure = assertFailsWith<org.gradle.api.GradleException> {
+                LinkKiteCodecJniTask.assertOutputLibraryInsideDirectory(outputRoot, outputRoot)
+            }
+            assertTrue(leafFailure.message.orEmpty().contains("must be inside output directory"))
+            assertFailsWith<org.gradle.api.GradleException> {
+                LinkKiteCodecJniTask.assertOutputLibraryInsideDirectory(
+                    outputRoot,
+                    root.resolve("outside/libkitecodec_jni.so"),
+                )
+            }
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun majorMismatchHarnessUsesTheHermeticFakeHeaderWithoutRenamingProductionSymbols() {
+        val repoRoot = File(checkNotNull(System.getProperty("kitecodec.repo.root")))
+        val fakeHeader = repoRoot.resolve(
+            "native/kitecodec-c/tests/fake_headers/major_mismatch/kitecodec_ffmpeg_versions.h",
+        ).readText()
+        val renameStanza = "#define KC_CASE kc_major_mismatch\n#include \"../kc_rename.h\"\n\n"
+
+        val generated = PrepareKiteCodecJniHarnessTask.replaceExactlyOnce(
+            fakeHeader,
+            renameStanza,
+            "",
+            "kitecodec_ffmpeg_versions.h",
+        )
+
+        assertTrue("#include_next \"kitecodec_ffmpeg_versions.h\"" in generated)
+        assertTrue("KC_FAKE_REAL_AVUTIL_MAJOR - 1" in generated)
+        assertTrue("kc_rename.h" !in generated)
+        assertTrue("KC_CASE kc_major_mismatch" !in generated)
+    }
+
+    @Test
+    fun harnessMutationRefusesMissingOrRepeatedSourceText() {
+        assertFailsWith<org.gradle.api.GradleException> {
+            PrepareKiteCodecJniHarnessTask.replaceExactlyOnce("alpha", "missing", "beta", "fixture")
+        }
+        assertFailsWith<org.gradle.api.GradleException> {
+            PrepareKiteCodecJniHarnessTask.replaceExactlyOnce("alpha alpha", "alpha", "beta", "fixture")
+        }
+    }
+
+    @Test
+    fun jvmArgumentProviderResolvesAllHarnessPathsAndTheRealProbeClasspath() {
+        val root = Files.createTempDirectory("kitecodec-jni-jvm-args-test").toFile()
+        try {
+            val normal = root.resolve("normal.dylib").apply { writeText("normal") }
+            val mismatch = root.resolve("mismatch.dylib").apply { writeText("mismatch") }
+            val corrupt = root.resolve("corrupt.dylib").apply { writeText("corrupt") }
+            val transcript = root.resolve("transcript.txt")
+            val runtime = root.resolve("test-runtime.jar").apply { writeText("runtime") }
+            val project = ProjectBuilder.builder().build()
+            val provider = project.objects.newInstance(KiteCodecJvmTestArgumentProvider::class.java).apply {
+                normalJniLibrary.set(normal)
+                mismatchJniLibrary.set(mismatch)
+                corruptJniLibrary.set(corrupt)
+                contractTranscript.set(transcript)
+                probeClasspath.from(runtime)
+            }
+
+            assertEquals(
+                listOf(
+                    "-Dkitecodec.jni.path=${normal.absolutePath}",
+                    "-Dkitecodec.jni.mismatch.path=${mismatch.absolutePath}",
+                    "-Dkitecodec.jni.corrupt.path=${corrupt.absolutePath}",
+                    "-Dkitecodec.contract.transcript=${transcript.absolutePath}",
+                    "-Dkitecodec.jni.probe.classpath=${runtime.absolutePath}",
+                ),
+                provider.asArguments().toList(),
+            )
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
     fun coreBuildWiresBothDedicatedAndroidHelpersAndThePlatformExportControls() {
         val repoRoot = File(checkNotNull(System.getProperty("kitecodec.repo.root")))
         val source = repoRoot.resolve("kitecodec-core/build.gradle.kts").readText()
@@ -84,7 +184,7 @@ class LinkKiteCodecJniTaskTest {
         val androidLinkRegistrations = source.substring(
             sourceMarker(
                 source,
-                "LinkKiteCodecJniTask.ANDROID_ABI_RECIPES.forEach { arm ->",
+                "val androidJniLinks = LinkKiteCodecJniTask.ANDROID_ABI_RECIPES.associateWith { arm ->",
             ),
         )
 
@@ -125,6 +225,46 @@ class LinkKiteCodecJniTaskTest {
             androidLinkRegistrations,
             "exportControlKind.set(LinkKiteCodecJniTask.ExportControlKind.ELF_VERSION_SCRIPT)",
         )
+        assertSourceContains(
+            androidLinkRegistrations,
+            "outputDirectory.set(layout.buildDirectory.dir(\"kitecodec-jni/${'$'}{arm.ffmpegDirName}\"))",
+        )
+        assertSourceContains(
+            androidLinkRegistrations,
+            "outputLibrary.set(outputDirectory.file(\"${'$'}{arm.abiDirectory}/libkitecodec_jni.so\"))",
+        )
+        assertSourceContains(
+            androidLinkRegistrations,
+            "jniLibs.addGeneratedSourceDirectory(",
+        )
+        assertSourceContains(
+            androidLinkRegistrations,
+            "LinkKiteCodecJniTask::outputDirectory",
+        )
+        assertSourceContains(
+            androidLinkRegistrations,
+            "native/kitecodec-c/tests/fake_headers/major_mismatch/kitecodec_ffmpeg_versions.h",
+        )
+        assertSourceContains(androidLinkRegistrations, "mutationSourceFile.set(")
+        assertSourceContains(
+            androidLinkRegistrations,
+            "ffmpegIncludeDirs.set(listOf(opaqueInclude.absolutePath, macosFfmpegInclude.absolutePath))",
+        )
+        assertSourceContains(
+            androidLinkRegistrations,
+            "compileKiteCodecCForJniMacosArm64MajorMismatch",
+        )
+        assertSourceContains(
+            androidLinkRegistrations,
+            "linkKiteCodecJniMacosArm64CorruptDescriptor",
+        )
+        assertSourceContains(
+            androidLinkRegistrations,
+            "\"nativeAbiVersion\",       \"()J\",                    kj_abi_version",
+        )
+        assertSourceContains(androidLinkRegistrations, "mismatchJniLibrary.set(mismatchJniLink.flatMap")
+        assertSourceContains(androidLinkRegistrations, "corruptJniLibrary.set(corruptJniLink.flatMap")
+        assertSourceContains(androidLinkRegistrations, "probeClasspath.from(testRuntimeClasspath)")
     }
 
     @Test
@@ -172,7 +312,8 @@ class LinkKiteCodecJniTaskTest {
             libSearchDirs.set(emptyList())
             exportControlFile.set(exportControl)
             exportControlKind.set(kind)
-            outputLibrary.set(root.resolve("$name-output/libkitecodec_jni.so"))
+            outputDirectory.set(root.resolve("$name-output"))
+            outputLibrary.set(outputDirectory.file("libkitecodec_jni.so"))
         }
     }
 

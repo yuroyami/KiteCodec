@@ -1,6 +1,6 @@
 # KiteCodec
 
-**One coroutine-first Kotlin API for video and audio.** Decode, encode, transcode and filter media from a single suspend-friendly surface, backed by native bindings to FFmpeg's libav\* libraries. No `ffmpeg` subprocess, no JVM, no JNI layer, and constant memory regardless of how long the input runs.
+**One coroutine-first Kotlin API for video and audio.** Decode, encode, transcode and filter media from a single suspend-friendly surface, backed by FFmpeg's libav\* libraries. Kotlin/Native uses cinterop; JVM and Android actuals use a narrow JNI bridge over the same opaque helpers. There is no `ffmpeg` subprocess, and memory stays constant regardless of input length.
 
 ```kotlin
 // One call: demux -> decode -> filter -> encode -> mux, in a single pass.
@@ -21,10 +21,11 @@ Transcoder.transcode(
 )
 ```
 
-For H.264 or H.265, probe first and pick what the linked build has:
-`FFmpeg.hasEncoder("h264_videotoolbox")` on Apple platforms,
-`"h264_mediacodec"` on Android, `"libx264"` only in a GPL FFmpeg. See
-[Platform support](platforms.md) and [Licensing](licensing.md).
+For H.264 or H.265, probe first and pick what the linked build has.
+`h264_videotoolbox` has standing macOS runtime evidence; `libx264` exists only in a GPL FFmpeg.
+The generated Android profile contains MediaCodec names, but the current Android claim stops at
+source, host tests, link and packaging, with exact named-decoder selection documented in
+[Decoding](decoding.md). See [Platform support](platforms.md) and [Licensing](licensing.md).
 
 - [Getting started](getting-started.md): install FFmpeg, wire the build, run your first transcode.
 - [API reference](https://yuroyami.github.io/KiteCodec/api/): every public type and signature.
@@ -59,7 +60,10 @@ The bindings link against libav\*, so FFmpeg has to be present at build time. Fo
     ./gradlew :kitecodec-core:linuxX64Test
     ```
 
-KiteCodec is Kotlin/Native only. There is no JVM target, no Android AAR, and no web target. See [Platform support](platforms.md) for how FFmpeg is sourced per target, and the [README's target table](https://github.com/yuroyami/KiteCodec#targets) for what CI verifies.
+JVM and Android actuals now exist in source, alongside the Kotlin/Native targets. The JVM test
+lane uses a test-only macOS arm64 JNI dylib. The local Android target is API 24+ and models an AAR
+with `arm64-v8a` and `x86_64` JNI libraries plus 16 KiB ELF/app packaging; no jar/AAR is public and
+no Android playback qualification is claimed. There is no web target. See [Platform support](platforms.md).
 
 ## What you can do
 
@@ -159,6 +163,11 @@ See **[Filtering](filtering.md)**.
 
 ## Status
 
-KiteCodec is pre-1.0 and actively developed. The Kotlin library is complete: the full demux -> decode -> filter -> encode -> mux pipeline is live for video and audio, including frame-exact trim, video, audio and subtitle stream copy, multi-input filter graphs, lossless remux, thumbnails, and hardware H.264 encode via VideoToolbox on macOS. The binary distribution is not: nothing is published, and the FFmpeg release the Gradle plugin fetches from does not exist yet.
+KiteCodec is pre-1.0 and actively developed. The public pipeline is implemented for Kotlin/Native
+and now has JVM/Android actuals for the same common contracts. Native runtime evidence remains the
+qualified baseline; JVM host tests prove the JNI boundary, while the Android evidence stops at
+source, link and packaging checks. It does not establish physical-device playback, UI integration
+or a full product tier. Nothing is published, and the FFmpeg release the Gradle plugin fetches from
+does not exist yet.
 
 One target table covers the whole project and lives in the [README](https://github.com/yuroyami/KiteCodec#targets). For the design, the FFmpeg sourcing modes, and what is next, see **[About KiteCodec](about.md)**.

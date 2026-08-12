@@ -98,11 +98,34 @@ export ANDROID_NDK_HOME=~/Library/Android/sdk/ndk/<version>
 ./gradlew :kitecodec-core:buildFFmpegForAndroidArm64
 ```
 
-The vendored `vendor/ffmpeg` clone is required here too. Note that Android builds are always the LGPL MediaCodec profile. There is no GPL Android build, and requesting one fails with an explanatory error.
+The vendored `vendor/ffmpeg` clone is required here too. The repository's Android FFmpeg builds
+always use the LGPL MediaCodec profile. There is no GPL Android profile, and requesting one fails
+with an explanatory error.
+
+## Android: regular AAR/JNI versus `androidNative*`
+
+These are separate target models. `buildFFmpegForAndroid*` plus
+`compileKotlinAndroidNative*` produces Kotlin/Native klibs. The regular Android KMP source model
+uses a dynamically registered JNI bridge, is `minSdk 24`, and packages only `arm64-v8a` and
+`x86_64` inputs with 16 KiB ELF/app-packaging checks. Its local proof scope is
+`-Pkitecodec.phoneTargetsOnly=true` and needs both `ANDROID_SDK_ROOT` and `ANDROID_NDK_HOME` plus
+the complete local FFmpeg trees.
+
+There is no public Android AAR to troubleshoot in a consumer build yet. The macOS JNI dylib is a
+JVM test fixture, not a desktop distribution, and x86_64 Android has link/package evidence only.
+FFmpeg's MediaCodec wrapper is selected only by an FFmpeg codec name after
+the Android loader accepts the linked FFmpeg identity and attaches the VM; KiteCodec does not call
+the platform codec API directly.
 
 ## "libx264 not found" / `CodecId.Libx264` encoder missing at runtime
 
-libx264 only exists in GPL-flavor FFmpeg builds. System FFmpeg from Homebrew/apt usually has it; KiteCodec's vendored **LGPL default does not**. Either opt in to the GPL flavor (`buildFFmpegFor<Target>Gpl` plus `-Pkitecodec.ffmpeg.license=gpl`, and read the [license consequences](licensing.md)) or use an LGPL-safe encoder (`CodecId.H264VideoToolbox`, `CodecId.H264MediaCodec`, or `libsvtav1` for AV1). Probe at runtime with `FFmpeg.hasEncoder("libx264")` before committing to a codec.
+libx264 only exists in GPL-flavor FFmpeg builds. System FFmpeg from Homebrew/apt usually has it;
+KiteCodec's vendored **LGPL default does not**. Either opt in to the GPL flavor
+(`buildFFmpegFor<Target>Gpl` plus `-Pkitecodec.ffmpeg.license=gpl`, and read the
+[license consequences](licensing.md)) or use an encoder qualified for your target, such as
+`CodecId.H264VideoToolbox` on macOS, `libsvtav1`, or the universal `mpeg4` baseline. The Android
+FFmpeg profile contains MediaCodec names, but the current evidence does not qualify device
+encoding. Probe at runtime with `FFmpeg.hasEncoder("libx264")` before committing to a codec.
 
 ## Still stuck?
 

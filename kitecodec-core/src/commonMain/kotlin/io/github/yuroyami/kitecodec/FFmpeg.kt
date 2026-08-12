@@ -1,7 +1,7 @@
 package io.github.yuroyami.kitecodec
 
 /**
- * Static facade for global FFmpeg state: version info, build flags, capability probing.
+ * Static facade for global FFmpeg state: version info, build flags and capability probing.
  *
  * Use it to feature-detect the bound FFmpeg before opening a codec or a filter, because builds
  * differ in what they contain. A system FFmpeg may or may not have `libx264`; KiteCodec's
@@ -163,4 +163,28 @@ public class FFmpegLibraryIdentity(
     public val isOk: Boolean get() = verdict == "ok"
 
     override fun toString(): String = "$name(headers=$headerVersion, runtime=$runtimeVersion, $verdict)"
+}
+
+/** Both version columns of [identity], flattened into the legacy [Versions] view. */
+internal fun versionsFrom(identity: FFmpegIdentity): Versions = Versions(
+    avutil = identity.libraries[0].runtimeVersion,
+    avcodec = identity.libraries[1].runtimeVersion,
+    avformat = identity.libraries[2].runtimeVersion,
+    avfilter = identity.libraries[3].runtimeVersion,
+    swscale = identity.libraries[4].runtimeVersion,
+    swresample = identity.libraries[5].runtimeVersion,
+    avutilHeader = identity.libraries[0].headerVersion,
+    avcodecHeader = identity.libraries[1].headerVersion,
+    avformatHeader = identity.libraries[2].headerVersion,
+    avfilterHeader = identity.libraries[3].headerVersion,
+    swscaleHeader = identity.libraries[4].headerVersion,
+    swresampleHeader = identity.libraries[5].headerVersion,
+)
+
+/** Unpacks FFmpeg's `(major << 16) | (minor << 8) | micro` version representation. */
+internal fun decodePackedVersion(packed: UInt): String {
+    val major = (packed shr 16) and 0xFFu
+    val minor = (packed shr 8) and 0xFFu
+    val micro = packed and 0xFFu
+    return "$major.$minor.$micro"
 }

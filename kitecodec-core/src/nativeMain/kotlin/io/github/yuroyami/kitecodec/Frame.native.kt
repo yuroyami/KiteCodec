@@ -137,6 +137,7 @@ public actual class Frame internal constructor(
         Rational(n.value, d.value.takeIf { it != 0 } ?: 1)
     }
 
+    @Throws(FFmpegException::class)
     public actual fun copyPlanesToByteArray(): ByteArray {
         checkOpen()
         return when (streamType) {
@@ -170,6 +171,7 @@ public actual class Frame internal constructor(
         buf.readBytes(written)
     }
 
+    @Throws(FFmpegException::class)
     public actual fun copy(): Frame {
         checkOpen()
         val cloned = ffkmp_frame_clone(nativeFrame)
@@ -177,6 +179,7 @@ public actual class Frame internal constructor(
         return Frame(cloned, ownsPointer = true, streamIndex = streamIndex, streamType = streamType, streamTimeBase = streamTimeBase)
     }
 
+    @Throws(FFmpegException::class)
     public actual fun encodeImage(codec: CodecId): ByteArray {
         checkOpen()
         if (streamType != MediaType.Video) {
@@ -282,6 +285,7 @@ public actual class Frame internal constructor(
 
     public actual companion object {
 
+        @Throws(FFmpegException::class)
         public actual fun ofVideo(
             bytes: ByteArray,
             width: Int,
@@ -315,6 +319,7 @@ public actual class Frame internal constructor(
             return Frame(raw, ownsPointer = true, streamIndex = -1, streamType = MediaType.Video, streamTimeBase = Rational.Tb_us)
         }
 
+        @Throws(FFmpegException::class)
         public actual fun ofAudio(
             bytes: ByteArray,
             sampleCount: Int,
@@ -354,37 +359,8 @@ public actual class Frame internal constructor(
     }
 }
 
-/**
- * [FrameInfo.pts] converted to microseconds on the stream's own timeline. Null when the frame
- * carries no timestamp.
- *
- * The conversion is not `pts * 1_000_000 * num / den`. That form overflows a 64 bit signed multiply
- * on a fine time base: a nanosecond-timescale mp4 passes it after about two and a half hours. This
- * one goes through `av_rescale_q`, which carries a 128 bit intermediate.
- *
- * The value is on the stream's timeline, so it still includes the container's start offset. A
- * player that shows a position starting at zero subtracts [MediaSource.startTimeMicros] once, at
- * the boundary where it takes ownership of the timeline.
- */
-@KiteCodecLowLevelApi
-public val Frame.ptsMicros: Long?
-    get() = info.let {
-        if (it.hasPts) ffkmp_rescale_q(it.pts, it.timeBase.num, it.timeBase.den, 1, 1_000_000) else null
-    }
-
-/**
- * [FrameInfo.duration] converted to microseconds. Null when the decoder gave none.
- *
- * A duration is an interval, not a point on a timeline, so no start offset applies to it. Zero
- * means unknown, which reads as null here rather than as a frame that lasts no time at all.
- */
-@KiteCodecLowLevelApi
-public val Frame.durationMicros: Long?
-    get() = info.let {
-        if (it.duration > 0) {
-            ffkmp_rescale_q(it.duration, it.timeBase.num, it.timeBase.den, 1, 1_000_000)
-        } else null
-    }
+internal actual fun rescaleQ(value: Long, source: Rational, destination: Rational): Long =
+    ffkmp_rescale_q(value, source.num, source.den, destination.num, destination.den)
 
 internal object FrameOps {
     /** Allocate a fresh AVFrame wrapper that owns its pointer. */

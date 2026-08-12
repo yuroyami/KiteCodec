@@ -54,9 +54,19 @@ enum kj_kind {
     KJ_KIND_COUNT
 };
 
-/* Mint a token for ptr. Returns 0 only when ptr is NULL or the table is exhausted; the caller
- * decides whether 0 is an error or a legitimate "no object" answer. Thread safe. */
+/* One long-array element is one handle token; one int-array element is one scalar argument. */
+int kj_longs_dup(JNIEnv *env, jlongArray values, jlong **out, int32_t *out_len);
+int kj_ints_dup(JNIEnv *env, jintArray values, int **out, int32_t *out_len);
+
+/* Mint an owned token. Returns 0 only when ptr is NULL or the table is exhausted. Thread safe. */
 jlong kj_handle_put(int kind, void *ptr);
+
+/* Mint an owned token and turn table exhaustion into a typed bridge failure. */
+jlong kj_handle_put_checked(JNIEnv *env, int kind, void *ptr);
+
+/* Mint a borrowed token whose lifetime is bounded by parent. Closing the parent invalidates every
+ * descendant atomically before the parent pointer is returned to its owner for destruction. */
+jlong kj_handle_put_borrowed(JNIEnv *env, int kind, void *ptr, jlong parent);
 
 /* Resolve a token. On success returns the pointer. On a zero, stale, closed or wrong-kind token,
  * throws the bridge's typed exception on env and returns NULL; the caller must return immediately
@@ -72,6 +82,10 @@ void *kj_handle_peek(jlong token, int kind);
  * of a crash. Thread safe. */
 void *kj_handle_close(jlong token, int kind);
 
+/* Explicitly releases a borrowed/static token without destroying the pointer it names. Idempotent.
+ * Used for stream, codec, codec-parameter, dictionary and filter-context views. */
+void kj_handle_release(jlong token, int kind);
+
 /* Test seam: how many live (unclosed) handles the table holds. The packaging-model host tests and
  * the leak assertions read this through a test-only external. */
 int64_t kj_handle_live_count(void);
@@ -86,15 +100,24 @@ void kj_throw_handle(JNIEnv *env, const char *msg);
  * The Kotlin side turns (code, context) into the same FFmpegError taxonomy native uses. */
 void kj_throw_ffmpeg(JNIEnv *env, int averror, const char *context);
 
-/* Copy a jstring into a caller-owned malloc'd C string (UTF-8). NULL jstring gives NULL. The
- * caller frees with free(). On OOM throws and returns NULL. */
+/* Copy a jstring into a caller-owned malloc'd standard UTF-8 C string. Because FFmpeg's boundary
+ * is NUL-terminated, embedded U+0000 and malformed UTF-16 surrogate sequences are refused with a
+ * typed bridge failure. NULL jstring gives NULL. The caller frees with free(). */
 char *kj_string_dup(JNIEnv *env, jstring s);
 
-/* New jstring from a C string; NULL c gives NULL without throwing. */
+/* New jstring from a strictly validated, NUL-terminated standard UTF-8 C string. The explicit
+ * decoder supports supplementary code points. NULL c gives NULL without throwing. */
 jstring kj_string_new(JNIEnv *env, const char *c);
 
 /* New jbyteArray carrying an exact copy of len bytes. NULL data or negative len throws. */
 jbyteArray kj_bytes_new(JNIEnv *env, const void *data, int32_t len);
+
+/* New Java long array carrying an exact copy of count values. */
+jlongArray kj_longs_new(JNIEnv *env, const jlong *values, int32_t count);
+
+/* Copy a Java byte array into malloc-owned bytes. This is the sole Java-to-C byte-array conversion
+ * unit. Empty arrays succeed with *out_len == 0 and a non-NULL allocation; caller frees *out. */
+int kj_bytes_dup(JNIEnv *env, jbyteArray bytes, uint8_t **out, int32_t *out_len);
 
 /* ── Registration (kj_registration.c) ─────────────────────────────────────────────────────── */
 

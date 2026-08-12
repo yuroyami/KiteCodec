@@ -61,26 +61,29 @@ public actual class FilterGraph internal constructor(
                 .also { outFrameHolder = it }
     }
 
+    @Throws(FFmpegException::class)
     public actual fun setOutputFrameSize(samples: Int) {
         check(!closed.value) { "FilterGraph is closed" }
         require(samples > 0) { "frame size must be positive" }
         ffkmp_buffersink_set_frame_size(sink, samples.toUInt())
     }
 
+    @Throws(FFmpegException::class)
     public actual fun feedInput(index: Int, frame: Frame, onOutput: (Frame) -> Unit) {
-        check(!closed.value) { "FilterGraph is closed" }
-        val src = srcs.getOrNull(index)
-            ?: throw IllegalArgumentException("Input $index out of range (graph has ${srcs.size} inputs)")
         try {
+            check(!closed.value) { "FilterGraph is closed" }
+            val src = srcs.getOrNull(index)
+                ?: throw IllegalArgumentException("Input $index out of range (graph has ${srcs.size} inputs)")
             sendUntilAccepted(index, eofIsDone = false, onOutput = onOutput) {
                 ffkmp_graph_send(src, frame.nativeFrame)
             }
+            drainTo(onOutput)
         } finally {
             frame.close()
         }
-        drainTo(onOutput)
     }
 
+    @Throws(FFmpegException::class)
     public actual fun flushInput(index: Int, onOutput: (Frame) -> Unit) {
         check(!closed.value) { "FilterGraph is closed" }
         val src = srcs.getOrNull(index)
@@ -234,6 +237,7 @@ public actual class FilterGraph internal constructor(
     }
 
     public actual companion object {
+        @Throws(FFmpegException::class)
         public actual fun buildVideo(
             description: String,
             width: Int,
@@ -267,6 +271,7 @@ public actual class FilterGraph internal constructor(
             return FilterGraph(graph, listOf(src), sink, MediaType.Video)
         }
 
+        @Throws(FFmpegException::class)
         public actual fun buildAudio(
             description: String,
             sampleRate: Int,
@@ -301,6 +306,7 @@ public actual class FilterGraph internal constructor(
             return FilterGraph(graph, listOf(src), sink, MediaType.Audio)
         }
 
+        @Throws(FFmpegException::class)
         public actual fun buildVideoMulti(description: String, inputs: List<VideoInput>): FilterGraph {
             // The FFmpeg identity gate, register item B1-02. Before the first allocation.
             requireCompatibleFFmpeg()
@@ -335,6 +341,7 @@ public actual class FilterGraph internal constructor(
             }
         }
 
+        @Throws(FFmpegException::class)
         public actual fun buildAudioMulti(
             description: String,
             inputs: List<AudioInput>,
