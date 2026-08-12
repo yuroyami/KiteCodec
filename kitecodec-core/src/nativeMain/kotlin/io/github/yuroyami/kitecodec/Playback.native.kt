@@ -39,6 +39,8 @@ import ffmpeg.ffkmp_packet_clone
 import ffmpeg.ffkmp_packet_move_ref
 import ffmpeg.ffkmp_packet_pos
 import ffmpeg.ffkmp_packet_pts
+import ffmpeg.ffkmp_packet_data
+import kotlinx.cinterop.readBytes
 import ffmpeg.ffkmp_packet_size
 import ffmpeg.ffkmp_packet_stream_index
 import ffmpeg.ffkmp_packet_unref
@@ -150,6 +152,14 @@ public actual class Packet internal constructor(
         val cloned = ffkmp_packet_clone(native)
             ?: throw FFmpegException(FFmpegError.Internal("packet clone failed"))
         return Packet(cloned, timeBase)
+    }
+
+    public actual fun copyBytes(): ByteArray {
+        checkOpen()
+        val size = ffkmp_packet_size(native)
+        if (size <= 0) return ByteArray(0)
+        val data = ffkmp_packet_data(native) ?: return ByteArray(0)
+        return data.readBytes(size)
     }
 
     actual override fun close() {

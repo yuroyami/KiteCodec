@@ -1166,6 +1166,7 @@ final class io.github.yuroyami.kitecodec/Packet : kotlin/AutoCloseable { // io.g
 
     final fun close() // io.github.yuroyami.kitecodec/Packet.close|close(){}[0]
     final fun copy(): io.github.yuroyami.kitecodec/Packet // io.github.yuroyami.kitecodec/Packet.copy|copy(){}[0]
+    final fun copyBytes(): kotlin/ByteArray // io.github.yuroyami.kitecodec/Packet.copyBytes|copyBytes(){}[0]
 }
 
 final class io.github.yuroyami.kitecodec/PacketReader : kotlin/AutoCloseable { // io.github.yuroyami.kitecodec/PacketReader|null[0]

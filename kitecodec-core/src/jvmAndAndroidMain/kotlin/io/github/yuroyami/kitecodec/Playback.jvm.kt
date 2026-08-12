@@ -29,6 +29,8 @@ public actual class Packet internal constructor(
     @Throws(FFmpegException::class)
     public actual fun copy(): Packet = Packet(Internals.packetClone(checkOpen()), timeBase)
 
+    public actual fun copyBytes(): ByteArray = Internals.packetBytes(checkOpen())
+
     actual override fun close() {
         val owned = token
         if (owned == 0L) return

@@ -51,6 +51,13 @@ public expect class Packet : AutoCloseable {
     @Throws(FFmpegException::class)
     public fun copy(): Packet
 
+    /**
+     * The packet's compressed payload, copied (S4.c). For TEXT subtitle streams this is the cue
+     * body itself, which is why a subtitle decoder can be pure Kotlin. A copy per call: subtitle
+     * packets are tiny and rare; never call this per video packet.
+     */
+    public fun copyBytes(): ByteArray
+
     override fun close()
 }
 
