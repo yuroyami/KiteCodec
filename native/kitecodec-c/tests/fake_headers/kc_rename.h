@@ -2,8 +2,8 @@
  *
  * tests/test_identity.c needs several copies of src/kitecodec_abi.c in ONE binary, each compiled
  * against a different shim include tree, so that the five verdicts of plan section 15.2 B1.6 can be
- * asserted side by side in one table driven suite. Every copy would otherwise define kc_init and its
- * five siblings, and the link would fail on duplicate symbols.
+ * asserted side by side in one table driven suite. Every copy would otherwise define kc_init and
+ * its six siblings, and the link would fail on duplicate symbols.
  *
  * Renaming through macros is what keeps the experiment honest: the SOURCE compiled is byte for byte
  * the shipped src/kitecodec_abi.c, with no test-only branch inside it and no #ifdef anywhere in the
@@ -23,6 +23,13 @@
 
 #ifndef KC_CASE
 #error "define KC_CASE to the symbol prefix for this doctored copy before including kc_rename.h"
+#endif
+
+/* S1.c.1 makes the same five doctored copies exercise the Android-only attach arm as well. FFmpeg's
+ * jni.h is declaration-only and host-safe; tests/test_identity.c interposes the named setter. The
+ * production helper object does not include this test header and remains a normal host build. */
+#ifndef __ANDROID__
+#define __ANDROID__ 1
 #endif
 
 #define KC_PASTE_(a, b) a##b

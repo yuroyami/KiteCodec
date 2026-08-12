@@ -173,11 +173,12 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
         license: FFmpegLicense,
         installPrefix: String,
         sdkPath: (String) -> String = ::xcrunSdkPath,
+        ndkToolchainBin: () -> File = ::ndkToolchainBin,
     ): List<String> {
         require(!(target.isAndroid && license == FFmpegLicense.GPL))
         require(!(target.isIos && license == FFmpegLicense.GPL)) { IOS_GPL_REFUSAL }
         val profileArgs = when {
-            target.isAndroid -> androidArgs(target)
+            target.isAndroid -> androidArgs(target, ndkToolchainBin())
             target.isIos -> mobileAppleArgs(target, sdkPath)
             else -> desktopBaseArgs() +
                 (if (license == FFmpegLicense.GPL) desktopGplArgs() else emptyList()) +
@@ -469,14 +470,13 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
      * wrapper; at runtime the app must hand FFmpeg its JavaVM via `av_jni_set_java_vm` before
      * using `*_mediacodec` codecs (the surrounding KiteCodec Android substrate will own that call).
      */
-    private fun androidArgs(target: TargetTriple): List<String> {
+    private fun androidArgs(target: TargetTriple, toolchainBin: File): List<String> {
         val (arch, cpu, ccPrefix) = when (target) {
             TargetTriple.AndroidArm64 -> Triple("aarch64", "armv8-a", "aarch64-linux-android")
             TargetTriple.AndroidArm32 -> Triple("arm", "armv7-a", "armv7a-linux-androideabi")
             TargetTriple.AndroidX64 -> Triple("x86_64", null, "x86_64-linux-android")
             else -> error("androidArgs called for non-android target $target")
         }
-        val toolchainBin = ndkToolchainBin()
         val cc = toolchainBin.resolve("$ccPrefix$ANDROID_API-clang")
         require(cc.exists()) { "NDK compiler not found: $cc" }
 

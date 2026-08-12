@@ -1,6 +1,6 @@
 /* Category unit: identity, capability and error plumbing (methods.def section "abi").
  *
- * THE CANONICAL PATTERN for every category unit, referenced by the manifest's SOL FILLS notes:
+ * THE CANONICAL PATTERN used by every implemented category unit:
  *   - one function per manifest row, named exactly as the row names it;
  *   - resolve every incoming token with kj_handle_get and return immediately on NULL (the typed
  *     exception is already pending);
@@ -43,7 +43,7 @@ JNIEXPORT jint JNICALL kj_abi_attach_current_vm(JNIEnv *env, jclass cls)
  * i in 0..5: header M.m.p, runtime M.m.p, verdict; then configuration_agrees,
  * configuration_disagreed_count, configuration_disagreed, build_ffmpeg_ref,
  * build_license_flavour, build_provisioning_dir, runtime_version_info, runtime_license,
- * provisioning. 4 + 6*3 + 8 = 30 fields. */
+ * provisioning. 4 + 6*3 + 9 = 31 fields. */
 JNIEXPORT jstring JNICALL kj_abi_identity_report(JNIEnv *env, jclass cls)
 {
     kc_ffmpeg_report r;

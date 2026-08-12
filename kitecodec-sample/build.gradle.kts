@@ -20,13 +20,22 @@ kotlin {
             FFmpegLicense.LGPL
         }
 
-    val executables = mapOf(
-        macosArm64() to TargetTriple.MacosArm64,
-        macosX64()   to TargetTriple.MacosX64,
-        linuxX64()   to TargetTriple.LinuxX64,
-        linuxArm64() to TargetTriple.LinuxArm64,
-        mingwX64()   to TargetTriple.MingwX64,
-    )
+    // The phone-superset gate uses the core module's Apple selector together with
+    // requireAllTargets. The sample must mirror that scope: its only executable in this mode is
+    // the macOS host proof, while iOS remains a library target with no command-line executable.
+    val applePhoneTargetsOnly = providers.gradleProperty("kitecodec.applePhoneTargetsOnly")
+        .map { it.toBoolean() }.getOrElse(false)
+    val executables = if (applePhoneTargetsOnly) {
+        mapOf(macosArm64() to TargetTriple.MacosArm64)
+    } else {
+        mapOf(
+            macosArm64() to TargetTriple.MacosArm64,
+            macosX64() to TargetTriple.MacosX64,
+            linuxX64() to TargetTriple.LinuxX64,
+            linuxArm64() to TargetTriple.LinuxArm64,
+            mingwX64() to TargetTriple.MingwX64,
+        )
+    }
 
     val homebrewPrefix = providers.gradleProperty("kitecodec.macos.homebrew.prefix")
         .getOrElse(io.github.yuroyami.kitecodec.buildtools.BuildFFmpegTask.DEFAULT_HOMEBREW_PREFIX)

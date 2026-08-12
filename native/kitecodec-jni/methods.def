@@ -2,21 +2,24 @@
 //
 // Every non-comment record is:
 //
-//   CLASS | KOTLIN_NAME | JVM_DESCRIPTOR | C_FUNCTION | CATEGORY
+//   CLASS | KOTLIN_NAME | JVM_DESCRIPTOR | C_FUNCTION
 //
 // CLASS is the binary name of the Kotlin bridge class declaring the private external method.
 // KOTLIN_NAME is that method's exact name. JVM_DESCRIPTOR is its exact JNI descriptor.
-// C_FUNCTION is the kj_* implementation registered for it. CATEGORY names the kj_*.c unit the
-// function lives in plus the handle/result convention it follows:
+// C_FUNCTION is the kj_* implementation registered for it. The surrounding section and function
+// prefix supply its category and handle/result convention. There is deliberately no fifth field.
+// The conventions are:
 //
 //   token(K)   returns a jlong handle of kind K, 0 meaning refused/none
 //   int        returns a raw FFmpeg int (negative AVERROR travels to Kotlin uninterpreted)
 //   long/bool/void/string/bytes  what they say
 //
 // kj_registration.c includes THIS file (through the KJ_METHOD X-macro) to build its
-// JNINativeMethod tables, and the Kotlin bridge (Internals.jvm.kt) declares one external per row.
-// There is deliberately no second list anywhere: change a row here and both sides follow or fail
-// loudly (a corrupted descriptor fails library load, which the manifest-parser test pins).
+// JNINativeMethod tables. S1.c.2 will give the Kotlin bridge (Internals.jvm.kt) one external per
+// implemented row and add the manifest parser that validates those names and descriptors. There is
+// deliberately no second native-registration list. Until that validator lands, S1.c.1 step 9
+// explicitly defers its corrupted-descriptor falsifiability arm to S1.c.2 rather than claiming a
+// scaffold-only check can observe it.
 //
 // The two exception classes the adapter throws (kj_util.c) and the keep rule must name:
 //   io.github.yuroyami.kitecodec.JniHandleException
@@ -57,9 +60,8 @@ KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativePacketStreamIndex","(
 KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativePacketSize",       "(J)I",                   kj_packet_size)
 KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativePacketIsKeyframe", "(J)Z",                   kj_packet_is_keyframe)
 
-// ── format: open, streams, read, seek, metadata (kj_format.c) ─ SOL FILLS, PATTERN IS kj_packet.c
-// Rows are decided; implement each kj_format_* by the kj_packet.c pattern (resolve handles via
-// kj_handle_get, call exactly one ffkmp_* helper, mint tokens with kj_handle_put).
+// ── format: playable open/stream/read/seek core (kj_format.c) ─ COMPLETE (9 rows)
+// The nine rows below are implemented as the current playable core.
 KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeFmtOpenInput",     "(Ljava/lang/String;)J",  kj_fmt_open_input)
 KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeFmtCloseInput",    "(J)V",                   kj_fmt_close_input)
 KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeFmtFindStreamInfo","(J)I",                   kj_fmt_find_stream_info)
@@ -69,10 +71,10 @@ KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeFmtDurationMicros","(
 KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeFmtReadFrame",     "(JJ)I",                  kj_fmt_read_frame)
 KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeFmtSeekMicros",    "(JIJ)I",                 kj_fmt_seek_micros)
 KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeFmtSetOpt",        "(JLjava/lang/String;Ljava/lang/String;)I", kj_fmt_set_opt)
-// ... remaining format rows (metadata dict walk, stream fields via kj_stream_*, codecpar
-// accessors) are enumerated by Internals.jvm.kt's TODO block and follow the same shapes.
+// S1.c.2 adds the remaining format rows (metadata dict walk, stream fields via kj_stream_* and
+// codecpar accessors) together with their Kotlin bridge externals.
 
-// ── codec: decoder open/send/receive/flush (kj_codec.c) ─ SOL FILLS, SAME PATTERN ───────────
+// ── codec: playable decoder open/send/receive/flush core (kj_codec.c) ─ COMPLETE (10 rows)
 KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeFindDecoderById",  "(I)J",                   kj_find_decoder_by_id)
 KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeFindDecoderByName","(Ljava/lang/String;)J",  kj_find_decoder_by_name)
 KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeCodecCtxAlloc",    "(J)J",                   kj_codecctx_alloc)
@@ -84,7 +86,7 @@ KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeCodecCtxSendPacket","
 KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeCodecCtxReceiveFrame","(JJ)I",               kj_codecctx_receive_frame)
 KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeCodecCtxFlush",    "(J)V",                   kj_codecctx_flush)
 
-// ── frame (kj_frame.c) ─ SOL FILLS, SAME PATTERN ────────────────────────────────────────────
+// ── frame: playable video core (kj_frame.c) ─ COMPLETE (8 rows)
 KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeFrameAlloc",       "()J",                    kj_frame_alloc)
 KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeFrameFree",        "(J)V",                   kj_frame_free)
 KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeFramePts",         "(J)J",                   kj_frame_pts)
@@ -93,9 +95,10 @@ KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeFrameHeight",      "(
 KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeFrameFormat",      "(J)I",                   kj_frame_format)
 KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeFrameIsKeyframe",  "(J)Z",                   kj_frame_is_keyframe)
 KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeFrameCopyPlanes",  "(J)[B",                  kj_frame_copy_planes)
-// ... remaining frame rows (audio fields, color info, clone, convert) follow the same shapes.
+// The eight rows above are implemented as the current playable video core. S1.c.2 adds the
+// remaining frame rows (audio fields, color info, clone and convert) with their Kotlin externals.
 
-// ── filter, sink, remux, transcode (kj_filter.c and category growth) ─ SOL FILLS ────────────
-// Decided in S1.c.2: every remaining public operation of the ten expects gets its row here,
+// ── filter, sink, remux, transcode (kj_filter.c and category growth) ─ S1.c.2
+// S1.c.2 gives every remaining public operation of the ten expects its row here,
 // named native<Owner><Operation>, implemented in its category unit by the kj_packet.c pattern.
 // The manifest is the contract: no external without a row, no row without an implementation.

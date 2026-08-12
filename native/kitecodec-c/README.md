@@ -17,21 +17,21 @@ ABI 1.1 added the compatible half of the opaque C surface: eleven forward-declar
 seven wrapper functions and five media-type accessors. ABI 2.0 completes the source break: the 140
 legacy declarations that named FFmpeg types now use those aliases, the public helper header includes
 no FFmpeg header, and Kotlin consumes the wrappers and accessors rather than raw libav functions,
-constants or struct layouts.
-The symbol set remains 169 `ffkmp_` functions plus the six `kc_` identity functions.
+constants or struct layouts. ABI 2.1 adds the compatible packet clone and JavaVM handoff.
+The symbol set is 170 `ffkmp_` functions plus seven `kc_` identity functions, 177 total.
 
 ## Layout
 
 | Path | What it is |
 |---|---|
-| `include/kitecodec_helpers.h` | Four standard includes plus `kitecodec_handles.h`, the `KC_API` macro, then 169 opaque helper declarations. It includes no FFmpeg header; each implementation unit owns the libav headers it uses. Lifted from the def at B1.3, an ordinary maintained source since the interlude. |
+| `include/kitecodec_helpers.h` | Four standard includes plus `kitecodec_handles.h`, the `KC_API` macro, then 170 opaque helper declarations. It includes no FFmpeg header; each implementation unit owns the libav headers it uses. Lifted from the def at B1.3, an ordinary maintained source since the interlude. |
 | `include/kitecodec_handles.h` | Eleven forward-declared opaque aliases and no FFmpeg include. ABI 2.0 uses them throughout the public helper declarations and Kotlin cinterop surface. |
 | `src/helpers_*.c` | Nine units, one per subsystem. Lifted from the def body at B1.3, ordinary maintained sources since the interlude. |
 | `include/kitecodec_abi.h` | HAND WRITTEN. The FFmpeg identity gate's contract. Includes no FFmpeg header and names no FFmpeg type. |
 | `include/kitecodec_ffmpeg_versions.h` | HAND WRITTEN, private. The only place the gate reaches into FFmpeg, and the one file the identity test replaces. |
 | `src/kitecodec_abi.c` | HAND WRITTEN. The gate: the frozen header macros, the runtime comparison, the report, the diagnostic bypass. |
 | `scripts/build-host.sh` | Builds the host test binaries for one variant. |
-| `scripts/symbol-audit.sh` | Proves what the compiled archive needs, exports and keeps private, and checks all 189 normalized public C declaration records. |
+| `scripts/symbol-audit.sh` | Proves what the compiled archive needs, exports and keeps private, and checks all 192 normalized public C declaration records. |
 | `scripts/check-deleted-surface.sh` | Proves nothing in either repository refers to a helper whose status is deleted. |
 | `deleted-surface.txt` | The deleted helper surface: 15 names, one status each. The single copy of the list, and the file to edit when a plan item resurrects one. |
 | `scripts/run-c-tests.sh` | Runs the seven suites for one variant, or in the `interpose` mode: the plain binaries with allocation accounting REQUIRED, so a blinded interposer fails instead of recording partials. |
@@ -39,7 +39,7 @@ The symbol set remains 169 `ffkmp_` functions plus the six `kc_` identity functi
 | `scripts/replay-corpus.sh` | Replays every committed fuzz seed through the replay driver under ASan and UBSan. Added by B1.5. |
 | `scripts/run-fuzz.sh` | Runs the six libFuzzer targets. Refuses with one sentence on a host whose clang has no fuzzer runtime, which is every clang here. |
 | `klib-metadata-baseline.txt` | Its baseline: the filtered metadata dump of that klib. |
-| `signature-baseline.txt` | The 189-record C declaration baseline: helper and ABI prototypes, opaque aliases, ABI enums and the complete report type. |
+| `signature-baseline.txt` | The 192-record C declaration baseline: 170 helper prototypes, eleven opaque aliases, seven ABI prototypes, three ABI enums and the complete report type. |
 | `fuzz/fuzz_*.c` | The six fuzz targets of plan section 15.2 B1.5, one per C entry point that parses a caller's string. |
 | `fuzz/kc_fuzz.h`, `fuzz/kc_fuzz.c` | The input contract and the three helpers every target shares, so the corpus and the split cannot drift apart. |
 | `fuzz/replay_main.c` | The `main()` that makes each target an ordinary sanitized regression test here. libFuzzer supplies its own in CI. |
@@ -48,7 +48,7 @@ The symbol set remains 169 `ffkmp_` functions plus the six `kc_` identity functi
 | `tests/harness.h`, `tests/harness.c` | The assertion and reporting API every suite uses. |
 | `tests/interpose_alloc.c` | The allocation interposer, the local leak instrument. |
 | `tests/test_*.c` | The seven suites of plan section 15.3 and S1.a.7. |
-| `tests/fake_headers/` | Five doctored shim include trees, one per identity verdict, plus the symbol renamer they share. |
+| `tests/fake_headers/` | Five doctored identity shim trees and the symbol renamer they share; those same byte-identical source copies exercise the Android attach arm. |
 | `coupling-baseline.txt` | The Kotlin to FFmpeg coupling ratchet's baseline, added by B1.1. |
 | `build/` | Output. Gitignored. |
 
@@ -115,10 +115,11 @@ governs the dynamic symbol table and not static linking: an unmarked helper stil
 the link that embeds the archive. So `KC_API` is not what makes the cinterop work. It is what makes
 the exported set a decision instead of an accident, and `symbol-audit.sh` is what checks the
 decision, by comparing the archive's external symbols with the header's `KC_API` declarations and
-finding them equal at 175: 169 `ffkmp_` helpers plus the six `kc_` functions of the identity gate
-below. ABI 2.0 leaves those names unchanged while respelling the 140 FFmpeg-typed declarations to
-the eleven opaque aliases. Kotlin now consumes the seven wrappers and five media-type accessors
-added at ABI 1.1. No raw libav function, constant or struct layout crosses the cinterop boundary;
+finding them equal at 177: 170 `ffkmp_` helpers plus the seven `kc_` functions of the identity gate
+below. ABI 2.0 left the then-existing names unchanged while respelling the 140 FFmpeg-typed
+declarations to the eleven opaque aliases; ABI 2.1 adds two compatible names. Kotlin consumes the
+seven wrappers and five media-type accessors added at ABI 1.1. No raw libav function, constant or
+struct layout crosses the cinterop boundary;
 the eleven incomplete forward tags remain only as the private identities behind the aliases.
 
 ## The FFmpeg identity gate
@@ -170,8 +171,10 @@ pins that permission to this one file so the rule stays true everywhere else.
 of the FFmpeg it loads. `tests/fake_headers/<case>/kitecodec_ffmpeg_versions.h` shims the private
 versions header: it `#include_next`s the real one and only then redefines the `LIB*_VERSION_*` macros,
 so FFmpeg's own deprecation guards still saw their true values and the doctoring touches nothing but
-the frozen expectation array. Each shim also renames that copy's six exported symbols through
-`tests/fake_headers/kc_rename.h`, so five doctored copies of the same source link into one binary.
+the frozen expectation array. Each shim also renames that copy's seven exported symbols through
+`tests/fake_headers/kc_rename.h`, so five verdict copies of the same source link into one binary.
+Those copies compile the Android attach arm too: a fake setter proves a rejected identity never
+reaches FFmpeg, and an already accepted copy is the non-vacuous control.
 The shim directory has to come BEFORE `-I include` on the command line; put it after and the real
 header wins, no copy is renamed, and the link fails on an undefined `kc_<case>_init`, which is how
 that mistake announces itself rather than passing vacuously.
@@ -189,14 +192,15 @@ Plan section 15.5 Deferral 2 is why this is not optional. It rejects
 makes the attribute level 8 evidence, and it substitutes "documented ownership contracts in the
 header plus exact pairing tests" in its place. The words are half of that substitution.
 
-What is in the table today: 40 contracts, one per declaration. It was 44 until B1.4 deleted
-`ffkmp_frame_ref`, `ffkmp_frame_make_writable`, `ffkmp_packet_ref` and `ffkmp_fmt_alloc_output`.
+What is in the table today: 41 contracts, one per declaration. It was 44 until B1.4 deleted
+`ffkmp_frame_ref`, `ffkmp_frame_make_writable`, `ffkmp_packet_ref` and `ffkmp_fmt_alloc_output`,
+then S1.c.1 added `ffkmp_packet_clone` with its independent-close contract.
 
 | Group | Count | What the contracts say | Register item |
 |---|---|---|---|
 | `ffkmp_strerror` | 1 | Thread affine, and invalidated by the next call on the same thread. | B1-09 |
 | Frames | 7 | Who owns the returned frame, which calls add a reference rather than copy, and which can move a plane pointer under the caller. | Deferral 2 |
-| Packets | 4 | Which calls leave a packet blank and which leave it owning data. | Deferral 2 |
+| Packets | 5 | Which calls leave a packet blank, which leave it owning data, and how clones share payload while closing independently. | Deferral 2, S1.c.1 |
 | Codecs | 8 | Context lifetime, and which setters copy their arguments. | Deferral 2 |
 | Demuxing | 4 | The open and close pairing, and that a read packet must be released before the next read. | Deferral 2 |
 | Muxing | 9 | The two contexts that must never be crossed, the stream the parent owns, the `pb` with no separate close, and the write that consumes its packet. | Deferral 2 |
@@ -205,8 +209,9 @@ What is in the table today: 40 contracts, one per declaration. It was 44 until B
 The ownership set is measured rather than listed by hand: a helper is an ownership helper when its
 body reaches a libav call that allocates, frees, or moves a reference. Applied mechanically to the
 176 bodies that selects 44 exported helpers plus the two internal graph finishers; B1.4 deleted
-four of the 44, leaving 40. 39 of the 40 have a contract here and a case in
-`tests/test_ownership.c`, so the words and the tests cover the same set. The 40th is
+four of the 44, leaving 40, and S1.c.1's packet clone brings the current ownership set to 41.
+40 of the 41 have a contract here and a case in `tests/test_ownership.c`, so the words and the tests
+cover the same set. The 41st is
 `ffkmp_codecctx_flush`: `avcodec_flush_buffers` releases the references the codec holds internally,
 which is why the mechanical rule selects it, but nothing crosses the interface, so it has neither a
 contract nor a case. Nothing here is documented that is not also asserted.
@@ -373,22 +378,23 @@ Add a suite by adding its source to `tests/` and its stem to the `TESTS` list in
 
 ## The seven suites, and what each one earns
 
-274 cases per variant, 822 case runs across plain, ASan and TSan. Before S1.a.7, the historical
+279 cases per variant, 837 case runs across plain, ASan and TSan. Before S1.a.7, the historical
 six-suite gate recorded 240 cases at B1.2 and B1.3, then 234 at B1.4, when six cases went with the
 helpers B1.4 deleted, four in `test_ownership.c` and two in `test_rescale.c`, then 250 at B1.6, when
 `test_identity.c` arrived with 16. I-12 added the NULL-key and out-of-range-stream guard cases to
 `test_ownership.c`, bringing the same six suites to 252; S1.a.7 adds `test_args.c`'s 22 cases to
 reach 274. B1.6 added the identity table row and left the prose at 234, so the table was right and
-the prose was wrong for two sub-phases.
+the prose was wrong for two sub-phases. S1.c.1 adds three packet-clone ownership cases and two JVM
+attach identity cases, reaching the current 279.
 
 | Suite | Cases | What it establishes | Register item |
 |---|---|---|---|
-| `test_ownership.c` | 41 | Exact allocation pairing for all 39 ownership helpers under the interposer, including the parent-owned stream, the per call `SwsContext` and the conditional `pb` close, plus I-12's NULL-key and out-of-range-stream guard cases. Every ownership case ends with `live=0`. | B1-14, I-12 |
+| `test_ownership.c` | 44 | Exact allocation pairing for all 40 ownership helpers under the interposer, including the parent-owned stream, the per call `SwsContext`, conditional `pb` close and packet clone's shared-payload/independent-close contract, plus I-12's NULL-key and out-of-range-stream guard cases. Every ownership case ends with `live=0`. | B1-14, I-12, S1.c.1 |
 | `test_buffers.c` | 32 | All 12 buffer declaration sites and all 4 size-taking copy helpers, at the limit and one past it, under ASan and UBSan. | B1-10 |
 | `test_rescale.c` | 114 | The 13 arithmetic helpers at the D9 overflow vectors, and `AV_CEIL_RSHIFT` plane heights over a 7 format by 6 height table. | D9 |
 | `test_strerror_thread.c` | 24 | Both halves of the thread affinity contract, over 4 threads and 256 rendezvous-synchronised rounds, clean under TSan. | B1-09 |
 | `test_convert.c` | 25 | Conversion correctness against an independently computed oracle, and the per call allocation cost as a number. | B1-23 |
-| `test_identity.c` | 16 | One case per identity verdict against five doctored header trees, the true build, and all three conditions the diagnostic bypass has to satisfy. | B1-02, B1-21 |
+| `test_identity.c` | 18 | One case per identity verdict against five doctored header trees, the true build, all three diagnostic-bypass conditions, NULL/host VM attach and a forced Android rejection followed by its accepting setter control. | B1-02, B1-21, S1.c.1 |
 | `test_args.c` | 22 | One invalid vector for each of the 16 newly guarded entry points, plus six positive controls for arguments whose NULL meaning is part of FFmpeg's contract. | R-B2-guards, S1.a.7 |
 
 Each suite proved load bearing by mutation against copies of the helper sources in a
@@ -420,9 +426,10 @@ Four limits of this machine shape all of the above, each measured rather than as
   interposer above exists.
 * **No cmake, and GNU make is unsafe here.** cmake is not installed, and make starts a comment at an
   unescaped `#`, which this checkout's own path contains. The C build drives clang directly.
-* **Local Apple trees are not release evidence.** The arm64 Mac can now build the host,
-  `ios_arm64` and `ios_simulator_arm64` FFmpeg trees through the phone selector. Those generated
-  inputs and the resulting C archives are local proof only, with no public artifact or CI result.
+* **Local cross-target trees are not release evidence.** The arm64 Mac can build the host,
+  `ios_arm64` and `ios_simulator_arm64` FFmpeg trees through the Apple phone selector, plus the
+  Android arm64 and x64 FFmpeg/JNI compile-and-link proofs from S1.c.1. Those generated inputs and
+  resulting archives are local proof only, with no public artifact or CI result.
 
 ## What is not here yet
 
@@ -433,8 +440,9 @@ nothing to do with FFmpeg, and putting it here would have made KitePlayer's real
 transitive consequence of a codec dependency.
 
 Nothing in this directory claims to work on a target whose archive was never built: plan section
-15.3 grades that claim as level 8 and bans it. The local phone proof covers `macos_arm64`,
-`ios_arm64` and `ios_simulator_arm64`; every other unbuilt target remains unclaimed.
+15.3 grades that claim as level 8 and bans it. The local proof covers `macos_arm64`, `ios_arm64`,
+`ios_simulator_arm64`, `android_arm64` and `android_x64`. Both Android arms are compile/link-only,
+not runtime qualification; every other unbuilt target remains unclaimed.
 
 Done in B1.3: the Gradle compile task (`buildSrc/CompileKiteCodecCTask.kt`) and the def edit that
 make this library the one cinterop consumes.

@@ -1,7 +1,7 @@
 # The normalized public C declaration baseline of KiteCodec (S1.a.8).
 #
-# Exact scope: 169 helper KC_API prototypes, eleven opaque handle typedefs, six
-# ABI KC_API prototypes, two ABI enum definitions and the full kc_ffmpeg_report
+# Exact scope: 170 helper KC_API prototypes, eleven opaque handle typedefs, seven
+# ABI KC_API prototypes, three ABI enum definitions and the full kc_ffmpeg_report
 # typedef. Comments and preprocessor lines are absent; whitespace is normalized;
 # records are sorted without deduplication. There must be exactly 192 records.
 #

@@ -9,6 +9,7 @@ import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputDirectory
+import org.gradle.api.tasks.InputFile
 import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.OutputFile
 import org.gradle.api.tasks.PathSensitive
@@ -68,6 +69,15 @@ abstract class LinkKiteCodecJniTask @Inject constructor(
     @get:Input
     abstract val linkFlags: ListProperty<String>
 
+    /** The one platform-specific file that limits the dynamic export surface to `JNI_OnLoad`. */
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val exportControlFile: RegularFileProperty
+
+    /** Selects the linker spelling for [exportControlFile]. */
+    @get:Input
+    abstract val exportControlKind: Property<ExportControlKind>
+
     /** Extra `-L` directories, absolute. */
     @get:Input
     abstract val libSearchDirs: ListProperty<String>
@@ -98,11 +108,71 @@ abstract class LinkKiteCodecJniTask @Inject constructor(
             add("-L"); add(ffmpegLibDir.get().asFile.absolutePath)
             libSearchDirs.get().forEach { add("-L"); add(it) }
             addAll(linkFlags.get())
+            addAll(exportControlArguments(exportControlKind.get(), exportControlFile.get().asFile))
             add("-o"); add(out.absolutePath)
         }
         logger.lifecycle("linking ${out.name} with ${sources.size} adapter units")
         val result = execOperations.exec { commandLine(args) }
         result.assertNormalExitValue()
         if (!out.isFile) throw GradleException("link reported success but ${out.absolutePath} does not exist")
+    }
+
+    enum class ExportControlKind {
+        ELF_VERSION_SCRIPT,
+        MACHO_EXPORTED_SYMBOLS,
+    }
+
+    data class AndroidAbiRecipe(
+        val linkTaskName: String,
+        val helperTaskName: String,
+        val ffmpegDirName: String,
+        val konanTargetName: String,
+        val ndkTarget: String,
+        val abiDirectory: String,
+        val outputRelativePath: String,
+    )
+
+    companion object {
+        /**
+         * The two S1.c Android arms. The ordinary Android KMP target does not register an
+         * `androidNative*` target, so each recipe names its own dedicated opaque-helper producer.
+         */
+        val ANDROID_ABI_RECIPES: List<AndroidAbiRecipe> = listOf(
+            AndroidAbiRecipe(
+                linkTaskName = "linkKiteCodecJniAndroidArm64",
+                helperTaskName = "compileKiteCodecCForJniAndroidArm64",
+                ffmpegDirName = "android-arm64",
+                konanTargetName = "android_arm64",
+                ndkTarget = "aarch64-linux-android24",
+                abiDirectory = "arm64-v8a",
+                outputRelativePath = "kitecodec-jni/android-arm64/arm64-v8a/libkitecodec_jni.so",
+            ),
+            AndroidAbiRecipe(
+                linkTaskName = "linkKiteCodecJniAndroidX64",
+                helperTaskName = "compileKiteCodecCForJniAndroidX64",
+                ffmpegDirName = "android-x64",
+                konanTargetName = "android_x64",
+                ndkTarget = "x86_64-linux-android24",
+                abiDirectory = "x86_64",
+                outputRelativePath = "kitecodec-jni/android-x64/x86_64/libkitecodec_jni.so",
+            ),
+        )
+
+        /** The exact S1.c.1 Android link recipe after the objects and opaque helper archive. */
+        fun androidLinkFlags(recipe: AndroidAbiRecipe): List<String> = listOf(
+            "--target=${recipe.ndkTarget}",
+            "-lavformat", "-lavcodec", "-lavfilter", "-lavutil", "-lswscale", "-lswresample",
+            "-lmediandk", "-landroid", "-llog", "-lz", "-ldl", "-lm",
+            "-Wl,-z,defs", "-Wl,-z,noexecstack", "-Wl,-z,relro", "-Wl,-z,now",
+            "-Wl,--gc-sections", "-Wl,--exclude-libs,ALL",
+            "-Wl,-z,max-page-size=16384", "-Wl,-z,common-page-size=16384",
+        )
+
+        fun exportControlArguments(kind: ExportControlKind, file: File): List<String> = when (kind) {
+            ExportControlKind.ELF_VERSION_SCRIPT ->
+                listOf("-Wl,--version-script=${file.absolutePath}")
+            ExportControlKind.MACHO_EXPORTED_SYMBOLS ->
+                listOf("-Wl,-exported_symbols_list,${file.absolutePath}")
+        }
     }
 }

@@ -10,7 +10,7 @@
  *
  *  1. kitecodec_ffmpeg_versions.h is included FIRST, before kitecodec_abi.h. The hermetic test in
  *     tests/test_identity.c compiles this same source several more times against shim include trees
- *     under tests/fake_headers/, and each shim renames this unit's six exported symbols through
+ *     under tests/fake_headers/, and each shim renames this unit's seven exported symbols through
  *     macros so that several doctored copies can be linked into one test binary. A rename has to be
  *     in scope before kitecodec_abi.h declares the names, or the declaration and the definition would
  *     disagree and the link would fail.
@@ -350,7 +350,11 @@ KC_API int kc_jvm_attach(void *java_vm)
 {
     if (java_vm == NULL) return KC_JVM_BAD_ARGUMENT;
 #ifdef __ANDROID__
-    pthread_once(&kc_gate_once, kc_run_gate);
+    /* The VM is process identity too: never hand it to FFmpeg until the archive's frozen header
+     * identity has accepted the linked runtime. Calling kc_init(), rather than merely running the
+     * once body, keeps the status decision in the gate's one public path (including its explicit
+     * diagnostic-bypass semantics). */
+    if (kc_init() != KC_STATUS_OK) return KC_JVM_FFMPEG_REFUSED;
     if (av_jni_set_java_vm(java_vm, NULL) < 0) return KC_JVM_FFMPEG_REFUSED;
     return KC_JVM_OK;
 #else

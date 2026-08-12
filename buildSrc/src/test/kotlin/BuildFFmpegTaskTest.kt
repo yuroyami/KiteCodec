@@ -15,6 +15,58 @@ import kotlin.test.assertTrue
 class BuildFFmpegTaskTest {
 
     @Test
+    fun androidArm64AndX64UseTheExactApi24MediaCodecJniPicArguments() {
+        val task = ProjectBuilder.builder().build().tasks.create("ffmpeg", BuildFFmpegTask::class.java)
+        val root = Files.createTempDirectory("kitecodec-android-args-test")
+        try {
+            val toolchainBin = root.resolve("toolchains/llvm/prebuilt/test-host/bin").createDirectories()
+            toolchainBin.resolve("aarch64-linux-android24-clang").createFile()
+            toolchainBin.resolve("x86_64-linux-android24-clang").createFile()
+
+            val arm64 = task.configureArguments(
+                target = TargetTriple.AndroidArm64,
+                license = FFmpegLicense.LGPL,
+                installPrefix = "/scratch/install-arm64",
+                ndkToolchainBin = { toolchainBin.toFile() },
+            )
+            val x64 = task.configureArguments(
+                target = TargetTriple.AndroidX64,
+                license = FFmpegLicense.LGPL,
+                installPrefix = "/scratch/install-x64",
+                ndkToolchainBin = { toolchainBin.toFile() },
+            )
+
+            assertEquals(
+                expectedSharedCoreArguments() + expectedAndroidArguments(
+                    toolchainBin = toolchainBin.toString(),
+                    arch = "aarch64",
+                    compilerPrefix = "aarch64-linux-android",
+                    suffix = listOf("--cpu=armv8-a"),
+                    installPrefix = "/scratch/install-arm64",
+                ),
+                arm64,
+            )
+            assertEquals(
+                expectedSharedCoreArguments() + expectedAndroidArguments(
+                    toolchainBin = toolchainBin.toString(),
+                    arch = "x86_64",
+                    compilerPrefix = "x86_64-linux-android",
+                    suffix = listOf("--disable-asm"),
+                    installPrefix = "/scratch/install-x64",
+                ),
+                x64,
+            )
+            listOf(arm64, x64).forEach { arguments ->
+                assertTrue("--enable-pic" in arguments)
+                assertTrue("--enable-mediacodec" in arguments)
+                assertTrue("--enable-jni" in arguments)
+            }
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
     fun iosProfilesUseTheExactStandardCoreZlibAndCrossArguments() {
         val task = ProjectBuilder.builder().build().tasks.create("ffmpeg", BuildFFmpegTask::class.java)
         task.hostPrefix.set("/host")
@@ -247,4 +299,30 @@ class BuildFFmpegTaskTest {
         "--enable-pic",
         "--enable-runtime-cpudetect",
     )
+
+    private fun expectedAndroidArguments(
+        toolchainBin: String,
+        arch: String,
+        compilerPrefix: String,
+        suffix: List<String>,
+        installPrefix: String,
+    ): List<String> {
+        val compiler = "$toolchainBin/$compilerPrefix${BuildFFmpegTask.ANDROID_API}-clang"
+        return listOf(
+            "--target-os=android",
+            "--arch=$arch",
+            "--enable-cross-compile",
+            "--cc=$compiler",
+            "--cxx=$compiler++",
+            "--ar=$toolchainBin/llvm-ar",
+            "--ranlib=$toolchainBin/llvm-ranlib",
+            "--nm=$toolchainBin/llvm-nm",
+            "--strip=$toolchainBin/llvm-strip",
+            "--enable-mediacodec",
+            "--enable-jni",
+            "--enable-encoder=aac,h264_mediacodec,hevc_mediacodec",
+            "--enable-decoder=h264_mediacodec,hevc_mediacodec",
+            "--enable-zlib",
+        ) + suffix + "--prefix=$installPrefix"
+    }
 }

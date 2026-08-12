@@ -7,7 +7,7 @@
  *
  * HERMETIC. It needs no second FFmpeg install and no network. src/kitecodec_abi.c is compiled several
  * more times, once per shim include tree under tests/fake_headers/, and each shim renames that copy's
- * six exported symbols so all of them link into this one binary. The source compiled is byte for byte
+ * seven exported symbols so all of them link into this one binary. The source compiled is byte for byte
  * the shipped one: there is no test-only branch inside the production file, which is what keeps the
  * experiment about the gate rather than about a test hook.
  *
@@ -41,6 +41,25 @@ extern void kc_configuration_mismatch_report_get(kc_ffmpeg_report *out);
 
 extern int kc_bypass_init(void);
 extern void kc_bypass_report_get(kc_ffmpeg_report *out);
+
+/* kc_rename.h Android-preprocesses every doctored copy of the byte-identical production source.
+ * The major-mismatch copy is already rejected by case 1, while the micro-older copy is already
+ * accepted by case 3. Both resolve FFmpeg's VM setter to this probe, making attach order observable
+ * without a test branch in src/kitecodec_abi.c. */
+extern int kc_major_mismatch_jvm_attach(void *java_vm);
+extern int kc_micro_older_jvm_attach(void *java_vm);
+
+static int kc_android_jni_set_calls;
+static void *kc_android_jni_last_vm;
+static int kc_android_jni_set_result;
+
+int av_jni_set_java_vm(void *java_vm, void *log_ctx)
+{
+    KC_EQ_PTR(log_ctx, NULL);
+    kc_android_jni_set_calls++;
+    kc_android_jni_last_vm = java_vm;
+    return kc_android_jni_set_result;
+}
 
 /* The doctored configure line case 5 hands libavfilter. Deliberately a string no real FFmpeg configure
  * run would produce, so a false pass cannot come from the two strings accidentally agreeing. */
@@ -372,17 +391,36 @@ int main(void)
 
     KC_EQ_INT(unsetenv(KC_BYPASS_ENV), 0);
 
-    /* S1.c.1. kc_jvm_attach on a host build: NULL is a bad argument everywhere, and any non-NULL
-     * VM is unsupported because this is not an Android build. The sentinel is a stack address;
-     * the host arm must refuse before ever dereferencing it, which is exactly what makes this
-     * safe to assert. */
+    /* S1.c.1. The production object is a host build, while the doctored byte-identical copies take
+     * the Android arm. That gives this one suite both halves without adding a test branch to the
+     * shipped source. The sentinel is a stack address; no arm may dereference it. */
     kc_case("kc_jvm_attach refuses NULL with KC_JVM_BAD_ARGUMENT");
     KC_EQ_INT(kc_jvm_attach(NULL), KC_JVM_BAD_ARGUMENT);
 
-    kc_case("kc_jvm_attach on a non-Android build is KC_JVM_UNSUPPORTED and touches nothing");
+    kc_case("kc_jvm_attach gates Android before FFmpeg and remains unsupported on the host");
     {
         int sentinel = 0;
         KC_EQ_INT(kc_jvm_attach(&sentinel), KC_JVM_UNSUPPORTED);
+        KC_EQ_INT(sentinel, 0);
+
+        kc_android_jni_set_calls = 0;
+        kc_android_jni_last_vm = NULL;
+        kc_android_jni_set_result = 0;
+        KC_EQ_INT(kc_major_mismatch_jvm_attach(&sentinel), KC_JVM_FFMPEG_REFUSED);
+        KC_EQ_INT(kc_android_jni_set_calls, 0);
+        KC_EQ_PTR(kc_android_jni_last_vm, NULL);
+
+        /* Restore an accepting identity in a separate pthread_once domain. If the setter probe
+         * itself were disconnected, this control would leave the call count at zero and fail. */
+        KC_EQ_INT(kc_micro_older_jvm_attach(&sentinel), KC_JVM_OK);
+        KC_EQ_INT(kc_android_jni_set_calls, 1);
+        KC_EQ_PTR(kc_android_jni_last_vm, &sentinel);
+
+        kc_android_jni_set_result = -1;
+        KC_EQ_INT(kc_micro_older_jvm_attach(&sentinel), KC_JVM_FFMPEG_REFUSED);
+        KC_EQ_INT(kc_android_jni_set_calls, 2);
+        KC_EQ_PTR(kc_android_jni_last_vm, &sentinel);
+        kc_android_jni_set_result = 0;
         KC_EQ_INT(sentinel, 0);
     }
 

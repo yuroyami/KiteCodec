@@ -13,7 +13,8 @@
 #      an `objc_msgSend` or a `dispatch_` would mean C that looked portable has quietly become
 #      Apple-only.
 #   2. What does it export? The 157 legacy helpers the Kotlin side imports, the twelve compatible
-#      helpers added at S1.a.7, plus the six kc_ functions of the identity gate, and nothing else.
+#      helpers added at S1.a.7, the packet clone added at S1.c.1, plus the seven kc_ functions of
+#      the identity gate, and nothing else: 177 names.
 #      That set is a compatibility promise, which is the whole reason B1.4 deleted the 15 helpers
 #      no Kotlin file imported (register item B1-08).
 #   3. What does it keep to itself? The four trailing-underscore helpers, which are `static` and
@@ -259,7 +260,7 @@ echo "3. exported symbols are exactly the KC_API declarations of the two headers
 sed 's/^/_/' "$WORK/expected_exported.txt" | sort > "$WORK/expected_external_symbols.txt"
 comm -23 "$WORK/expected_external_symbols.txt" "$WORK/external.txt" > "$WORK/missing.txt"
 comm -13 "$WORK/expected_external_symbols.txt" "$WORK/external.txt" > "$WORK/extra.txt"
-echo "  header declares $(wc -l < "$WORK/expected_exported.txt" | tr -d ' ') KC_API helpers"
+echo "  header declares $(wc -l < "$WORK/expected_exported.txt" | tr -d ' ') KC_API functions"
 echo "  archive exports $(wc -l < "$WORK/external.txt" | tr -d ' ') symbols"
 if [ -s "$WORK/missing.txt" ]; then
     fail "declared KC_API but not exported:"
@@ -380,9 +381,9 @@ fi
 # silently retargeted to another C tag. This check records declaration SHAPES from all three public
 # headers. Selection is per header and deliberate:
 #
-#   kitecodec_helpers.h  every KC_API prototype (169)
+#   kitecodec_helpers.h  every KC_API prototype (170)
 #   kitecodec_handles.h  every opaque typedef (11)
-#   kitecodec_abi.h      KC_API prototypes (6), enum definitions (2), report typedef (1)
+#   kitecodec_abi.h      KC_API prototypes (7), enum definitions (3), report typedef (1)
 #
 # Comments and preprocessor lines are discarded. Declarations may span lines, and a semicolon ends
 # a record only at brace depth zero, so enum fields and the report fields remain inside their one
@@ -518,8 +519,8 @@ if [ "$WRITE_SIGNATURE_BASELINE" = 1 ]; then
         {
             echo "# The normalized public C declaration baseline of KiteCodec (S1.a.8)."
             echo "#"
-            echo "# Exact scope: 169 helper KC_API prototypes, eleven opaque handle typedefs, six"
-            echo "# ABI KC_API prototypes, two ABI enum definitions and the full kc_ffmpeg_report"
+            echo "# Exact scope: 170 helper KC_API prototypes, eleven opaque handle typedefs, seven"
+            echo "# ABI KC_API prototypes, three ABI enum definitions and the full kc_ffmpeg_report"
             echo "# typedef. Comments and preprocessor lines are absent; whitespace is normalized;"
             echo "# records are sorted without deduplication. There must be exactly 192 records."
             echo "#"
