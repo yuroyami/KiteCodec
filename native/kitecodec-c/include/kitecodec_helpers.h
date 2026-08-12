@@ -545,4 +545,16 @@ KC_API int ffkmp_frame_plane_height(kc_frame *f, int p);
 KC_API void* ffkmp_frame_hw_surface(kc_frame *f);
 KC_API int ffkmp_frame_is_hardware(kc_frame *f);
 
+/* Hardware decode, KiteCodec window 3 (S2.a). VideoToolbox is an hwaccel behind the ordinary
+ * decoders, so there is no decoder name to select: ffkmp_codecctx_use_videotoolbox attaches a
+ * device context between alloc and open (the pre-open window) and installs the format
+ * negotiation that prefers hardware output and falls back to the default negotiation when the
+ * offer is withdrawn. A build without VideoToolbox answers AVERROR(ENOSYS) at attach time,
+ * FFmpeg's own capability answer. ffkmp_frame_hw_download copies a hardware frame's pixels and
+ * presentation properties into a blank allocated dst and leaves dst blank on failure; a
+ * software src is refused, because reaching the download on one means the caller's bookkeeping
+ * is wrong. */
+KC_API int ffkmp_codecctx_use_videotoolbox(kc_codec_ctx *c);
+KC_API int ffkmp_frame_hw_download(kc_frame *src, kc_frame *dst);
+
 #endif /* KITECODEC_HELPERS_H */

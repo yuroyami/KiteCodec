@@ -4,9 +4,9 @@
  * NULL pointer reach FFmpeg or an immediate dereference. Each invalid call runs in a child so
  * the unguarded reproduction records its signal without killing the driver. Pass one row id as
  * argv[1] to reproduce a single vector; the gate invokes the binary without an id and runs all
- * twenty-three cases.
+ * thirty-one cases (sixteen S1.a.7 refusals, four S4.b arms, four S2.a arms, the controls).
  *
- * The final seven cases are load-bearing controls. Six prevent the new refusals from
+ * The final eight cases are load-bearing controls. Six prevent the new refusals from
  * rejecting positions whose existing contracts deliberately use NULL: the default audio filter,
  * graph EOF, mux flush, output-format inference, a context-retained codec and pathless output
  * allocation with an explicit format; the seventh pins selected-codec identity and its NULL rule.
@@ -156,6 +156,34 @@ static int invalid_fmt_chapter_get(void)
 static int invalid_fmt_read_frame(void)
 {
     return ffkmp_fmt_read_frame(NULL, NULL);
+}
+
+static int invalid_codecctx_use_videotoolbox(void)
+{
+    return ffkmp_codecctx_use_videotoolbox(NULL);
+}
+
+static int invalid_frame_hw_download(void)
+{
+    return ffkmp_frame_hw_download(NULL, NULL);
+}
+
+static int invalid_frame_hw_download_software_src(void)
+{
+    /* A software frame must be refused, not copied: reaching the download on one means the
+       caller's is-hardware bookkeeping is wrong, and copying would hide that. */
+    kc_frame *src = ffkmp_frame_alloc();
+    kc_frame *dst = ffkmp_frame_alloc();
+    int rc;
+    if (!src || !dst) {
+        ffkmp_frame_free(src);
+        ffkmp_frame_free(dst);
+        return 0; /* allocation failure would read as a missing refusal; report it as such */
+    }
+    rc = ffkmp_frame_hw_download(src, dst);
+    ffkmp_frame_free(src);
+    ffkmp_frame_free(dst);
+    return rc;
 }
 
 static int invalid_fmt_alloc_output2(void)
@@ -408,6 +436,9 @@ static const invalid_case invalid_cases[] = {
     { "invalid_fmt_chapter_count", "ffkmp_fmt_chapter_count refuses a NULL context", invalid_fmt_chapter_count },
     { "invalid_fmt_chapter_get", "ffkmp_fmt_chapter_get refuses NULL arguments", invalid_fmt_chapter_get },
     { "invalid_fmt_read_frame", "ffkmp_fmt_read_frame refuses NULL arguments", invalid_fmt_read_frame },
+    { "invalid_codecctx_use_videotoolbox", "ffkmp_codecctx_use_videotoolbox refuses a NULL context", invalid_codecctx_use_videotoolbox },
+    { "invalid_frame_hw_download", "ffkmp_frame_hw_download refuses NULL frames", invalid_frame_hw_download },
+    { "invalid_frame_hw_download_software_src", "ffkmp_frame_hw_download refuses a software source", invalid_frame_hw_download_software_src },
     { "invalid_fmt_alloc_output2", "ffkmp_fmt_alloc_output2 refuses a NULL output", invalid_fmt_alloc_output2 },
     { "invalid_fmt_write_frame", "ffkmp_fmt_write_frame refuses a NULL context", invalid_fmt_write_frame },
     { "invalid_codecctx_open", "ffkmp_codecctx_open refuses a NULL context", invalid_codecctx_open },
@@ -420,6 +451,28 @@ static const invalid_case invalid_cases[] = {
     { "invalid_graph_receive", "ffkmp_graph_receive refuses NULL arguments", invalid_graph_receive },
 };
 
+static void control_codecctx_use_videotoolbox(void)
+{
+    /* On this Mac the attach must succeed against an allocated, unopened decoder context; a
+       build without VideoToolbox would answer ENOSYS here, which is the typed refusal the
+       Kotlin side forwards. The context is freed unopened: the attach's own contract is the
+       thing under test, the full hardware decode is the player matrix's proof. */
+    const kc_codec *codec = ffkmp_find_decoder_by_name("h264");
+    kc_codec_ctx *context;
+    int rc;
+
+    KC_NOT_NULL(codec);
+    context = ffkmp_codecctx_alloc(codec);
+    KC_NOT_NULL(context);
+    rc = ffkmp_codecctx_use_videotoolbox(context);
+    KC_EQ_INT(rc, 0);
+    /* A second attach must replace, not leak; ASan holds this arm to that word. */
+    rc = ffkmp_codecctx_use_videotoolbox(context);
+    KC_EQ_INT(rc, 0);
+    ffkmp_codecctx_free(context);
+    kc_detail("rc=%d", rc);
+}
+
 static const control_case control_cases[] = {
     { "control_audio_description_null", "audio graph accepts a NULL description as anull", control_audio_description_null },
     { "control_graph_send_null_frame", "graph send accepts a NULL frame as EOF", control_graph_send_null_frame },
@@ -428,6 +481,7 @@ static const control_case control_cases[] = {
     { "control_codecctx_open_null_codec", "codec open accepts NULL when the context remembers its codec", control_codecctx_open_null_codec },
     { "control_fmt_alloc_output2_null_path", "output allocation accepts a NULL path with an explicit format", control_fmt_alloc_output2_null_path },
     { "control_codec_id", "codec id is null-safe and identifies selected pcm_s16le", control_codec_id },
+    { "control_codecctx_use_videotoolbox", "the VideoToolbox attach succeeds pre-open and replaces on repeat", control_codecctx_use_videotoolbox },
 };
 
 static int selected(const char *focus, const char *id)

@@ -445,6 +445,7 @@ public final class io/github/yuroyami/kitecodec/Frame : java/lang/AutoCloseable 
 	public fun close ()V
 	public final fun copy ()Lio/github/yuroyami/kitecodec/Frame;
 	public final fun copyPlanesToByteArray ()[B
+	public final fun downloadFromHardware ()Lio/github/yuroyami/kitecodec/Frame;
 	public final fun encodeImage-uiO3Ix8 (Ljava/lang/String;)[B
 	public static synthetic fun encodeImage-uiO3Ix8$default (Lio/github/yuroyami/kitecodec/Frame;Ljava/lang/String;ILjava/lang/Object;)[B
 	public final fun getInfo ()Lio/github/yuroyami/kitecodec/FrameInfo;
@@ -513,6 +514,13 @@ public final class io/github/yuroyami/kitecodec/FrameKt {
 	public static final fun getPtsMicros (Lio/github/yuroyami/kitecodec/Frame;)Ljava/lang/Long;
 }
 
+public final class io/github/yuroyami/kitecodec/HardwareAccel : java/lang/Enum {
+	public static final field VideoToolbox Lio/github/yuroyami/kitecodec/HardwareAccel;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lio/github/yuroyami/kitecodec/HardwareAccel;
+	public static fun values ()[Lio/github/yuroyami/kitecodec/HardwareAccel;
+}
+
 public abstract interface annotation class io/github/yuroyami/kitecodec/KiteCodecLowLevelApi : java/lang/annotation/Annotation {
 }
 
@@ -564,8 +572,8 @@ public final class io/github/yuroyami/kitecodec/MediaSource : java/lang/AutoClos
 	public final fun getStreams ()Ljava/util/List;
 	public final fun getUnusedOpenOptions ()Ljava/util/List;
 	public final fun isSeekable ()Z
-	public final fun openDecoder-34ZvGRY (Lio/github/yuroyami/kitecodec/StreamInfo;IZLjava/lang/String;Lio/github/yuroyami/kitecodec/dsl/DecoderOptions;)Lio/github/yuroyami/kitecodec/StreamDecoder;
-	public static synthetic fun openDecoder-34ZvGRY$default (Lio/github/yuroyami/kitecodec/MediaSource;Lio/github/yuroyami/kitecodec/StreamInfo;IZLjava/lang/String;Lio/github/yuroyami/kitecodec/dsl/DecoderOptions;ILjava/lang/Object;)Lio/github/yuroyami/kitecodec/StreamDecoder;
+	public final fun openDecoder-LSTN9bI (Lio/github/yuroyami/kitecodec/StreamInfo;IZLjava/lang/String;Lio/github/yuroyami/kitecodec/dsl/DecoderOptions;Lio/github/yuroyami/kitecodec/HardwareAccel;)Lio/github/yuroyami/kitecodec/StreamDecoder;
+	public static synthetic fun openDecoder-LSTN9bI$default (Lio/github/yuroyami/kitecodec/MediaSource;Lio/github/yuroyami/kitecodec/StreamInfo;IZLjava/lang/String;Lio/github/yuroyami/kitecodec/dsl/DecoderOptions;Lio/github/yuroyami/kitecodec/HardwareAccel;ILjava/lang/Object;)Lio/github/yuroyami/kitecodec/StreamDecoder;
 	public final fun openPacketReader (Ljava/util/List;)Lio/github/yuroyami/kitecodec/PacketReader;
 	public final fun seekMicros (JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }

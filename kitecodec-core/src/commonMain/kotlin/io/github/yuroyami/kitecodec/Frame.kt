@@ -44,6 +44,23 @@ public expect class Frame : AutoCloseable {
     public fun copy(): Frame
 
     /**
+     * The measured software download of a hardware frame (window 3, S2.a): copies the pixels out
+     * of GPU memory into a new ordinary frame and carries the presentation properties (pts,
+     * colour, rotation side data) with them. This is D-2's fallback path made explicit: a
+     * renderer that cannot take the hardware surface calls this once per frame and pays the copy
+     * knowingly, which is exactly what `HardwareWithDownload` reports upstream.
+     *
+     * The source frame is untouched and both frames are closed independently. A frame that is
+     * not hardware ([FrameInfo.isHardware] false) is refused rather than copied, because reaching
+     * the download on one means the caller's bookkeeping is wrong.
+     *
+     * @return a new owned software frame with the same timestamps and stream identity
+     * @throws FFmpegException on a non-hardware source or when the transfer fails
+     */
+    @Throws(FFmpegException::class)
+    public fun downloadFromHardware(): Frame
+
+    /**
      * Encode this (video) frame as a standalone compressed image: MJPEG (`.jpg`) by default,
      * or [CodecId.Png]. This converts the pixel format automatically when the image codec does
      * not accept the frame's own (e.g. yuv420p → rgb24 for PNG). It leaves this frame untouched,

@@ -1,9 +1,9 @@
 # The normalized public C declaration baseline of KiteCodec (S1.a.8).
 #
-# Exact scope: 176 helper KC_API prototypes, eleven opaque handle typedefs, seven
+# Exact scope: 178 helper KC_API prototypes, eleven opaque handle typedefs, seven
 # ABI KC_API prototypes, three ABI enum definitions and the full kc_ffmpeg_report
 # typedef. Comments and preprocessor lines are absent; whitespace is normalized;
-# records are sorted without deduplication. There must be exactly 198 records.
+# records are sorted without deduplication. There must be exactly 200 records.
 #
 # THE MOVE (also in KPKMP.md section 9's ratchet move table): change the public
 # declaration deliberately, run ./scripts/symbol-audit.sh
@@ -42,6 +42,7 @@ KC_API int ffkmp_codecctx_sample_rate(kc_codec_ctx *c);
 KC_API int ffkmp_codecctx_send_frame(kc_codec_ctx *ctx, const kc_frame *frame);
 KC_API int ffkmp_codecctx_send_packet(kc_codec_ctx *ctx, const kc_packet *packet);
 KC_API int ffkmp_codecctx_set_opt(kc_codec_ctx *c, const char *key, const char *value);
+KC_API int ffkmp_codecctx_use_videotoolbox(kc_codec_ctx *c);
 KC_API int ffkmp_codecctx_width(kc_codec_ctx *c);
 KC_API int ffkmp_codecpar_channels(kc_codec_par *p);
 KC_API int ffkmp_codecpar_codec_id(kc_codec_par *p);
@@ -86,6 +87,7 @@ KC_API int ffkmp_frame_fill_video(kc_frame *f, const uint8_t *src, int src_size)
 KC_API int ffkmp_frame_format(kc_frame *f);
 KC_API int ffkmp_frame_get_buffer(kc_frame *f, int align);
 KC_API int ffkmp_frame_height(kc_frame *f);
+KC_API int ffkmp_frame_hw_download(kc_frame *src, kc_frame *dst);
 KC_API int ffkmp_frame_is_hardware(kc_frame *f);
 KC_API int ffkmp_frame_is_keyframe(kc_frame *f);
 KC_API int ffkmp_frame_linesize(kc_frame *f, int p);

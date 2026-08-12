@@ -171,6 +171,7 @@ public actual class StreamDecoder internal constructor(
             lowDelay: Boolean,
             requestedDecoder: CodecId?,
             options: io.github.yuroyami.kitecodec.dsl.DecoderOptions? = null,
+            hardware: HardwareAccel? = null,
         ): StreamDecoder {
             val streamToken = Internals.fmtStream(formatToken, stream.index)
             var parameters = 0L
@@ -204,6 +205,14 @@ public actual class StreamDecoder internal constructor(
                     // between context creation and open, exactly where FFmpeg wants them.
                     options?.compile()?.forEach { (key, value) ->
                         check0(Internals.codecCtxSetOpt(context, key, value), "av_opt_set ('${'$'}key')")
+                    }
+                    // Window 3 (S2.a): the HWACCEL attach, in the same pre-open moment. On macOS
+                    // JVM this works, because the C archive links VideoToolbox there; elsewhere
+                    // FFmpeg answers ENOSYS and the refusal is typed, never silent.
+                    when (hardware) {
+                        HardwareAccel.VideoToolbox ->
+                            check0(Internals.codecCtxUseVideoToolbox(context), "videotoolbox device attach")
+                        null -> Unit
                     }
                     check0(Internals.codecCtxOpen(context, codec), "avcodec_open2")
                     return StreamDecoder(stream, context)

@@ -77,6 +77,24 @@ public actual class Frame internal constructor(
     )
 
     @Throws(FFmpegException::class)
+    public actual fun downloadFromHardware(): Frame {
+        val source = checkOpen()
+        val downloaded = Internals.frameAlloc()
+        val rc = Internals.frameHwDownload(source, downloaded)
+        if (rc < 0) {
+            Internals.frameFree(downloaded)
+            throw FFmpegException(avError(rc))
+        }
+        return Frame(
+            token = downloaded,
+            ownsToken = true,
+            streamIndex = streamIndex,
+            streamType = streamType,
+            streamTimeBase = streamTimeBase,
+        )
+    }
+
+    @Throws(FFmpegException::class)
     public actual fun encodeImage(codec: CodecId): ByteArray {
         val source = checkOpen()
         if (streamType != MediaType.Video) {

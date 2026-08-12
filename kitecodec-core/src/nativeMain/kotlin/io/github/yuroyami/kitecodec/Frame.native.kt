@@ -49,6 +49,7 @@ import ffmpeg.ffkmp_frame_color_range
 import ffmpeg.ffkmp_frame_color_trc
 import ffmpeg.ffkmp_frame_colorspace
 import ffmpeg.ffkmp_frame_duration
+import ffmpeg.ffkmp_frame_hw_download
 import ffmpeg.ffkmp_frame_is_hardware
 import ffmpeg.ffkmp_frame_is_keyframe
 import ffmpeg.ffkmp_frame_sample_aspect_ratio
@@ -177,6 +178,19 @@ public actual class Frame internal constructor(
         val cloned = ffkmp_frame_clone(nativeFrame)
             ?: throw FFmpegException(FFmpegError.Internal("av_frame_clone returned NULL"))
         return Frame(cloned, ownsPointer = true, streamIndex = streamIndex, streamType = streamType, streamTimeBase = streamTimeBase)
+    }
+
+    @Throws(FFmpegException::class)
+    public actual fun downloadFromHardware(): Frame {
+        checkOpen()
+        val downloaded = ffkmp_frame_alloc()
+            ?: throw FFmpegException(FFmpegError.Internal("av_frame_alloc returned NULL"))
+        val rc = ffkmp_frame_hw_download(nativeFrame, downloaded)
+        if (rc < 0) {
+            ffkmp_frame_free(downloaded)
+            throw FFmpegException(avError(rc))
+        }
+        return Frame(downloaded, ownsPointer = true, streamIndex = streamIndex, streamType = streamType, streamTimeBase = streamTimeBase)
     }
 
     @Throws(FFmpegException::class)

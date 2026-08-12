@@ -427,6 +427,21 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
     private fun appleHardwareArgs(): List<String> = listOf(
         "--enable-videotoolbox",
         "--enable-encoder=h264_videotoolbox,hevc_videotoolbox",
+    ) + appleHwaccelDecodeArgs()
+
+    /**
+     * VideoToolbox hardware DECODE (KiteCodec window 3, KPKMP 17.4.8 S2.a). Unlike MediaCodec
+     * there is no named decoder to enable: VideoToolbox decode is an hwaccel behind the ordinary
+     * `h264`/`hevc` decoders, and under `--disable-everything` every hwaccel must be named in
+     * `--enable-hwaccel=` or the framework link exists with no decode path behind it, the same
+     * silent hole the encoder comment above records. Decode is enabled for EVERY Apple target
+     * including the simulator (decode works there on Apple silicon; it is encode that does not),
+     * and a runtime refusal on any particular machine is FFmpeg's own typed answer through
+     * `ffkmp_codecctx_use_videotoolbox`, which D-2's measured fallback treats as one more
+     * fallback cause.
+     */
+    private fun appleHwaccelDecodeArgs(): List<String> = listOf(
+        "--enable-hwaccel=h264_videotoolbox,hevc_videotoolbox",
     )
 
     private fun desktopTargetArgs(target: TargetTriple): List<String> = when (target) {
@@ -486,7 +501,8 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
             }
             else -> error("mobileAppleArgs called for non-iOS target $target")
         }
-        return listOf("--disable-autodetect", "--enable-zlib") + crossArgs
+        return listOf("--disable-autodetect", "--enable-zlib", "--enable-videotoolbox") +
+            appleHwaccelDecodeArgs() + crossArgs
     }
 
     /** Resolves an Apple SDK sysroot via `xcrun`, so the path tracks the installed Xcode. */

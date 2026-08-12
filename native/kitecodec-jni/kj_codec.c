@@ -113,6 +113,16 @@ JNIEXPORT jint JNICALL kj_codecctx_set_opt(JNIEnv *env, jclass cls, jlong token,
     return (jint)rc;
 }
 
+JNIEXPORT jint JNICALL kj_codecctx_use_videotoolbox(JNIEnv *env, jclass cls, jlong token)
+{
+    kc_codec_ctx *ctx = (kc_codec_ctx *)kj_handle_get(env, token, KJ_KIND_CODEC_CTX);
+    (void)cls;
+    if (ctx == NULL) return -1;
+    /* On macOS this works: the C archive links VideoToolbox there. Elsewhere it answers the
+       function-not-implemented error code, the capability truth the Kotlin side forwards typed. */
+    return (jint)ffkmp_codecctx_use_videotoolbox(ctx);
+}
+
 JNIEXPORT jint JNICALL kj_codecctx_send_packet(JNIEnv *env, jclass cls, jlong ctx_token, jlong packet_token)
 {
     kc_codec_ctx *ctx = (kc_codec_ctx *)kj_handle_get(env, ctx_token, KJ_KIND_CODEC_CTX);

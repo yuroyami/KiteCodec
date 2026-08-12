@@ -285,10 +285,11 @@ public actual class MediaSource internal constructor(
         lowDelay: Boolean,
         decoder: CodecId?,
         options: io.github.yuroyami.kitecodec.dsl.DecoderOptions?,
+        hardware: HardwareAccel?,
     ): StreamDecoder {
         val context = checkOpen()
         require(stream.type.isAv) { "Only video and audio streams can be decoded, got ${stream.type}" }
-        return StreamDecoder.open(context, stream, threadCount, lowDelay, decoder, options)
+        return StreamDecoder.open(context, stream, threadCount, lowDelay, decoder, options, hardware)
     }
 
     actual override fun close() {

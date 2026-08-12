@@ -115,6 +115,9 @@ public expect class MediaSource : AutoCloseable {
      * selects that exact decoder name and refuses it unless it can decode this stream's codec. This
      * is the selection seam used for FFmpeg-owned hardware decoders such as
      * `h264_mediacodec`; it does not call a platform decoder API directly.
+     *
+     * [hardware] requests an HWACCEL behind the chosen decoder ([HardwareAccel]); it is attached
+     * between context creation and open and fails typed when the running FFmpeg cannot honour it.
      */
     @KiteCodecLowLevelApi
     @Throws(FFmpegException::class)
@@ -124,6 +127,7 @@ public expect class MediaSource : AutoCloseable {
         lowDelay: Boolean = false,
         decoder: CodecId? = null,
         options: io.github.yuroyami.kitecodec.dsl.DecoderOptions? = null,
+        hardware: HardwareAccel? = null,
     ): StreamDecoder
 
     override fun close()

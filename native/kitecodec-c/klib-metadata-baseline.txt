@@ -888,6 +888,14 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final external fun ffkmp_frame_is_hardware(f: kotlinx/cinterop/CValuesRef<cnames/structs/AVFrame /* = ffmpeg/kc_frame^ */>?): kotlin/Int
 
+      @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_codecctx_use_videotoolbox")
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final external fun ffkmp_codecctx_use_videotoolbox(c: kotlinx/cinterop/CValuesRef<cnames/structs/AVCodecContext /* = ffmpeg/kc_codec_ctx^ */>?): kotlin/Int
+
+      @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_frame_hw_download")
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final external fun ffkmp_frame_hw_download(src: kotlinx/cinterop/CValuesRef<cnames/structs/AVFrame /* = ffmpeg/kc_frame^ */>?, dst: kotlinx/cinterop/CValuesRef<cnames/structs/AVFrame /* = ffmpeg/kc_frame^ */>?): kotlin/Int
+
       @kotlinx/cinterop/internal/CCall.Direct(name = "_kc_init")
       @kotlinx/cinterop/ExperimentalForeignApi
       public final external fun kc_init(): kotlin/Int
@@ -921,7 +929,7 @@ library {
         public final get
 
       @kotlinx/cinterop/ExperimentalForeignApi
-      public final const val KITECODEC_C_ABI_MINOR: kotlin/Int /* = 3 */
+      public final const val KITECODEC_C_ABI_MINOR: kotlin/Int /* = 4 */
         public final get
 
       @kotlinx/cinterop/ExperimentalForeignApi

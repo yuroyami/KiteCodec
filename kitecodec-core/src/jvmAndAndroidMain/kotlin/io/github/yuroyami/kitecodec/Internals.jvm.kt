@@ -124,6 +124,7 @@ internal object Internals {
     private external fun nativeCodecCtxFromPar(context: Long, parameters: Long): Int
     private external fun nativeCodecCtxOpen(context: Long, codec: Long): Int
     private external fun nativeCodecCtxSetOpt(context: Long, key: String, value: String?): Int
+    private external fun nativeCodecCtxUseVideoToolbox(context: Long): Int
     private external fun nativeCodecCtxSendPacket(context: Long, packet: Long): Int
     private external fun nativeCodecCtxReceiveFrame(context: Long, frame: Long): Int
     private external fun nativeCodecCtxFlush(context: Long)
@@ -169,6 +170,7 @@ internal object Internals {
     private external fun nativeFrameChromaLocation(token: Long): Int
     private external fun nativeFrameSampleAspectRatio(token: Long): Long
     private external fun nativeFrameIsHardware(token: Long): Boolean
+    private external fun nativeFrameHwDownload(source: Long, destination: Long): Int
     private external fun nativeFrameUseBestEffort(token: Long)
     private external fun nativeFrameSetPts(token: Long, value: Long)
     private external fun nativeFrameSetFormat(token: Long, value: Int)
@@ -367,6 +369,7 @@ internal object Internals {
     internal fun codecCtxFromPar(context: Long, parameters: Long) = checked { nativeCodecCtxFromPar(context, parameters) }
     internal fun codecCtxOpen(context: Long, codec: Long) = checked { nativeCodecCtxOpen(context, codec) }
     internal fun codecCtxSetOpt(context: Long, key: String, value: String?) = checked { nativeCodecCtxSetOpt(context, key, value) }
+    internal fun codecCtxUseVideoToolbox(context: Long) = checked { nativeCodecCtxUseVideoToolbox(context) }
     internal fun codecCtxSendPacket(context: Long, packet: Long) = checked { nativeCodecCtxSendPacket(context, packet) }
     internal fun codecCtxReceiveFrame(context: Long, frame: Long) = checked { nativeCodecCtxReceiveFrame(context, frame) }
     internal fun codecCtxFlush(context: Long) = checked { nativeCodecCtxFlush(context) }
@@ -412,6 +415,7 @@ internal object Internals {
     internal fun frameChromaLocation(token: Long) = checked { nativeFrameChromaLocation(token) }
     internal fun frameSampleAspectRatio(token: Long) = unpackRational(checked { nativeFrameSampleAspectRatio(token) })
     internal fun frameIsHardware(token: Long) = checked { nativeFrameIsHardware(token) }
+    internal fun frameHwDownload(source: Long, destination: Long) = checked { nativeFrameHwDownload(source, destination) }
     internal fun frameUseBestEffort(token: Long) = checked { nativeFrameUseBestEffort(token) }
     internal fun frameSetPts(token: Long, value: Long) = checked { nativeFrameSetPts(token, value) }
     internal fun frameSetFormat(token: Long, value: Int) = checked { nativeFrameSetFormat(token, value) }

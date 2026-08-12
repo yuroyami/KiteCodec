@@ -222,6 +222,17 @@ JNIEXPORT jboolean JNICALL kj_frame_is_hardware(JNIEnv *env, jclass cls, jlong t
     return (frame && ffkmp_frame_is_hardware(frame)) ? JNI_TRUE : JNI_FALSE;
 }
 
+JNIEXPORT jint JNICALL kj_frame_hw_download(JNIEnv *env, jclass cls, jlong src_token, jlong dst_token)
+{
+    kc_frame *src = (kc_frame *)kj_handle_get(env, src_token, KJ_KIND_FRAME);
+    kc_frame *dst;
+    (void)cls;
+    if (src == NULL) return -1;
+    dst = (kc_frame *)kj_handle_get(env, dst_token, KJ_KIND_FRAME);
+    if (dst == NULL) return -1;
+    return (jint)ffkmp_frame_hw_download(src, dst);
+}
+
 JNIEXPORT void JNICALL kj_frame_use_best_effort(JNIEnv *env, jclass cls, jlong token)
 {
     kc_frame *frame = (kc_frame *)kj_handle_get(env, token, KJ_KIND_FRAME);

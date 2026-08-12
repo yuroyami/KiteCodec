@@ -41,6 +41,7 @@ ffkmp_codecctx_set_opt
 ffkmp_codecctx_set_threads
 ffkmp_codecctx_set_video
 ffkmp_codecctx_time_base
+ffkmp_codecctx_use_videotoolbox
 ffkmp_codecctx_width
 ffkmp_codecpar_bit_rate
 ffkmp_codecpar_ch_layout_mask
@@ -112,6 +113,7 @@ ffkmp_frame_format
 ffkmp_frame_free
 ffkmp_frame_get_buffer
 ffkmp_frame_height
+ffkmp_frame_hw_download
 ffkmp_frame_hw_surface
 ffkmp_frame_is_hardware
 ffkmp_frame_is_keyframe

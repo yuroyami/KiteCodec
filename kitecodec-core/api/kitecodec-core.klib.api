@@ -202,6 +202,16 @@ final enum class io.github.yuroyami.kitecodec/ColorTransfer : kotlin/Enum<io.git
     }
 }
 
+final enum class io.github.yuroyami.kitecodec/HardwareAccel : kotlin/Enum<io.github.yuroyami.kitecodec/HardwareAccel> { // io.github.yuroyami.kitecodec/HardwareAccel|null[0]
+    enum entry VideoToolbox // io.github.yuroyami.kitecodec/HardwareAccel.VideoToolbox|null[0]
+
+    final val entries // io.github.yuroyami.kitecodec/HardwareAccel.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<io.github.yuroyami.kitecodec/HardwareAccel> // io.github.yuroyami.kitecodec/HardwareAccel.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): io.github.yuroyami.kitecodec/HardwareAccel // io.github.yuroyami.kitecodec/HardwareAccel.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<io.github.yuroyami.kitecodec/HardwareAccel> // io.github.yuroyami.kitecodec/HardwareAccel.values|values#static(){}[0]
+}
+
 final enum class io.github.yuroyami.kitecodec/MediaType : kotlin/Enum<io.github.yuroyami.kitecodec/MediaType> { // io.github.yuroyami.kitecodec/MediaType|null[0]
     enum entry Attachment // io.github.yuroyami.kitecodec/MediaType.Attachment|null[0]
     enum entry Audio // io.github.yuroyami.kitecodec/MediaType.Audio|null[0]
@@ -990,6 +1000,7 @@ final class io.github.yuroyami.kitecodec/Frame : kotlin/AutoCloseable { // io.gi
     final fun close() // io.github.yuroyami.kitecodec/Frame.close|close(){}[0]
     final fun copy(): io.github.yuroyami.kitecodec/Frame // io.github.yuroyami.kitecodec/Frame.copy|copy(){}[0]
     final fun copyPlanesToByteArray(): kotlin/ByteArray // io.github.yuroyami.kitecodec/Frame.copyPlanesToByteArray|copyPlanesToByteArray(){}[0]
+    final fun downloadFromHardware(): io.github.yuroyami.kitecodec/Frame // io.github.yuroyami.kitecodec/Frame.downloadFromHardware|downloadFromHardware(){}[0]
     final fun encodeImage(io.github.yuroyami.kitecodec/CodecId = ...): kotlin/ByteArray // io.github.yuroyami.kitecodec/Frame.encodeImage|encodeImage(io.github.yuroyami.kitecodec.CodecId){}[0]
 
     final object Companion { // io.github.yuroyami.kitecodec/Frame.Companion|null[0]
@@ -1127,7 +1138,7 @@ final class io.github.yuroyami.kitecodec/MediaSource : kotlin/AutoCloseable { //
     final fun close() // io.github.yuroyami.kitecodec/MediaSource.close|close(){}[0]
     final fun decodeStreams(kotlin.collections/List<io.github.yuroyami.kitecodec/StreamInfo>): kotlinx.coroutines.flow/Flow<io.github.yuroyami.kitecodec/Frame> // io.github.yuroyami.kitecodec/MediaSource.decodeStreams|decodeStreams(kotlin.collections.List<io.github.yuroyami.kitecodec.StreamInfo>){}[0]
     final fun decodedFrames(io.github.yuroyami.kitecodec/StreamInfo): kotlinx.coroutines.flow/Flow<io.github.yuroyami.kitecodec/Frame> // io.github.yuroyami.kitecodec/MediaSource.decodedFrames|decodedFrames(io.github.yuroyami.kitecodec.StreamInfo){}[0]
-    final fun openDecoder(io.github.yuroyami.kitecodec/StreamInfo, kotlin/Int = ..., kotlin/Boolean = ..., io.github.yuroyami.kitecodec/CodecId? = ..., io.github.yuroyami.kitecodec.dsl/DecoderOptions? = ...): io.github.yuroyami.kitecodec/StreamDecoder // io.github.yuroyami.kitecodec/MediaSource.openDecoder|openDecoder(io.github.yuroyami.kitecodec.StreamInfo;kotlin.Int;kotlin.Boolean;io.github.yuroyami.kitecodec.CodecId?;io.github.yuroyami.kitecodec.dsl.DecoderOptions?){}[0]
+    final fun openDecoder(io.github.yuroyami.kitecodec/StreamInfo, kotlin/Int = ..., kotlin/Boolean = ..., io.github.yuroyami.kitecodec/CodecId? = ..., io.github.yuroyami.kitecodec.dsl/DecoderOptions? = ..., io.github.yuroyami.kitecodec/HardwareAccel? = ...): io.github.yuroyami.kitecodec/StreamDecoder // io.github.yuroyami.kitecodec/MediaSource.openDecoder|openDecoder(io.github.yuroyami.kitecodec.StreamInfo;kotlin.Int;kotlin.Boolean;io.github.yuroyami.kitecodec.CodecId?;io.github.yuroyami.kitecodec.dsl.DecoderOptions?;io.github.yuroyami.kitecodec.HardwareAccel?){}[0]
     final fun openPacketReader(kotlin.collections/List<io.github.yuroyami.kitecodec/StreamInfo>): io.github.yuroyami.kitecodec/PacketReader // io.github.yuroyami.kitecodec/MediaSource.openPacketReader|openPacketReader(kotlin.collections.List<io.github.yuroyami.kitecodec.StreamInfo>){}[0]
     final suspend fun extractFrame(kotlin/Long, io.github.yuroyami.kitecodec/StreamInfo? = ...): io.github.yuroyami.kitecodec/Frame // io.github.yuroyami.kitecodec/MediaSource.extractFrame|extractFrame(kotlin.Long;io.github.yuroyami.kitecodec.StreamInfo?){}[0]
     final suspend fun seekMicros(kotlin/Long) // io.github.yuroyami.kitecodec/MediaSource.seekMicros|seekMicros(kotlin.Long){}[0]

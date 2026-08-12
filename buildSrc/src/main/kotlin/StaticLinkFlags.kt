@@ -113,7 +113,16 @@ object StaticLinkFlags {
             isStaticVendored &&
             target in setOf(TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64, TargetTriple.IosX64)
         ) {
-            return listOf("-lz")
+            // The mobile profile gained VideoToolbox DECODE at the S2.a window, so the static
+            // FFmpeg archives now carry undefined references into the media frameworks on iOS
+            // too, exactly as the desktop encoder note below explains for macOS.
+            return listOf(
+                "-lz",
+                "-framework", "CoreFoundation",
+                "-framework", "CoreMedia",
+                "-framework", "CoreVideo",
+                "-framework", "VideoToolbox",
+            )
         }
         if (!needsStaticStack(target, isStaticVendored)) return emptyList()
 

@@ -297,7 +297,7 @@ path on this arm64 Mac, but no public or CI tier is inferred from it here.
 | JVM host actual | no | common/JVM contract tests load a test-only macOS arm64 JNI dylib; there is no desktop runtime jar or cross-desktop packaging claim | vendored macOS LGPL tree for the test fixture |
 | Android `minSdk 24` actual | no | local AAR model packages JNI for `arm64-v8a` and `x86_64`; both ELF link arms and 16 KiB ELF/app packaging rules are checked. No Android playback or physical-device qualification is claimed. | NDK cross-compile of the LGPL Android profile |
 | `mingwX64` | no | native tests and an e2e transcode | a pinned BtbN `win64-gpl-shared` zip. The CI job unpacks it by hand into `native-libs/gpl/mingw-x64`. No discovery, no prebuilt asset. |
-| `iosArm64`, `iosSimulatorArm64` | no | no CI claim; local arm64-Mac proof only | LGPL STANDARD software-playback build from source, with SDK zlib, no desktop third-party stack, GPL or VideoToolbox; consumable through `FFmpegSource.Local` |
+| `iosArm64`, `iosSimulatorArm64` | no | no CI claim; local arm64-Mac proof only | LGPL STANDARD playback build from source, with SDK zlib and VideoToolbox DECODE (encode stays desktop-only), no desktop third-party stack or GPL; consumable through `FFmpegSource.Local` |
 | `iosX64` | no | not qualified | the same mobile profile is coded for the simulator SDK, but this stage does not build or consume it |
 | `macosX64` | no | not built | Kotlin deprecated the target |
 | `linuxArm64` | no | not built | needs an arm64 runner with Kotlin/Native host support |

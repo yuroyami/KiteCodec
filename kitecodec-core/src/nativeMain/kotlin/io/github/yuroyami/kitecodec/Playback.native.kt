@@ -13,6 +13,7 @@ import ffmpeg.ffkmp_codecctx_receive_frame
 import ffmpeg.ffkmp_codecctx_send_packet
 import ffmpeg.ffkmp_codecctx_set_low_delay
 import ffmpeg.ffkmp_codecctx_set_opt
+import ffmpeg.ffkmp_codecctx_use_videotoolbox
 import ffmpeg.ffkmp_codecctx_set_threads
 import ffmpeg.ffkmp_codec_id
 import ffmpeg.ffkmp_codecpar_codec_id
@@ -419,6 +420,7 @@ public actual class StreamDecoder internal constructor(
             lowDelay: Boolean,
             decoder: CodecId?,
             options: io.github.yuroyami.kitecodec.dsl.DecoderOptions? = null,
+            hardware: HardwareAccel? = null,
         ): StreamDecoder {
             val streamPtr = ffkmp_fmt_stream(ctx, stream.index.toUInt())
                 ?: throw FFmpegException(FFmpegError.Internal("Stream ${stream.index} disappeared"))
@@ -452,6 +454,13 @@ public actual class StreamDecoder internal constructor(
                 // between context creation and open, exactly where FFmpeg wants them.
                 options?.compile()?.forEach { (key, value) ->
                     check0(ffkmp_codecctx_set_opt(codecCtx, key, value), "av_opt_set ('${'$'}key')")
+                }
+                // Window 3 (S2.a): the HWACCEL attach, in the same pre-open moment. A build
+                // without the framework answers ENOSYS here, the typed capability refusal.
+                when (hardware) {
+                    HardwareAccel.VideoToolbox ->
+                        check0(ffkmp_codecctx_use_videotoolbox(codecCtx), "videotoolbox device attach")
+                    null -> Unit
                 }
                 check0(ffkmp_codecctx_open(codecCtx, codec), "avcodec_open2")
                 // Construction allocates the landing frame. Keep it inside this ownership guard
