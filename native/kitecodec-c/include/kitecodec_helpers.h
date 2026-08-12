@@ -293,6 +293,35 @@ KC_API int  ffkmp_fmt_open_input(kc_fmt_ctx **out, const char *path);
  */
 KC_API void ffkmp_fmt_close_input(kc_fmt_ctx **ctx);
 
+/* KD-4. Like ffkmp_fmt_open_input, with n option pairs applied between allocation and open,
+ * which is the only moment pre-open options (probesize, fflags, format forcing) can act.
+ * Ownership of *out matches ffkmp_fmt_open_input exactly. keys/values must each hold n
+ * non-NULL strings; n may be 0 with NULL arrays. When unused is non-NULL it receives the
+ * dictionary of pairs FFmpeg did NOT consume (possibly NULL when all were), which the caller
+ * OWNS and releases with ffkmp_dict_free after walking it with ffkmp_dict_get, so an ignored
+ * option is a named key, never a mystery. NULL out or path, negative n, or a NULL entry
+ * inside the arrays is refused with AVERROR(EINVAL).
+ */
+KC_API int  ffkmp_fmt_open_input2(kc_fmt_ctx **out, const char *path,
+                                  const char *const *keys, const char *const *values,
+                                  int n, kc_dict **unused);
+
+/* Ownership. Releases a dictionary ffkmp_fmt_open_input2 handed over, and only such a
+ * dictionary: the metadata accessors return BORROWED dictionaries this must never touch.
+ * Safe on NULL and on an already-released pointer; writes NULL through dict either way.
+ */
+KC_API void ffkmp_dict_free(kc_dict **dict);
+
+/* KD-5. The chapter table. count answers AVERROR(EINVAL) on NULL; get writes the chapter's id
+ * and its bounds rescaled to microseconds, refusing NULL outputs and out-of-range indices.
+ * The metadata accessor returns a borrowed dictionary owned by the context (NULL on any bad
+ * argument), for the standing ffkmp_dict_get iteration; the caller frees nothing.
+ */
+KC_API int      ffkmp_fmt_chapter_count(const kc_fmt_ctx *ctx);
+KC_API int      ffkmp_fmt_chapter_get(const kc_fmt_ctx *ctx, int index,
+                                      int64_t *out_id, int64_t *out_start_us, int64_t *out_end_us);
+KC_API kc_dict* ffkmp_fmt_chapter_metadata(const kc_fmt_ctx *ctx, int index);
+
 /* Ownership. Allocates per stream parsing state, and may probe and buffer packets. All of
  * it belongs to the context and is released when the context is closed. Nothing becomes
  * the caller's. A NULL context is refused with AVERROR(EINVAL).

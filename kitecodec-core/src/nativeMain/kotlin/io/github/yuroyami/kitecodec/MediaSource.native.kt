@@ -34,6 +34,13 @@ import ffmpeg.ffkmp_fmt_duration
 import ffmpeg.ffkmp_fmt_find_stream_info
 import ffmpeg.ffkmp_fmt_iformat_name
 import ffmpeg.ffkmp_fmt_is_seekable
+import ffmpeg.ffkmp_dict_free
+import ffmpeg.ffkmp_dict_get
+import ffmpeg.ffkmp_dict_entry_key
+import ffmpeg.ffkmp_fmt_chapter_count
+import ffmpeg.ffkmp_fmt_chapter_get
+import ffmpeg.ffkmp_fmt_chapter_metadata
+import ffmpeg.ffkmp_fmt_open_input2
 import ffmpeg.ffkmp_fmt_metadata
 import ffmpeg.ffkmp_fmt_nb_streams
 import ffmpeg.ffkmp_fmt_open_input
@@ -67,6 +74,10 @@ import ffmpeg.kc_fmt_ctx
 import ffmpeg.kc_packet
 import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
+import kotlinx.cinterop.allocArray
+import kotlinx.cinterop.ByteVar
+import kotlinx.cinterop.cstr
+import kotlinx.cinterop.LongVar
 import kotlinx.cinterop.Arena
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.CPointerVar
@@ -76,6 +87,7 @@ import kotlinx.cinterop.allocPointerTo
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.toKString
+import kotlinx.cinterop.set
 import kotlinx.cinterop.value
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -96,6 +108,8 @@ public actual class MediaSource internal constructor(
      * [toRelativeMicros] and [toAbsoluteMicros] are the only two places that apply this offset.
      */
     public actual val startTimeMicros: Long,
+    public actual val chapters: List<Chapter> = emptyList(),
+    public actual val unusedOpenOptions: List<String> = emptyList(),
 ) : AutoCloseable {
 
     /** Absolute timestamp [ts] (in [timeBase]) → media-relative microseconds. */
@@ -475,6 +489,12 @@ public actual class MediaSource internal constructor(
             return openMediaSource(path)
         }
 
+        @Throws(FFmpegException::class)
+        public actual fun open(path: String, options: Map<String, String>): MediaSource {
+            requireCompatibleFFmpeg()
+            return openMediaSource(path, options)
+        }
+
         /**
          * How far before the requested time [seekForDecode] aims. Must comfortably exceed one GOP:
          * broadcast MPEG-TS typically uses 0.5–2s, and file-based content rarely exceeds 10s. The
@@ -521,10 +541,40 @@ private class DecoderState(
     }
 }
 
-internal fun openMediaSource(path: String): MediaSource {
+internal fun openMediaSource(path: String, options: Map<String, String> = emptyMap()): MediaSource {
     val arena = Arena()
     val ctxVar = arena.allocPointerTo<kc_fmt_ctx>()
-    val openRc = ffkmp_fmt_open_input(ctxVar.ptr, path)
+    var unusedKeys: List<String> = emptyList()
+    val openRc = if (options.isEmpty()) {
+        ffkmp_fmt_open_input(ctxVar.ptr, path)
+    } else {
+        // KD-4: pairs applied between allocation and open; the unconsumed remainder comes back
+        // as an OWNED dictionary this block walks and frees before anything can throw past it.
+        memScoped {
+            val keys = allocArray<CPointerVar<ByteVar>>(options.size)
+            val values = allocArray<CPointerVar<ByteVar>>(options.size)
+            options.entries.forEachIndexed { index, (key, value) ->
+                keys[index] = key.cstr.ptr
+                values[index] = value.cstr.ptr
+            }
+            val unusedVar = allocPointerTo<ffmpeg.kc_dict>()
+            val rc = ffkmp_fmt_open_input2(ctxVar.ptr, path, keys, values, options.size, unusedVar.ptr)
+            if (rc >= 0) {
+                val dict = unusedVar.value
+                if (dict != null) {
+                    unusedKeys = buildList {
+                        var entry = ffkmp_dict_get(dict, null)
+                        while (entry != null) {
+                            ffkmp_dict_entry_key(entry)?.toKString()?.let(::add)
+                            entry = ffkmp_dict_get(dict, entry)
+                        }
+                    }
+                    ffkmp_dict_free(unusedVar.ptr)
+                }
+            }
+            rc
+        }
+    }
     if (openRc < 0) { arena.clear(); throw FFmpegException(avError(openRc)) }
     val ctx = ctxVar.value
         ?: run { arena.clear(); throw FFmpegException(FFmpegError.Internal("open_input returned NULL")) }
@@ -544,7 +594,29 @@ internal fun openMediaSource(path: String): MediaSource {
     val formatName = ffkmp_fmt_iformat_name(ctx)?.toKString() ?: "unknown"
     val metadata = readMetadata(ffkmp_fmt_metadata(ctx))
 
-    return MediaSource(ctx, streams, durationFromHeader, formatName, metadata, ffkmp_fmt_start_time(ctx))
+    return MediaSource(
+        ctx, streams, durationFromHeader, formatName, metadata, ffkmp_fmt_start_time(ctx),
+        chapters = readChapters(ctx),
+        unusedOpenOptions = unusedKeys,
+    )
+}
+
+/** KD-5: the chapter table, bounds already in microseconds from the C side. */
+private fun readChapters(ctx: CPointer<kc_fmt_ctx>): List<Chapter> {
+    val count = ffkmp_fmt_chapter_count(ctx)
+    if (count <= 0) return emptyList()
+    return memScoped {
+        val id = alloc<LongVar>()
+        val start = alloc<LongVar>()
+        val end = alloc<LongVar>()
+        buildList {
+            for (index in 0 until count) {
+                if (ffkmp_fmt_chapter_get(ctx, index, id.ptr, start.ptr, end.ptr) < 0) continue
+                val metadata = readMetadata(ffkmp_fmt_chapter_metadata(ctx, index))
+                add(Chapter(id.value, start.value, end.value, metadata))
+            }
+        }
+    }
 }
 
 private fun buildStreams(ctx: CPointer<kc_fmt_ctx>): List<StreamInfo> {

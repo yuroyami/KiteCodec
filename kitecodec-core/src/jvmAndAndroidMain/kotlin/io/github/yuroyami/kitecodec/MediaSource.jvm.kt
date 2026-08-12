@@ -12,6 +12,8 @@ public actual class MediaSource internal constructor(
     public actual val formatName: String,
     public actual val metadata: Map<String, String>,
     public actual val startTimeMicros: Long,
+    public actual val chapters: List<Chapter> = emptyList(),
+    public actual val unusedOpenOptions: List<String> = emptyList(),
 ) : AutoCloseable {
     private val stateLock = Any()
     private var demuxing = false
@@ -310,6 +312,12 @@ public actual class MediaSource internal constructor(
             return openMediaSource(path)
         }
 
+        @Throws(FFmpegException::class)
+        public actual fun open(path: String, options: Map<String, String>): MediaSource {
+            Internals.requireCompatible()
+            return openMediaSource(path, options)
+        }
+
         private const val DECODE_SEEK_BACKOFF_MICROS = 5_000_000L
     }
 }
@@ -354,8 +362,22 @@ private class DecoderState(val stream: StreamInfo, var context: Long) {
     }
 }
 
-private fun openMediaSource(path: String): MediaSource {
-    val context = Internals.fmtOpenInput(path)
+private fun openMediaSource(path: String, options: Map<String, String> = emptyMap()): MediaSource {
+    var unusedKeys: List<String> = emptyList()
+    val context = if (options.isEmpty()) {
+        Internals.fmtOpenInput(path)
+    } else {
+        // KD-4: the unconsumed remainder crosses the bridge as one unit-separated string.
+        val unusedSlot = arrayOfNulls<String>(1)
+        val token = Internals.fmtOpenInput2(
+            path,
+            options.keys.toTypedArray(),
+            options.values.toTypedArray(),
+            unusedSlot,
+        )
+        unusedKeys = unusedSlot[0]?.takeIf { it.isNotEmpty() }?.split('\u001f') ?: emptyList()
+        token
+    }
     try {
         check0(Internals.fmtFindStreamInfo(context), "avformat_find_stream_info")
         return MediaSource(
@@ -365,10 +387,26 @@ private fun openMediaSource(path: String): MediaSource {
             formatName = Internals.fmtInputName(context).ifEmpty { "unknown" },
             metadata = readMetadata(Internals.fmtMetadata(context)),
             startTimeMicros = Internals.fmtStartTime(context),
+            chapters = readChapters(context),
+            unusedOpenOptions = unusedKeys,
         )
     } catch (error: Throwable) {
         Internals.fmtCloseInput(context)
         throw error
+    }
+}
+
+/** KD-5: the chapter table, bounds already in microseconds from the C side. */
+private fun readChapters(format: Long): List<Chapter> {
+    val count = Internals.fmtChapterCount(format)
+    if (count <= 0) return emptyList()
+    val fields = LongArray(3)
+    return buildList {
+        for (index in 0 until count) {
+            if (Internals.fmtChapterGet(format, index, fields) < 0) continue
+            val dict = Internals.fmtChapterMetadata(format, index)
+            add(Chapter(fields[0], fields[1], fields[2], readMetadata(dict)))
+        }
     }
 }
 

@@ -53,6 +53,15 @@ internal object Internals {
     private external fun nativePacketBytes(token: Long): ByteArray
 
     private external fun nativeFmtOpenInput(path: String): Long
+    private external fun nativeFmtOpenInput2(
+        path: String,
+        keys: Array<String>?,
+        values: Array<String>?,
+        unusedKeysOut: Array<String?>?,
+    ): Long
+    private external fun nativeFmtChapterCount(token: Long): Int
+    private external fun nativeFmtChapterGet(token: Long, index: Int, outFields: LongArray): Int
+    private external fun nativeFmtChapterMetadata(token: Long, index: Int): Long
     private external fun nativeFmtCloseInput(token: Long)
     private external fun nativeFmtFindStreamInfo(token: Long): Int
     private external fun nativeFmtNbStreams(token: Long): Int
@@ -276,6 +285,11 @@ internal object Internals {
     internal fun packetBytes(token: Long) = checked { nativePacketBytes(token) }
 
     internal fun fmtOpenInput(path: String) = token("input open") { nativeFmtOpenInput(path) }
+    internal fun fmtOpenInput2(path: String, keys: Array<String>?, values: Array<String>?, unusedKeysOut: Array<String?>?) =
+        token("input open with options") { nativeFmtOpenInput2(path, keys, values, unusedKeysOut) }
+    internal fun fmtChapterCount(token: Long) = checked { nativeFmtChapterCount(token) }
+    internal fun fmtChapterGet(token: Long, index: Int, outFields: LongArray) = checked { nativeFmtChapterGet(token, index, outFields) }
+    internal fun fmtChapterMetadata(token: Long, index: Int) = nativeFmtChapterMetadata(token, index)
     internal fun fmtCloseInput(token: Long) = checked { nativeFmtCloseInput(token) }
     internal fun fmtFindStreamInfo(token: Long) = checked { nativeFmtFindStreamInfo(token) }
     internal fun fmtNbStreams(token: Long) = checked { nativeFmtNbStreams(token) }

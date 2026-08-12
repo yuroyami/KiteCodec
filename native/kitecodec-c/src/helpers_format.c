@@ -28,6 +28,61 @@ KC_API int  ffkmp_fmt_open_input(AVFormatContext **out, const char *path) {
 KC_API void ffkmp_fmt_close_input(AVFormatContext **ctx) {
     if (ctx && *ctx) { AVFormatContext *p = *ctx; avformat_close_input(&p); *ctx = NULL; }
 }
+/* KD-4 (KPKMP 17.10): true pre-open options. The pairs are applied between allocation and open,
+ * which is the only moment probesize, fflags and format forcing can act. Keys FFmpeg does not
+ * consume stay in the dictionary afterwards; that remainder is handed to the caller through
+ * *unused (owned; release with ffkmp_dict_free), because a silently ignored option is a
+ * debugging session (law 4) and the S4 diagnostics echo names every unused key. */
+KC_API int ffkmp_fmt_open_input2(AVFormatContext **out, const char *path,
+                                 const char *const *keys, const char *const *values,
+                                 int n, AVDictionary **unused) {
+    if (!out) return AVERROR(EINVAL);
+    *out = NULL;
+    if (unused) *unused = NULL;
+    if (!path) return AVERROR(EINVAL);
+    if (n < 0) return AVERROR(EINVAL);
+    if (n > 0 && (!keys || !values)) return AVERROR(EINVAL);
+    AVDictionary *options = NULL;
+    for (int i = 0; i < n; i++) {
+        if (!keys[i] || !values[i]) { av_dict_free(&options); return AVERROR(EINVAL); }
+        int rc = av_dict_set(&options, keys[i], values[i], 0);
+        if (rc < 0) { av_dict_free(&options); return rc; }
+    }
+    AVFormatContext *c = NULL;
+    int rc = avformat_open_input(&c, path, NULL, &options);
+    if (rc < 0) { av_dict_free(&options); return rc; }
+    if (unused) *unused = options;    /* the caller owns the remainder, possibly NULL */
+    else av_dict_free(&options);
+    *out = c;
+    return 0;
+}
+
+/* The one owned-dictionary release, for ffkmp_fmt_open_input2's remainder. Safe on NULL and on
+ * a pointer whose dictionary is already NULL; writes NULL through the pointer either way. It
+ * must never be used on the BORROWED dictionaries the metadata accessors return. */
+KC_API void ffkmp_dict_free(AVDictionary **dict) {
+    if (dict) av_dict_free(dict);
+}
+/* KD-5 (KPKMP 17.10): the chapter table, unexposed until now. Times are rescaled onto
+ * microseconds here, because every timestamp this ABI hands over speaks AV_TIME_BASE. */
+KC_API int ffkmp_fmt_chapter_count(const AVFormatContext *ctx) {
+    return ctx ? (int)ctx->nb_chapters : AVERROR(EINVAL);
+}
+KC_API int ffkmp_fmt_chapter_get(const AVFormatContext *ctx, int index,
+                                 int64_t *out_id, int64_t *out_start_us, int64_t *out_end_us) {
+    if (!ctx || index < 0 || (unsigned)index >= ctx->nb_chapters) return AVERROR(EINVAL);
+    if (!out_id || !out_start_us || !out_end_us) return AVERROR(EINVAL);
+    const AVChapter *ch = ctx->chapters[index];
+    *out_id = ch->id;
+    *out_start_us = av_rescale_q(ch->start, ch->time_base, AV_TIME_BASE_Q);
+    *out_end_us = av_rescale_q(ch->end, ch->time_base, AV_TIME_BASE_Q);
+    return 0;
+}
+/* The chapter's own metadata dictionary (title lives here), reusing the standing dict walk. */
+KC_API AVDictionary *ffkmp_fmt_chapter_metadata(const AVFormatContext *ctx, int index) {
+    if (!ctx || index < 0 || (unsigned)index >= ctx->nb_chapters) return NULL;
+    return ctx->chapters[index]->metadata;
+}
 KC_API int  ffkmp_fmt_find_stream_info(AVFormatContext *c) {
     return c ? avformat_find_stream_info(c, NULL) : AVERROR(EINVAL);
 }

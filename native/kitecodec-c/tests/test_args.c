@@ -131,6 +131,28 @@ static int invalid_fmt_find_stream_info(void)
     return ffkmp_fmt_find_stream_info(NULL);
 }
 
+static int invalid_fmt_open_input2(void)
+{
+    return ffkmp_fmt_open_input2(NULL, "/definitely/not/a/kitecodec-input", NULL, NULL, 0, NULL);
+}
+
+static int invalid_fmt_open_input2_pairs(void)
+{
+    kc_fmt_ctx *out = NULL;
+    /* n > 0 with NULL arrays must be refused before anything is allocated. */
+    return ffkmp_fmt_open_input2(&out, "/definitely/not/a/kitecodec-input", NULL, NULL, 2, NULL);
+}
+
+static int invalid_fmt_chapter_count(void)
+{
+    return ffkmp_fmt_chapter_count(NULL);
+}
+
+static int invalid_fmt_chapter_get(void)
+{
+    return ffkmp_fmt_chapter_get(NULL, 0, NULL, NULL, NULL);
+}
+
 static int invalid_fmt_read_frame(void)
 {
     return ffkmp_fmt_read_frame(NULL, NULL);
@@ -381,6 +403,10 @@ static const invalid_case invalid_cases[] = {
     { "invalid_codecpar_copy_for_mux", "ffkmp_codecpar_copy_for_mux refuses NULL arguments", invalid_codecpar_copy_for_mux },
     { "invalid_fmt_open_input", "ffkmp_fmt_open_input refuses a NULL output", invalid_fmt_open_input },
     { "invalid_fmt_find_stream_info", "ffkmp_fmt_find_stream_info refuses a NULL context", invalid_fmt_find_stream_info },
+    { "invalid_fmt_open_input2", "ffkmp_fmt_open_input2 refuses a NULL output", invalid_fmt_open_input2 },
+    { "invalid_fmt_open_input2_pairs", "ffkmp_fmt_open_input2 refuses pairs without arrays", invalid_fmt_open_input2_pairs },
+    { "invalid_fmt_chapter_count", "ffkmp_fmt_chapter_count refuses a NULL context", invalid_fmt_chapter_count },
+    { "invalid_fmt_chapter_get", "ffkmp_fmt_chapter_get refuses NULL arguments", invalid_fmt_chapter_get },
     { "invalid_fmt_read_frame", "ffkmp_fmt_read_frame refuses NULL arguments", invalid_fmt_read_frame },
     { "invalid_fmt_alloc_output2", "ffkmp_fmt_alloc_output2 refuses a NULL output", invalid_fmt_alloc_output2 },
     { "invalid_fmt_write_frame", "ffkmp_fmt_write_frame refuses a NULL context", invalid_fmt_write_frame },

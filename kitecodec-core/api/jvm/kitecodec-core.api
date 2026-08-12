@@ -64,6 +64,29 @@ public final class io/github/yuroyami/kitecodec/AudioStreamInfo {
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class io/github/yuroyami/kitecodec/Chapter {
+	public fun <init> (JJJLjava/util/Map;)V
+	public synthetic fun <init> (JJJLjava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()J
+	public final fun component2 ()J
+	public final fun component3 ()J
+	public final fun component4 ()Ljava/util/Map;
+	public final fun copy (JJJLjava/util/Map;)Lio/github/yuroyami/kitecodec/Chapter;
+	public static synthetic fun copy$default (Lio/github/yuroyami/kitecodec/Chapter;JJJLjava/util/Map;ILjava/lang/Object;)Lio/github/yuroyami/kitecodec/Chapter;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEndMicros ()J
+	public final fun getId ()J
+	public final fun getMetadata ()Ljava/util/Map;
+	public final fun getStartMicros ()J
+	public final fun getTitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/yuroyami/kitecodec/ChaptersKt {
+	public static final fun getMediaInfo (Lio/github/yuroyami/kitecodec/MediaSource;)Lio/github/yuroyami/kitecodec/MediaInfo;
+}
+
 public final class io/github/yuroyami/kitecodec/ChromaLocation : java/lang/Enum {
 	public static final field Bottom Lio/github/yuroyami/kitecodec/ChromaLocation;
 	public static final field BottomLeft Lio/github/yuroyami/kitecodec/ChromaLocation;
@@ -493,6 +516,23 @@ public final class io/github/yuroyami/kitecodec/FrameKt {
 public abstract interface annotation class io/github/yuroyami/kitecodec/KiteCodecLowLevelApi : java/lang/annotation/Annotation {
 }
 
+public final class io/github/yuroyami/kitecodec/MediaInfo {
+	public fun <init> (Ljava/lang/Long;Ljava/lang/String;Ljava/util/Map;Ljava/util/List;)V
+	public final fun component1 ()Ljava/lang/Long;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/util/Map;
+	public final fun component4 ()Ljava/util/List;
+	public final fun copy (Ljava/lang/Long;Ljava/lang/String;Ljava/util/Map;Ljava/util/List;)Lio/github/yuroyami/kitecodec/MediaInfo;
+	public static synthetic fun copy$default (Lio/github/yuroyami/kitecodec/MediaInfo;Ljava/lang/Long;Ljava/lang/String;Ljava/util/Map;Ljava/util/List;ILjava/lang/Object;)Lio/github/yuroyami/kitecodec/MediaInfo;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getChapters ()Ljava/util/List;
+	public final fun getDurationMicros ()Ljava/lang/Long;
+	public final fun getFormatName ()Ljava/lang/String;
+	public final fun getMetadata ()Ljava/util/Map;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class io/github/yuroyami/kitecodec/MediaSink : java/lang/AutoCloseable {
 	public static final field Companion Lio/github/yuroyami/kitecodec/MediaSink$Companion;
 	public final fun addAudioEncoder (Lio/github/yuroyami/kitecodec/AudioEncoderSpec;)Lio/github/yuroyami/kitecodec/AudioEncoder;
@@ -514,6 +554,7 @@ public final class io/github/yuroyami/kitecodec/MediaSource : java/lang/AutoClos
 	public final fun decodedFrames (Lio/github/yuroyami/kitecodec/StreamInfo;)Lkotlinx/coroutines/flow/Flow;
 	public final fun extractFrame (JLio/github/yuroyami/kitecodec/StreamInfo;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun extractFrame$default (Lio/github/yuroyami/kitecodec/MediaSource;JLio/github/yuroyami/kitecodec/StreamInfo;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun getChapters ()Ljava/util/List;
 	public final fun getDurationMicros ()Ljava/lang/Long;
 	public final fun getFormatName ()Ljava/lang/String;
 	public final fun getMetadata ()Ljava/util/Map;
@@ -521,6 +562,7 @@ public final class io/github/yuroyami/kitecodec/MediaSource : java/lang/AutoClos
 	public final fun getPrimaryVideo ()Lio/github/yuroyami/kitecodec/StreamInfo;
 	public final fun getStartTimeMicros ()J
 	public final fun getStreams ()Ljava/util/List;
+	public final fun getUnusedOpenOptions ()Ljava/util/List;
 	public final fun isSeekable ()Z
 	public final fun openDecoder-34ZvGRY (Lio/github/yuroyami/kitecodec/StreamInfo;IZLjava/lang/String;Lio/github/yuroyami/kitecodec/dsl/DecoderOptions;)Lio/github/yuroyami/kitecodec/StreamDecoder;
 	public static synthetic fun openDecoder-34ZvGRY$default (Lio/github/yuroyami/kitecodec/MediaSource;Lio/github/yuroyami/kitecodec/StreamInfo;IZLjava/lang/String;Lio/github/yuroyami/kitecodec/dsl/DecoderOptions;ILjava/lang/Object;)Lio/github/yuroyami/kitecodec/StreamDecoder;
@@ -530,6 +572,7 @@ public final class io/github/yuroyami/kitecodec/MediaSource : java/lang/AutoClos
 
 public final class io/github/yuroyami/kitecodec/MediaSource$Companion {
 	public final fun open (Ljava/lang/String;)Lio/github/yuroyami/kitecodec/MediaSource;
+	public final fun open (Ljava/lang/String;Ljava/util/Map;)Lio/github/yuroyami/kitecodec/MediaSource;
 }
 
 public final class io/github/yuroyami/kitecodec/MediaType : java/lang/Enum {

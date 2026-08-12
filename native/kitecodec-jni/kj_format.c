@@ -6,6 +6,7 @@
 #include "kj_internal.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 JNIEXPORT jlong JNICALL kj_fmt_open_input(JNIEnv *env, jclass cls, jstring path)
 {
@@ -21,6 +22,136 @@ JNIEXPORT jlong JNICALL kj_fmt_open_input(JNIEnv *env, jclass cls, jstring path)
     token = kj_handle_put_checked(env, KJ_KIND_FMT_CTX, ctx);
     if (token == 0) ffkmp_fmt_close_input(&ctx);
     return token;
+}
+
+
+/* KD-4 (S4.b window): open with pre-open option pairs. The unused count crosses through a
+ * one-slot array because the token is the return value; -1 in that slot means "not counted"
+ * and never happens on a successful open. */
+JNIEXPORT jlong JNICALL kj_fmt_open_input2(JNIEnv *env, jclass cls, jstring path,
+                                           jobjectArray keys, jobjectArray values,
+                                           jobjectArray unused_keys_out)
+{
+    char *c = kj_string_dup(env, path);
+    kc_fmt_ctx *ctx = NULL;
+    char **ckeys = NULL;
+    char **cvalues = NULL;
+    jsize n = 0;
+    jlong token = 0;
+    kc_dict *unused = NULL;
+    int rc;
+    jsize i;
+    (void)cls;
+    if (c == NULL) { kj_throw_handle(env, "open refused: NULL path"); return 0; }
+    if ((keys == NULL) != (values == NULL)) {
+        free(c);
+        kj_throw_handle(env, "open refused: keys and values must both exist or both be absent");
+        return 0;
+    }
+    if (keys != NULL) {
+        n = (*env)->GetArrayLength(env, keys);
+        if ((*env)->GetArrayLength(env, values) != n) {
+            free(c);
+            kj_throw_handle(env, "open refused: keys and values differ in length");
+            return 0;
+        }
+    }
+    if (n > 0) {
+        ckeys = (char **)calloc((size_t)n, sizeof(char *));
+        cvalues = (char **)calloc((size_t)n, sizeof(char *));
+        if (ckeys == NULL || cvalues == NULL) goto oom;
+        for (i = 0; i < n; i++) {
+            jstring jk = (jstring)(*env)->GetObjectArrayElement(env, keys, i);
+            jstring jv = (jstring)(*env)->GetObjectArrayElement(env, values, i);
+            ckeys[i] = kj_string_dup(env, jk);
+            cvalues[i] = kj_string_dup(env, jv);
+            if (jk != NULL) (*env)->DeleteLocalRef(env, jk);
+            if (jv != NULL) (*env)->DeleteLocalRef(env, jv);
+            if (ckeys[i] == NULL || cvalues[i] == NULL) goto oom;
+        }
+    }
+    rc = ffkmp_fmt_open_input2(&ctx, c,
+                               (const char *const *)ckeys, (const char *const *)cvalues,
+                               (int)n, &unused);
+
+    goto done;
+oom:
+    rc = -12; /* the out-of-memory errno shape; the throw below names the phase. */
+done:
+    if (ckeys != NULL) { for (i = 0; i < n; i++) free(ckeys[i]); free(ckeys); }
+    if (cvalues != NULL) { for (i = 0; i < n; i++) free(cvalues[i]); free(cvalues); }
+    free(c);
+    if (rc < 0 || ctx == NULL) { ffkmp_dict_free(&unused); kj_throw_ffmpeg(env, rc, "fmt_open_input2"); return 0; }
+    /* The unused remainder crosses as ONE unit-separated string in slot 0 (empty string when
+     * everything was consumed), the same joining the identity report already uses. */
+    if (unused_keys_out != NULL && (*env)->GetArrayLength(env, unused_keys_out) >= 1) {
+        size_t total = 1;
+        kc_dict_entry *e = NULL;
+        while ((e = ffkmp_dict_get(unused, e)) != NULL) {
+            total += strlen(ffkmp_dict_entry_key(e)) + 1;
+        }
+        char *joined = (char *)malloc(total);
+        if (joined != NULL) {
+            size_t at = 0;
+            e = NULL;
+            while ((e = ffkmp_dict_get(unused, e)) != NULL) {
+                const char *key = ffkmp_dict_entry_key(e);
+                size_t len = strlen(key);
+                if (at > 0) joined[at++] = '\x1f';
+                memcpy(joined + at, key, len);
+                at += len;
+            }
+            joined[at] = '\0';
+            jstring js = (*env)->NewStringUTF(env, joined);
+            free(joined);
+            if (js != NULL) {
+                (*env)->SetObjectArrayElement(env, unused_keys_out, 0, js);
+                (*env)->DeleteLocalRef(env, js);
+            }
+        }
+    }
+    ffkmp_dict_free(&unused);
+    token = kj_handle_put_checked(env, KJ_KIND_FMT_CTX, ctx);
+    if (token == 0) ffkmp_fmt_close_input(&ctx);
+    return token;
+}
+
+/* KD-5 (S4.b window): the chapter table. */
+JNIEXPORT jint JNICALL kj_fmt_chapter_count(JNIEnv *env, jclass cls, jlong token)
+{
+    kc_fmt_ctx *ctx = (kc_fmt_ctx *)kj_handle_get(env, token, KJ_KIND_FMT_CTX);
+    (void)cls;
+    return ctx ? (jint)ffkmp_fmt_chapter_count(ctx) : -1;
+}
+
+JNIEXPORT jint JNICALL kj_fmt_chapter_get(JNIEnv *env, jclass cls, jlong token, jint index,
+                                          jlongArray out_fields)
+{
+    kc_fmt_ctx *ctx = (kc_fmt_ctx *)kj_handle_get(env, token, KJ_KIND_FMT_CTX);
+    int64_t id = 0, start_us = 0, end_us = 0;
+    jlong fields[3];
+    int rc;
+    (void)cls;
+    if (ctx == NULL) return -1;
+    if (out_fields == NULL || (*env)->GetArrayLength(env, out_fields) < 3) {
+        kj_throw_handle(env, "chapter_get needs a three-slot output array");
+        return -1;
+    }
+    rc = ffkmp_fmt_chapter_get(ctx, (int)index, &id, &start_us, &end_us);
+    if (rc < 0) return (jint)rc;
+    fields[0] = (jlong)id; fields[1] = (jlong)start_us; fields[2] = (jlong)end_us;
+    (*env)->SetLongArrayRegion(env, out_fields, 0, 3, fields);
+    return 0;
+}
+
+JNIEXPORT jlong JNICALL kj_fmt_chapter_metadata(JNIEnv *env, jclass cls, jlong token, jint index)
+{
+    kc_fmt_ctx *ctx = (kc_fmt_ctx *)kj_handle_get(env, token, KJ_KIND_FMT_CTX);
+    kc_dict *dict;
+    (void)cls;
+    if (ctx == NULL) return 0;
+    dict = ffkmp_fmt_chapter_metadata(ctx, (int)index);
+    return dict ? kj_handle_put_borrowed(env, KJ_KIND_DICT, dict, token) : 0;
 }
 
 JNIEXPORT void JNICALL kj_fmt_close_input(JNIEnv *env, jclass cls, jlong token)

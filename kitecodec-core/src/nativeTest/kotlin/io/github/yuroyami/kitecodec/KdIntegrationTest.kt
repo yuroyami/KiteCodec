@@ -119,6 +119,36 @@ class KdIntegrationTest {
     }
 
     @Test
+    fun anUnconsumedOpenOptionIsNamedNeverSwallowed() {
+        val path = tmp("unused.mkv")
+        writeVideo(path, frames = 5)
+        MediaSource.open(path, mapOf("definitely_not_an_option" to "1")).use { src ->
+            assertEquals(listOf("definitely_not_an_option"), src.unusedOpenOptions)
+        }
+    }
+
+    @Test
+    fun aConsumedPreOpenOptionLeavesNoRemainder() {
+        val path = tmp("probesize.mkv")
+        writeVideo(path, frames = 5)
+        MediaSource.open(path, mapOf("probesize" to "65536")).use { src ->
+            assertEquals(emptyList(), src.unusedOpenOptions)
+            assertTrue(src.streams.isNotEmpty(), "the shrunk probe still found the stream")
+        }
+    }
+
+    @Test
+    fun aChapterlessContainerReportsAnEmptyTable() {
+        val path = tmp("nochapters.mkv")
+        writeVideo(path, frames = 5)
+        MediaSource.open(path).use { src ->
+            assertEquals(emptyList(), src.chapters)
+            assertEquals(src.chapters, src.mediaInfo.chapters)
+            assertEquals(src.formatName, src.mediaInfo.formatName)
+        }
+    }
+
+    @Test
     fun theScrubbingPresetMeasurablySkipsNonKeyframes() {
         val path = tmp("scrub.mkv")
         writeVideo(path, frames = 60)

@@ -14,6 +14,16 @@ public expect class MediaSource : AutoCloseable {
     public val formatName: String
     public val metadata: Map<String, String>
 
+    /** The container's chapter table (KD-5). Empty when the container declares none. */
+    public val chapters: List<Chapter>
+
+    /**
+     * The pre-open option keys FFmpeg did NOT consume on this open (KD-4). Always empty for the
+     * plain [open]; a non-empty list after an options open is a caller mistake worth reading
+     * back, and the S4 diagnostics dump prints it.
+     */
+    public val unusedOpenOptions: List<String>
+
     /**
      * Where this container's timeline begins, in microseconds. It is 0 for most mp4 files, and
      * commonly around 1.4s for MPEG-TS.
@@ -128,5 +138,13 @@ public expect class MediaSource : AutoCloseable {
          */
         @Throws(FFmpegException::class)
         public fun open(path: String): MediaSource
+
+        /**
+         * Open with pre-open options (KD-4): pairs applied between allocation and open, the only
+         * moment probesize, fflags and format forcing can act. Keys FFmpeg does not consume are
+         * reported through [unusedOpenOptions], never silently dropped.
+         */
+        @Throws(FFmpegException::class)
+        public fun open(path: String, options: Map<String, String>): MediaSource
     }
 }

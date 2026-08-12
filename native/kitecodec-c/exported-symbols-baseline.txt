@@ -56,6 +56,7 @@ ffkmp_codecpar_sample_rate
 ffkmp_codecpar_width
 ffkmp_dict_entry_key
 ffkmp_dict_entry_value
+ffkmp_dict_free
 ffkmp_dict_get
 ffkmp_disposition_attached_pic
 ffkmp_disposition_default
@@ -68,6 +69,9 @@ ffkmp_find_decoder_by_name
 ffkmp_find_encoder_by_name
 ffkmp_fmt_alloc_output2
 ffkmp_fmt_avoid_negative_ts
+ffkmp_fmt_chapter_count
+ffkmp_fmt_chapter_get
+ffkmp_fmt_chapter_metadata
 ffkmp_fmt_close_input
 ffkmp_fmt_duration
 ffkmp_fmt_find_stream_info
@@ -79,6 +83,7 @@ ffkmp_fmt_metadata
 ffkmp_fmt_nb_streams
 ffkmp_fmt_new_stream
 ffkmp_fmt_open_input
+ffkmp_fmt_open_input2
 ffkmp_fmt_read_frame
 ffkmp_fmt_seek_file
 ffkmp_fmt_seek_micros

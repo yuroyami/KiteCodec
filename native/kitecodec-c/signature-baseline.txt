@@ -1,9 +1,9 @@
 # The normalized public C declaration baseline of KiteCodec (S1.a.8).
 #
-# Exact scope: 171 helper KC_API prototypes, eleven opaque handle typedefs, seven
+# Exact scope: 176 helper KC_API prototypes, eleven opaque handle typedefs, seven
 # ABI KC_API prototypes, three ABI enum definitions and the full kc_ffmpeg_report
 # typedef. Comments and preprocessor lines are absent; whitespace is normalized;
-# records are sorted without deduplication. There must be exactly 193 records.
+# records are sorted without deduplication. There must be exactly 198 records.
 #
 # THE MOVE (also in KPKMP.md section 9's ratchet move table): change the public
 # declaration deliberately, run ./scripts/symbol-audit.sh
@@ -59,10 +59,13 @@ KC_API int ffkmp_disposition_hearing_impaired(void);
 KC_API int ffkmp_disposition_visual_impaired(void);
 KC_API int ffkmp_filter_exists(const char *name);
 KC_API int ffkmp_fmt_alloc_output2(kc_fmt_ctx **out, const char *path, const char *format);
+KC_API int ffkmp_fmt_chapter_count(const kc_fmt_ctx *ctx);
+KC_API int ffkmp_fmt_chapter_get(const kc_fmt_ctx *ctx, int index, int64_t *out_id, int64_t *out_start_us, int64_t *out_end_us);
 KC_API int ffkmp_fmt_find_stream_info(kc_fmt_ctx *c);
 KC_API int ffkmp_fmt_io_open(kc_fmt_ctx *ctx, const char *path);
 KC_API int ffkmp_fmt_is_seekable(kc_fmt_ctx *c);
 KC_API int ffkmp_fmt_open_input(kc_fmt_ctx **out, const char *path);
+KC_API int ffkmp_fmt_open_input2(kc_fmt_ctx **out, const char *path, const char *const *keys, const char *const *values, int n, kc_dict **unused);
 KC_API int ffkmp_fmt_read_frame(kc_fmt_ctx *c, kc_packet *p);
 KC_API int ffkmp_fmt_seek_file(kc_fmt_ctx *ctx, int stream_index, int64_t min_ts, int64_t ts, int64_t max_ts, int flags);
 KC_API int ffkmp_fmt_seek_micros(kc_fmt_ctx *ctx, int stream_index, int64_t micros);
@@ -132,6 +135,7 @@ KC_API int64_t ffkmp_stream_duration_micros(kc_stream *s);
 KC_API int64_t ffkmp_stream_start_time(kc_stream *s);
 KC_API kc_codec_ctx* ffkmp_codecctx_alloc(const kc_codec *c);
 KC_API kc_codec_par* ffkmp_stream_codecpar(kc_stream *s);
+KC_API kc_dict* ffkmp_fmt_chapter_metadata(const kc_fmt_ctx *ctx, int index);
 KC_API kc_dict* ffkmp_fmt_metadata(kc_fmt_ctx *c);
 KC_API kc_dict* ffkmp_stream_metadata(kc_stream *s);
 KC_API kc_dict_entry* ffkmp_dict_get(kc_dict *d, kc_dict_entry *prev);
@@ -158,6 +162,7 @@ KC_API void ffkmp_codecctx_set_threads(kc_codec_ctx *c, int count, int frame_lev
 KC_API void ffkmp_codecctx_set_video( kc_codec_ctx *c, int width, int height, int pix_fmt, int fr_num, int fr_den, int tb_num, int tb_den, int64_t bit_rate, int gop_size );
 KC_API void ffkmp_codecctx_time_base(kc_codec_ctx *c, int *n, int *d);
 KC_API void ffkmp_codecpar_sample_aspect_ratio(kc_codec_par *p, int *num, int *den);
+KC_API void ffkmp_dict_free(kc_dict **dict);
 KC_API void ffkmp_fmt_avoid_negative_ts(kc_fmt_ctx *ctx);
 KC_API void ffkmp_fmt_close_input(kc_fmt_ctx **ctx);
 KC_API void ffkmp_fmt_free_output(kc_fmt_ctx **ctx);
