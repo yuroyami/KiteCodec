@@ -79,6 +79,21 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
     abstract val sourceDir: DirectoryProperty
 
     /**
+     * Committed source patches from `native/patches/ffmpeg`, applied in name order to the SCRATCH
+     * copy of the source before configure. The vendored checkout itself stays pristine at
+     * [sourceRef], which is what keeps its tracked-by-ref identity honest. Content-tracked, so
+     * editing a patch rebuilds. Each application is `patch -p1` with `--forward` and a rejected
+     * hunk fails the build loudly. The applied list and each patch's SHA-256 are written beside
+     * the configure evidence in the install tree (`lib/kitecodec/ffmpeg-patches.txt`), so a
+     * provenance question about a prebuilt tree has a one-file answer. First patch and the reason
+     * it exists: KPKMP hotfix window 2c, the h264_mp4toannexb 4-byte start codes the Goldfish
+     * API 36 MediaCodec decoder requires (measured 2026-08-12).
+     */
+    @get:org.gradle.api.tasks.InputFiles
+    @get:org.gradle.api.tasks.PathSensitive(org.gradle.api.tasks.PathSensitivity.RELATIVE)
+    abstract val sourcePatches: org.gradle.api.file.ConfigurableFileCollection
+
+    /**
      * Where the host package manager installed the third-party encoder/text libraries the desktop
      * macOS profile links (Homebrew's prefix: `/opt/homebrew` on Apple silicon, `/usr/local` on
      * Intel). Override with the `kitecodec.macos.homebrew.prefix` Gradle property. Unused on Linux
@@ -137,6 +152,14 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
             val scratchInstall = scratch.resolve("install")
             copySourceTree(sourceDir.toPath(), scratchSource)
 
+            val patches = sourcePatches.files.filter { it.name.endsWith(".patch") }.sortedBy { it.name }
+            patches.forEach { patchFile ->
+                runIn(
+                    scratchSource.toFile(),
+                    listOf("/usr/bin/patch", "-p1", "--forward", "--fuzz=0", "-i", patchFile.absolutePath),
+                )
+            }
+
             val configureArgs = configureArguments(
                 target = target,
                 license = license,
@@ -152,6 +175,20 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
             runIn(scratchBuild.toFile(), listOf("make", "install"), env)
 
             writeConfigureEvidence(scratchBuild.resolve("ffbuild/config.log"), scratchInstall)
+            run {
+                val evidenceDir = scratchInstall.resolve("lib/kitecodec").also(Files::createDirectories)
+                val digest = java.security.MessageDigest.getInstance("SHA-256")
+                val lines = buildString {
+                    appendLine("# Source patches applied to the scratch FFmpeg before configure, in order.")
+                    if (patches.isEmpty()) appendLine("(none)")
+                    patches.forEach { p ->
+                        val sha = digest.digest(p.readBytes()).joinToString("") { "%02x".format(it) }
+                        appendLine("${p.name}  sha256=$sha")
+                        digest.reset()
+                    }
+                }
+                Files.writeString(evidenceDir.resolve("ffmpeg-patches.txt"), lines, UTF_8)
+            }
             verifyInstall(scratchInstall)
             bundleThirdPartyArchives(target, license, scratchInstall.toFile())
             verifyInstall(scratchInstall)

@@ -494,6 +494,8 @@ fun registerBuildFFmpeg(triple: TargetTriple, flavour: FFmpegLicense) =
         target = triple
         license = flavour
         sourceRef = BuildFFmpegTask.DEFAULT_SOURCE_REF
+        // Committed source patches, applied to the scratch copy before configure (window 2c).
+        sourcePatches.from(fileTree(rootDir.resolve("native/patches/ffmpeg")) { include("*.patch") })
         // Where the desktop macOS profile's third-party libs live. Several of them (lame above all)
         // ship no pkg-config file, so configure cannot find them without an explicit -I/-L.
         hostPrefix.set(

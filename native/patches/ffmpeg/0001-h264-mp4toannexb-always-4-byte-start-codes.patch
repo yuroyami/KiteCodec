@@ -1,0 +1,33 @@
+Always emit 4-byte Annex-B start codes in h264_mp4toannexb.
+
+KitePlayer register S1C-03 / KPKMP hotfix window 2c (2026-08-12). Measured on the named
+Android 36.1 Goldfish emulator (Pixelu16KB): FFmpeg's h264_mediacodec path feeds MediaCodec
+Annex-B where only parameter sets and the first NAL of an access unit carry a 4-byte start
+code; every later NAL gets a 3-byte code (count_or_copy's else branch). The Goldfish API 36
+c2 H.264 decoder does not split on 3-byte boundaries and returns zero frames. Normalizing
+those boundaries to 4 bytes produced 12/12 and 24/24 hardware-decoded frames. Android's own
+MediaCodec documentation specifies the 4-byte form, which every real decoder also accepts,
+so the widened form is universally safe; the cost is one byte per non-first NAL. The count
+pass and the copy pass share count_or_copy, so sizing stays consistent by construction.
+
+Applied by BuildFFmpegTask before configure; idempotent via git apply --reverse --check.
+
+diff --git a/libavcodec/bsf/h264_mp4toannexb.c b/libavcodec/bsf/h264_mp4toannexb.c
+index 36b09b4..db0a275 100644
+--- a/libavcodec/bsf/h264_mp4toannexb.c
++++ b/libavcodec/bsf/h264_mp4toannexb.c
+@@ -62,10 +62,11 @@ static void count_or_copy(uint8_t **out, uint64_t *out_size,
+          * add it manually again
+          */
+         start_code_size = 0;
+-    else if (ps == PS_IN_BAND || *out_size == 0)
+-        start_code_size = 4;
+     else
+-        start_code_size = 3;
++        /* KiteCodec: always the 4-byte form. Android MediaCodec's documented Annex-B shape,
++         * and the Goldfish API 36 decoder rejects the 3-byte boundaries FFmpeg emits for
++         * non-first NALs (KitePlayer KPKMP window 2c, measured 2026-08-12). */
++        start_code_size = 4;
+ 
+     if (copy) {
+         memcpy(*out + start_code_size, in, in_size);
