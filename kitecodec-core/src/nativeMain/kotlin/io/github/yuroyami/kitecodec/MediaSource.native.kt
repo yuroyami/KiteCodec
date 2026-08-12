@@ -438,10 +438,11 @@ public actual class MediaSource internal constructor(
         threadCount: Int,
         lowDelay: Boolean,
         decoder: CodecId?,
+        options: io.github.yuroyami.kitecodec.dsl.DecoderOptions?,
     ): StreamDecoder {
         check(!isClosed) { "MediaSource is closed" }
         require(stream.type.isAv) { "Only video and audio streams can be decoded, got ${stream.type}" }
-        return StreamDecoder.open(ctx, stream, threadCount, lowDelay, decoder)
+        return StreamDecoder.open(ctx, stream, threadCount, lowDelay, decoder, options)
     }
 
     actual override fun close() {

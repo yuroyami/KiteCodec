@@ -522,8 +522,8 @@ public final class io/github/yuroyami/kitecodec/MediaSource : java/lang/AutoClos
 	public final fun getStartTimeMicros ()J
 	public final fun getStreams ()Ljava/util/List;
 	public final fun isSeekable ()Z
-	public final fun openDecoder--HSJKEI (Lio/github/yuroyami/kitecodec/StreamInfo;IZLjava/lang/String;)Lio/github/yuroyami/kitecodec/StreamDecoder;
-	public static synthetic fun openDecoder--HSJKEI$default (Lio/github/yuroyami/kitecodec/MediaSource;Lio/github/yuroyami/kitecodec/StreamInfo;IZLjava/lang/String;ILjava/lang/Object;)Lio/github/yuroyami/kitecodec/StreamDecoder;
+	public final fun openDecoder-34ZvGRY (Lio/github/yuroyami/kitecodec/StreamInfo;IZLjava/lang/String;Lio/github/yuroyami/kitecodec/dsl/DecoderOptions;)Lio/github/yuroyami/kitecodec/StreamDecoder;
+	public static synthetic fun openDecoder-34ZvGRY$default (Lio/github/yuroyami/kitecodec/MediaSource;Lio/github/yuroyami/kitecodec/StreamInfo;IZLjava/lang/String;Lio/github/yuroyami/kitecodec/dsl/DecoderOptions;ILjava/lang/Object;)Lio/github/yuroyami/kitecodec/StreamDecoder;
 	public final fun openPacketReader (Ljava/util/List;)Lio/github/yuroyami/kitecodec/PacketReader;
 	public final fun seekMicros (JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }
@@ -848,6 +848,493 @@ public final class io/github/yuroyami/kitecodec/VideoStreamInfo {
 	public final fun getPixelFormat-i2AC7LY ()Ljava/lang/String;
 	public final fun getSampleAspectRatio ()Lio/github/yuroyami/kitecodec/Rational;
 	public final fun getWidth ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/Aresample : io/github/yuroyami/kitecodec/dsl/FilterStep {
+	public fun <init> (I)V
+	public fun compile ()Ljava/lang/String;
+	public final fun component1 ()I
+	public final fun copy (I)Lio/github/yuroyami/kitecodec/dsl/Aresample;
+	public static synthetic fun copy$default (Lio/github/yuroyami/kitecodec/dsl/Aresample;IILjava/lang/Object;)Lio/github/yuroyami/kitecodec/dsl/Aresample;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getFilterName ()Ljava/lang/String;
+	public final fun getSampleRate ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/Atempo : io/github/yuroyami/kitecodec/dsl/FilterStep {
+	public fun <init> (D)V
+	public fun compile ()Ljava/lang/String;
+	public final fun component1 ()D
+	public final fun copy (D)Lio/github/yuroyami/kitecodec/dsl/Atempo;
+	public static synthetic fun copy$default (Lio/github/yuroyami/kitecodec/dsl/Atempo;DILjava/lang/Object;)Lio/github/yuroyami/kitecodec/dsl/Atempo;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getFilterName ()Ljava/lang/String;
+	public final fun getTempo ()D
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/AudioEncoderTuning {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;Ljava/lang/Long;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Long;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun applyTo (Lio/github/yuroyami/kitecodec/AudioEncoderSpec;)Lio/github/yuroyami/kitecodec/AudioEncoderSpec;
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/Long;
+	public final fun copy (Ljava/lang/String;Ljava/lang/Long;)Lio/github/yuroyami/kitecodec/dsl/AudioEncoderTuning;
+	public static synthetic fun copy$default (Lio/github/yuroyami/kitecodec/dsl/AudioEncoderTuning;Ljava/lang/String;Ljava/lang/Long;ILjava/lang/Object;)Lio/github/yuroyami/kitecodec/dsl/AudioEncoderTuning;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBitrateBps ()Ljava/lang/Long;
+	public final fun getProfile ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/AudioFilterBuilder {
+	public final fun aformat (Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/String;)V
+	public static synthetic fun aformat$default (Lio/github/yuroyami/kitecodec/dsl/AudioFilterBuilder;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/String;ILjava/lang/Object;)V
+	public final fun aresample (I)V
+	public final fun atempo (D)V
+	public final fun loudnorm (DDD)V
+	public static synthetic fun loudnorm$default (Lio/github/yuroyami/kitecodec/dsl/AudioFilterBuilder;DDDILjava/lang/Object;)V
+	public final fun pan (Ljava/lang/String;[Ljava/lang/String;)V
+	public final fun raw (Ljava/lang/String;)V
+	public final fun volume (D)V
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/AudioFormat : io/github/yuroyami/kitecodec/dsl/FilterStep {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun compile ()Ljava/lang/String;
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/Integer;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/String;)Lio/github/yuroyami/kitecodec/dsl/AudioFormat;
+	public static synthetic fun copy$default (Lio/github/yuroyami/kitecodec/dsl/AudioFormat;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/String;ILjava/lang/Object;)Lio/github/yuroyami/kitecodec/dsl/AudioFormat;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getChannelLayout ()Ljava/lang/String;
+	public fun getFilterName ()Ljava/lang/String;
+	public final fun getSampleFormat ()Ljava/lang/String;
+	public final fun getSampleRate ()Ljava/lang/Integer;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/Crop : io/github/yuroyami/kitecodec/dsl/FilterStep {
+	public fun <init> (IILjava/lang/Integer;Ljava/lang/Integer;)V
+	public synthetic fun <init> (IILjava/lang/Integer;Ljava/lang/Integer;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun compile ()Ljava/lang/String;
+	public final fun component1 ()I
+	public final fun component2 ()I
+	public final fun component3 ()Ljava/lang/Integer;
+	public final fun component4 ()Ljava/lang/Integer;
+	public final fun copy (IILjava/lang/Integer;Ljava/lang/Integer;)Lio/github/yuroyami/kitecodec/dsl/Crop;
+	public static synthetic fun copy$default (Lio/github/yuroyami/kitecodec/dsl/Crop;IILjava/lang/Integer;Ljava/lang/Integer;ILjava/lang/Object;)Lio/github/yuroyami/kitecodec/dsl/Crop;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getFilterName ()Ljava/lang/String;
+	public final fun getHeight ()I
+	public final fun getWidth ()I
+	public final fun getX ()Ljava/lang/Integer;
+	public final fun getY ()Ljava/lang/Integer;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/DecoderOptions {
+	public static final field Companion Lio/github/yuroyami/kitecodec/dsl/DecoderOptions$Companion;
+	public fun <init> ()V
+	public fun <init> (Lio/github/yuroyami/kitecodec/dsl/DecoderSkip;Lio/github/yuroyami/kitecodec/dsl/DecoderSkip;Ljava/util/Set;Lio/github/yuroyami/kitecodec/dsl/DecoderThreadType;Ljava/util/Map;)V
+	public synthetic fun <init> (Lio/github/yuroyami/kitecodec/dsl/DecoderSkip;Lio/github/yuroyami/kitecodec/dsl/DecoderSkip;Ljava/util/Set;Lio/github/yuroyami/kitecodec/dsl/DecoderThreadType;Ljava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun compile ()Ljava/util/List;
+	public final fun component1 ()Lio/github/yuroyami/kitecodec/dsl/DecoderSkip;
+	public final fun component2 ()Lio/github/yuroyami/kitecodec/dsl/DecoderSkip;
+	public final fun component3 ()Ljava/util/Set;
+	public final fun component4 ()Lio/github/yuroyami/kitecodec/dsl/DecoderThreadType;
+	public final fun component5 ()Ljava/util/Map;
+	public final fun copy (Lio/github/yuroyami/kitecodec/dsl/DecoderSkip;Lio/github/yuroyami/kitecodec/dsl/DecoderSkip;Ljava/util/Set;Lio/github/yuroyami/kitecodec/dsl/DecoderThreadType;Ljava/util/Map;)Lio/github/yuroyami/kitecodec/dsl/DecoderOptions;
+	public static synthetic fun copy$default (Lio/github/yuroyami/kitecodec/dsl/DecoderOptions;Lio/github/yuroyami/kitecodec/dsl/DecoderSkip;Lio/github/yuroyami/kitecodec/dsl/DecoderSkip;Ljava/util/Set;Lio/github/yuroyami/kitecodec/dsl/DecoderThreadType;Ljava/util/Map;ILjava/lang/Object;)Lio/github/yuroyami/kitecodec/dsl/DecoderOptions;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getErrorDetection ()Ljava/util/Set;
+	public final fun getOptions ()Ljava/util/Map;
+	public final fun getSkipFrame ()Lio/github/yuroyami/kitecodec/dsl/DecoderSkip;
+	public final fun getSkipLoopFilter ()Lio/github/yuroyami/kitecodec/dsl/DecoderSkip;
+	public final fun getThreadType ()Lio/github/yuroyami/kitecodec/dsl/DecoderThreadType;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/DecoderOptions$Companion {
+	public final fun getScrubbing ()Lio/github/yuroyami/kitecodec/dsl/DecoderOptions;
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/DecoderSkip : java/lang/Enum {
+	public static final field All Lio/github/yuroyami/kitecodec/dsl/DecoderSkip;
+	public static final field Bidirectional Lio/github/yuroyami/kitecodec/dsl/DecoderSkip;
+	public static final field NonIntra Lio/github/yuroyami/kitecodec/dsl/DecoderSkip;
+	public static final field NonKey Lio/github/yuroyami/kitecodec/dsl/DecoderSkip;
+	public static final field NonReference Lio/github/yuroyami/kitecodec/dsl/DecoderSkip;
+	public static final field None Lio/github/yuroyami/kitecodec/dsl/DecoderSkip;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lio/github/yuroyami/kitecodec/dsl/DecoderSkip;
+	public static fun values ()[Lio/github/yuroyami/kitecodec/dsl/DecoderSkip;
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/DecoderThreadType : java/lang/Enum {
+	public static final field Both Lio/github/yuroyami/kitecodec/dsl/DecoderThreadType;
+	public static final field Frame Lio/github/yuroyami/kitecodec/dsl/DecoderThreadType;
+	public static final field Slice Lio/github/yuroyami/kitecodec/dsl/DecoderThreadType;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lio/github/yuroyami/kitecodec/dsl/DecoderThreadType;
+	public static fun values ()[Lio/github/yuroyami/kitecodec/dsl/DecoderThreadType;
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/Deinterlace : io/github/yuroyami/kitecodec/dsl/FilterStep {
+	public fun <init> ()V
+	public fun <init> (Lio/github/yuroyami/kitecodec/dsl/Deinterlacer;)V
+	public synthetic fun <init> (Lio/github/yuroyami/kitecodec/dsl/Deinterlacer;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun compile ()Ljava/lang/String;
+	public final fun component1 ()Lio/github/yuroyami/kitecodec/dsl/Deinterlacer;
+	public final fun copy (Lio/github/yuroyami/kitecodec/dsl/Deinterlacer;)Lio/github/yuroyami/kitecodec/dsl/Deinterlace;
+	public static synthetic fun copy$default (Lio/github/yuroyami/kitecodec/dsl/Deinterlace;Lio/github/yuroyami/kitecodec/dsl/Deinterlacer;ILjava/lang/Object;)Lio/github/yuroyami/kitecodec/dsl/Deinterlace;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getFilterName ()Ljava/lang/String;
+	public final fun getWith ()Lio/github/yuroyami/kitecodec/dsl/Deinterlacer;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/Deinterlacer : java/lang/Enum {
+	public static final field Bwdif Lio/github/yuroyami/kitecodec/dsl/Deinterlacer;
+	public static final field Yadif Lio/github/yuroyami/kitecodec/dsl/Deinterlacer;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lio/github/yuroyami/kitecodec/dsl/Deinterlacer;
+	public static fun values ()[Lio/github/yuroyami/kitecodec/dsl/Deinterlacer;
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/DrawBox : io/github/yuroyami/kitecodec/dsl/FilterStep {
+	public fun <init> (IIIILjava/lang/String;I)V
+	public synthetic fun <init> (IIIILjava/lang/String;IILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun compile ()Ljava/lang/String;
+	public final fun component1 ()I
+	public final fun component2 ()I
+	public final fun component3 ()I
+	public final fun component4 ()I
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()I
+	public final fun copy (IIIILjava/lang/String;I)Lio/github/yuroyami/kitecodec/dsl/DrawBox;
+	public static synthetic fun copy$default (Lio/github/yuroyami/kitecodec/dsl/DrawBox;IIIILjava/lang/String;IILjava/lang/Object;)Lio/github/yuroyami/kitecodec/dsl/DrawBox;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getColor ()Ljava/lang/String;
+	public fun getFilterName ()Ljava/lang/String;
+	public final fun getHeight ()I
+	public final fun getThickness ()I
+	public final fun getWidth ()I
+	public final fun getX ()I
+	public final fun getY ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/EncoderPreset : java/lang/Enum {
+	public static final field Fast Lio/github/yuroyami/kitecodec/dsl/EncoderPreset;
+	public static final field Faster Lio/github/yuroyami/kitecodec/dsl/EncoderPreset;
+	public static final field Medium Lio/github/yuroyami/kitecodec/dsl/EncoderPreset;
+	public static final field Slow Lio/github/yuroyami/kitecodec/dsl/EncoderPreset;
+	public static final field Slower Lio/github/yuroyami/kitecodec/dsl/EncoderPreset;
+	public static final field SuperFast Lio/github/yuroyami/kitecodec/dsl/EncoderPreset;
+	public static final field UltraFast Lio/github/yuroyami/kitecodec/dsl/EncoderPreset;
+	public static final field VeryFast Lio/github/yuroyami/kitecodec/dsl/EncoderPreset;
+	public static final field VerySlow Lio/github/yuroyami/kitecodec/dsl/EncoderPreset;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lio/github/yuroyami/kitecodec/dsl/EncoderPreset;
+	public static fun values ()[Lio/github/yuroyami/kitecodec/dsl/EncoderPreset;
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/Eq : io/github/yuroyami/kitecodec/dsl/FilterStep {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Double;)V
+	public synthetic fun <init> (Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Double;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun compile ()Ljava/lang/String;
+	public final fun component1 ()Ljava/lang/Double;
+	public final fun component2 ()Ljava/lang/Double;
+	public final fun component3 ()Ljava/lang/Double;
+	public final fun component4 ()Ljava/lang/Double;
+	public final fun copy (Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Double;)Lio/github/yuroyami/kitecodec/dsl/Eq;
+	public static synthetic fun copy$default (Lio/github/yuroyami/kitecodec/dsl/Eq;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Double;ILjava/lang/Object;)Lio/github/yuroyami/kitecodec/dsl/Eq;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBrightness ()Ljava/lang/Double;
+	public final fun getContrast ()Ljava/lang/Double;
+	public fun getFilterName ()Ljava/lang/String;
+	public final fun getGamma ()Ljava/lang/Double;
+	public final fun getSaturation ()Ljava/lang/Double;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/ErrorDetection : java/lang/Enum {
+	public static final field Aggressive Lio/github/yuroyami/kitecodec/dsl/ErrorDetection;
+	public static final field Bitstream Lio/github/yuroyami/kitecodec/dsl/ErrorDetection;
+	public static final field Buffer Lio/github/yuroyami/kitecodec/dsl/ErrorDetection;
+	public static final field Careful Lio/github/yuroyami/kitecodec/dsl/ErrorDetection;
+	public static final field Compliant Lio/github/yuroyami/kitecodec/dsl/ErrorDetection;
+	public static final field CrcCheck Lio/github/yuroyami/kitecodec/dsl/ErrorDetection;
+	public static final field Explode Lio/github/yuroyami/kitecodec/dsl/ErrorDetection;
+	public static final field IgnoreErrors Lio/github/yuroyami/kitecodec/dsl/ErrorDetection;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lio/github/yuroyami/kitecodec/dsl/ErrorDetection;
+	public static fun values ()[Lio/github/yuroyami/kitecodec/dsl/ErrorDetection;
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/FilterChain {
+	public fun <init> (Ljava/util/List;)V
+	public final fun compile ()Ljava/lang/String;
+	public final fun component1 ()Ljava/util/List;
+	public final fun copy (Ljava/util/List;)Lio/github/yuroyami/kitecodec/dsl/FilterChain;
+	public static synthetic fun copy$default (Lio/github/yuroyami/kitecodec/dsl/FilterChain;Ljava/util/List;ILjava/lang/Object;)Lio/github/yuroyami/kitecodec/dsl/FilterChain;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getSteps ()Ljava/util/List;
+	public fun hashCode ()I
+	public final fun requireAvailable ()V
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/FilterDslKt {
+	public static final fun audioFilters (Lkotlin/jvm/functions/Function1;)Lio/github/yuroyami/kitecodec/dsl/FilterChain;
+	public static final fun videoFilters (Lkotlin/jvm/functions/Function1;)Lio/github/yuroyami/kitecodec/dsl/FilterChain;
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/FilterEscapingKt {
+	public static final fun escapeFilterValue (Ljava/lang/String;)Ljava/lang/String;
+}
+
+public abstract interface class io/github/yuroyami/kitecodec/dsl/FilterStep {
+	public abstract fun compile ()Ljava/lang/String;
+	public abstract fun getFilterName ()Ljava/lang/String;
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/Format : io/github/yuroyami/kitecodec/dsl/FilterStep {
+	public synthetic fun <init> (Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun compile ()Ljava/lang/String;
+	public final fun component1-i2AC7LY ()Ljava/lang/String;
+	public final fun copy-h5E68rc (Ljava/lang/String;)Lio/github/yuroyami/kitecodec/dsl/Format;
+	public static synthetic fun copy-h5E68rc$default (Lio/github/yuroyami/kitecodec/dsl/Format;Ljava/lang/String;ILjava/lang/Object;)Lio/github/yuroyami/kitecodec/dsl/Format;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getFilterName ()Ljava/lang/String;
+	public final fun getFormat-i2AC7LY ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/Fps : io/github/yuroyami/kitecodec/dsl/FilterStep {
+	public fun <init> (Lio/github/yuroyami/kitecodec/Rational;)V
+	public fun compile ()Ljava/lang/String;
+	public final fun component1 ()Lio/github/yuroyami/kitecodec/Rational;
+	public final fun copy (Lio/github/yuroyami/kitecodec/Rational;)Lio/github/yuroyami/kitecodec/dsl/Fps;
+	public static synthetic fun copy$default (Lio/github/yuroyami/kitecodec/dsl/Fps;Lio/github/yuroyami/kitecodec/Rational;ILjava/lang/Object;)Lio/github/yuroyami/kitecodec/dsl/Fps;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getFilterName ()Ljava/lang/String;
+	public final fun getRate ()Lio/github/yuroyami/kitecodec/Rational;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/Loudnorm : io/github/yuroyami/kitecodec/dsl/FilterStep {
+	public fun <init> ()V
+	public fun <init> (DDD)V
+	public synthetic fun <init> (DDDILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun compile ()Ljava/lang/String;
+	public final fun component1 ()D
+	public final fun component2 ()D
+	public final fun component3 ()D
+	public final fun copy (DDD)Lio/github/yuroyami/kitecodec/dsl/Loudnorm;
+	public static synthetic fun copy$default (Lio/github/yuroyami/kitecodec/dsl/Loudnorm;DDDILjava/lang/Object;)Lio/github/yuroyami/kitecodec/dsl/Loudnorm;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getFilterName ()Ljava/lang/String;
+	public final fun getIntegrated ()D
+	public final fun getRange ()D
+	public final fun getTruePeak ()D
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/Pad : io/github/yuroyami/kitecodec/dsl/FilterStep {
+	public fun <init> (IIIILjava/lang/String;)V
+	public synthetic fun <init> (IIIILjava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun compile ()Ljava/lang/String;
+	public final fun component1 ()I
+	public final fun component2 ()I
+	public final fun component3 ()I
+	public final fun component4 ()I
+	public final fun component5 ()Ljava/lang/String;
+	public final fun copy (IIIILjava/lang/String;)Lio/github/yuroyami/kitecodec/dsl/Pad;
+	public static synthetic fun copy$default (Lio/github/yuroyami/kitecodec/dsl/Pad;IIIILjava/lang/String;ILjava/lang/Object;)Lio/github/yuroyami/kitecodec/dsl/Pad;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getColor ()Ljava/lang/String;
+	public fun getFilterName ()Ljava/lang/String;
+	public final fun getHeight ()I
+	public final fun getWidth ()I
+	public final fun getX ()I
+	public final fun getY ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/Pan : io/github/yuroyami/kitecodec/dsl/FilterStep {
+	public fun <init> (Ljava/lang/String;Ljava/util/List;)V
+	public fun <init> (Ljava/lang/String;[Ljava/lang/String;)V
+	public fun compile ()Ljava/lang/String;
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/util/List;
+	public final fun copy (Ljava/lang/String;Ljava/util/List;)Lio/github/yuroyami/kitecodec/dsl/Pan;
+	public static synthetic fun copy$default (Lio/github/yuroyami/kitecodec/dsl/Pan;Ljava/lang/String;Ljava/util/List;ILjava/lang/Object;)Lio/github/yuroyami/kitecodec/dsl/Pan;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getFilterName ()Ljava/lang/String;
+	public final fun getLayout ()Ljava/lang/String;
+	public final fun getOutputs ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/QuarterTurn : java/lang/Enum {
+	public static final field Clockwise Lio/github/yuroyami/kitecodec/dsl/QuarterTurn;
+	public static final field ClockwiseWithFlip Lio/github/yuroyami/kitecodec/dsl/QuarterTurn;
+	public static final field CounterClockwise Lio/github/yuroyami/kitecodec/dsl/QuarterTurn;
+	public static final field CounterClockwiseWithFlip Lio/github/yuroyami/kitecodec/dsl/QuarterTurn;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lio/github/yuroyami/kitecodec/dsl/QuarterTurn;
+	public static fun values ()[Lio/github/yuroyami/kitecodec/dsl/QuarterTurn;
+}
+
+public abstract interface class io/github/yuroyami/kitecodec/dsl/RateControl {
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/RateControl$AverageBitrate : io/github/yuroyami/kitecodec/dsl/RateControl {
+	public fun <init> (J)V
+	public final fun component1 ()J
+	public final fun copy (J)Lio/github/yuroyami/kitecodec/dsl/RateControl$AverageBitrate;
+	public static synthetic fun copy$default (Lio/github/yuroyami/kitecodec/dsl/RateControl$AverageBitrate;JILjava/lang/Object;)Lio/github/yuroyami/kitecodec/dsl/RateControl$AverageBitrate;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBitrateBps ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/RateControl$ConstantBitrate : io/github/yuroyami/kitecodec/dsl/RateControl {
+	public fun <init> (J)V
+	public final fun component1 ()J
+	public final fun copy (J)Lio/github/yuroyami/kitecodec/dsl/RateControl$ConstantBitrate;
+	public static synthetic fun copy$default (Lio/github/yuroyami/kitecodec/dsl/RateControl$ConstantBitrate;JILjava/lang/Object;)Lio/github/yuroyami/kitecodec/dsl/RateControl$ConstantBitrate;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBitrateBps ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/RateControl$ConstantQuality : io/github/yuroyami/kitecodec/dsl/RateControl {
+	public fun <init> (I)V
+	public final fun component1 ()I
+	public final fun copy (I)Lio/github/yuroyami/kitecodec/dsl/RateControl$ConstantQuality;
+	public static synthetic fun copy$default (Lio/github/yuroyami/kitecodec/dsl/RateControl$ConstantQuality;IILjava/lang/Object;)Lio/github/yuroyami/kitecodec/dsl/RateControl$ConstantQuality;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCrf ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/Raw : io/github/yuroyami/kitecodec/dsl/FilterStep {
+	public fun <init> (Ljava/lang/String;)V
+	public fun compile ()Ljava/lang/String;
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lio/github/yuroyami/kitecodec/dsl/Raw;
+	public static synthetic fun copy$default (Lio/github/yuroyami/kitecodec/dsl/Raw;Ljava/lang/String;ILjava/lang/Object;)Lio/github/yuroyami/kitecodec/dsl/Raw;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getFilterName ()Ljava/lang/String;
+	public final fun getFragment ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/Scale : io/github/yuroyami/kitecodec/dsl/FilterStep {
+	public fun <init> (II)V
+	public fun compile ()Ljava/lang/String;
+	public final fun component1 ()I
+	public final fun component2 ()I
+	public final fun copy (II)Lio/github/yuroyami/kitecodec/dsl/Scale;
+	public static synthetic fun copy$default (Lio/github/yuroyami/kitecodec/dsl/Scale;IIILjava/lang/Object;)Lio/github/yuroyami/kitecodec/dsl/Scale;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getFilterName ()Ljava/lang/String;
+	public final fun getHeight ()I
+	public final fun getWidth ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/Transpose : io/github/yuroyami/kitecodec/dsl/FilterStep {
+	public fun <init> (Lio/github/yuroyami/kitecodec/dsl/QuarterTurn;)V
+	public fun compile ()Ljava/lang/String;
+	public final fun component1 ()Lio/github/yuroyami/kitecodec/dsl/QuarterTurn;
+	public final fun copy (Lio/github/yuroyami/kitecodec/dsl/QuarterTurn;)Lio/github/yuroyami/kitecodec/dsl/Transpose;
+	public static synthetic fun copy$default (Lio/github/yuroyami/kitecodec/dsl/Transpose;Lio/github/yuroyami/kitecodec/dsl/QuarterTurn;ILjava/lang/Object;)Lio/github/yuroyami/kitecodec/dsl/Transpose;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getFilterName ()Ljava/lang/String;
+	public final fun getTurn ()Lio/github/yuroyami/kitecodec/dsl/QuarterTurn;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/VideoEncoderTuning {
+	public fun <init> ()V
+	public fun <init> (Lio/github/yuroyami/kitecodec/dsl/EncoderPreset;Ljava/lang/String;Ljava/lang/String;Lio/github/yuroyami/kitecodec/dsl/RateControl;)V
+	public synthetic fun <init> (Lio/github/yuroyami/kitecodec/dsl/EncoderPreset;Ljava/lang/String;Ljava/lang/String;Lio/github/yuroyami/kitecodec/dsl/RateControl;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun applyTo (Lio/github/yuroyami/kitecodec/VideoEncoderSpec;)Lio/github/yuroyami/kitecodec/VideoEncoderSpec;
+	public final fun compile ()Ljava/util/Map;
+	public final fun component1 ()Lio/github/yuroyami/kitecodec/dsl/EncoderPreset;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Lio/github/yuroyami/kitecodec/dsl/RateControl;
+	public final fun copy (Lio/github/yuroyami/kitecodec/dsl/EncoderPreset;Ljava/lang/String;Ljava/lang/String;Lio/github/yuroyami/kitecodec/dsl/RateControl;)Lio/github/yuroyami/kitecodec/dsl/VideoEncoderTuning;
+	public static synthetic fun copy$default (Lio/github/yuroyami/kitecodec/dsl/VideoEncoderTuning;Lio/github/yuroyami/kitecodec/dsl/EncoderPreset;Ljava/lang/String;Ljava/lang/String;Lio/github/yuroyami/kitecodec/dsl/RateControl;ILjava/lang/Object;)Lio/github/yuroyami/kitecodec/dsl/VideoEncoderTuning;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getPreset ()Lio/github/yuroyami/kitecodec/dsl/EncoderPreset;
+	public final fun getProfile ()Ljava/lang/String;
+	public final fun getRateControl ()Lio/github/yuroyami/kitecodec/dsl/RateControl;
+	public final fun getTune ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/VideoFilterBuilder {
+	public final fun crop (IILjava/lang/Integer;Ljava/lang/Integer;)V
+	public static synthetic fun crop$default (Lio/github/yuroyami/kitecodec/dsl/VideoFilterBuilder;IILjava/lang/Integer;Ljava/lang/Integer;ILjava/lang/Object;)V
+	public final fun deinterlace (Lio/github/yuroyami/kitecodec/dsl/Deinterlacer;)V
+	public static synthetic fun deinterlace$default (Lio/github/yuroyami/kitecodec/dsl/VideoFilterBuilder;Lio/github/yuroyami/kitecodec/dsl/Deinterlacer;ILjava/lang/Object;)V
+	public final fun drawBox (IIIILjava/lang/String;I)V
+	public static synthetic fun drawBox$default (Lio/github/yuroyami/kitecodec/dsl/VideoFilterBuilder;IIIILjava/lang/String;IILjava/lang/Object;)V
+	public final fun eq (Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Double;)V
+	public static synthetic fun eq$default (Lio/github/yuroyami/kitecodec/dsl/VideoFilterBuilder;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Double;Ljava/lang/Double;ILjava/lang/Object;)V
+	public final fun format-h5E68rc (Ljava/lang/String;)V
+	public final fun fps (Lio/github/yuroyami/kitecodec/Rational;)V
+	public final fun pad (IIIILjava/lang/String;)V
+	public static synthetic fun pad$default (Lio/github/yuroyami/kitecodec/dsl/VideoFilterBuilder;IIIILjava/lang/String;ILjava/lang/Object;)V
+	public final fun raw (Ljava/lang/String;)V
+	public final fun scale (II)V
+	public final fun transpose (Lio/github/yuroyami/kitecodec/dsl/QuarterTurn;)V
+}
+
+public final class io/github/yuroyami/kitecodec/dsl/Volume : io/github/yuroyami/kitecodec/dsl/FilterStep {
+	public fun <init> (D)V
+	public fun compile ()Ljava/lang/String;
+	public final fun component1 ()D
+	public final fun copy (D)Lio/github/yuroyami/kitecodec/dsl/Volume;
+	public static synthetic fun copy$default (Lio/github/yuroyami/kitecodec/dsl/Volume;DILjava/lang/Object;)Lio/github/yuroyami/kitecodec/dsl/Volume;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getFilterName ()Ljava/lang/String;
+	public final fun getGain ()D
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }

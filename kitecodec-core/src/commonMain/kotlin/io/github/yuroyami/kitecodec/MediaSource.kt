@@ -113,6 +113,7 @@ public expect class MediaSource : AutoCloseable {
         threadCount: Int = 0,
         lowDelay: Boolean = false,
         decoder: CodecId? = null,
+        options: io.github.yuroyami.kitecodec.dsl.DecoderOptions? = null,
     ): StreamDecoder
 
     override fun close()

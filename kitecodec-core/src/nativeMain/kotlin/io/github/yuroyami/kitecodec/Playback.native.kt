@@ -12,6 +12,7 @@ import ffmpeg.ffkmp_codecctx_open
 import ffmpeg.ffkmp_codecctx_receive_frame
 import ffmpeg.ffkmp_codecctx_send_packet
 import ffmpeg.ffkmp_codecctx_set_low_delay
+import ffmpeg.ffkmp_codecctx_set_opt
 import ffmpeg.ffkmp_codecctx_set_threads
 import ffmpeg.ffkmp_codec_id
 import ffmpeg.ffkmp_codecpar_codec_id
@@ -407,6 +408,7 @@ public actual class StreamDecoder internal constructor(
             threadCount: Int,
             lowDelay: Boolean,
             decoder: CodecId?,
+            options: io.github.yuroyami.kitecodec.dsl.DecoderOptions? = null,
         ): StreamDecoder {
             val streamPtr = ffkmp_fmt_stream(ctx, stream.index.toUInt())
                 ?: throw FFmpegException(FFmpegError.Internal("Stream ${stream.index} disappeared"))
@@ -436,6 +438,11 @@ public actual class StreamDecoder internal constructor(
                 // delay for audio keeps the decoder from holding frames a player is waiting for.
                 ffkmp_codecctx_set_threads(codecCtx, threadCount, if (stream.type == MediaType.Video) 1 else 0)
                 ffkmp_codecctx_set_low_delay(codecCtx, if (lowDelay) 1 else 0)
+                // KD-2 (KPKMP 17.10): typed options through the existing av_opt_set funnel,
+                // between context creation and open, exactly where FFmpeg wants them.
+                options?.compile()?.forEach { (key, value) ->
+                    check0(ffkmp_codecctx_set_opt(codecCtx, key, value), "av_opt_set ('${'$'}key')")
+                }
                 check0(ffkmp_codecctx_open(codecCtx, codec), "avcodec_open2")
                 // Construction allocates the landing frame. Keep it inside this ownership guard
                 // so a landing-frame OOM cannot strand an already-open codec context.

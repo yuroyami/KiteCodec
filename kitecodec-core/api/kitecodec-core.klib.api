@@ -10,6 +10,92 @@ open annotation class io.github.yuroyami.kitecodec/KiteCodecLowLevelApi : kotlin
     constructor <init>() // io.github.yuroyami.kitecodec/KiteCodecLowLevelApi.<init>|<init>(){}[0]
 }
 
+final enum class io.github.yuroyami.kitecodec.dsl/DecoderSkip : kotlin/Enum<io.github.yuroyami.kitecodec.dsl/DecoderSkip> { // io.github.yuroyami.kitecodec.dsl/DecoderSkip|null[0]
+    enum entry All // io.github.yuroyami.kitecodec.dsl/DecoderSkip.All|null[0]
+    enum entry Bidirectional // io.github.yuroyami.kitecodec.dsl/DecoderSkip.Bidirectional|null[0]
+    enum entry NonIntra // io.github.yuroyami.kitecodec.dsl/DecoderSkip.NonIntra|null[0]
+    enum entry NonKey // io.github.yuroyami.kitecodec.dsl/DecoderSkip.NonKey|null[0]
+    enum entry NonReference // io.github.yuroyami.kitecodec.dsl/DecoderSkip.NonReference|null[0]
+    enum entry None // io.github.yuroyami.kitecodec.dsl/DecoderSkip.None|null[0]
+
+    final val entries // io.github.yuroyami.kitecodec.dsl/DecoderSkip.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<io.github.yuroyami.kitecodec.dsl/DecoderSkip> // io.github.yuroyami.kitecodec.dsl/DecoderSkip.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): io.github.yuroyami.kitecodec.dsl/DecoderSkip // io.github.yuroyami.kitecodec.dsl/DecoderSkip.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<io.github.yuroyami.kitecodec.dsl/DecoderSkip> // io.github.yuroyami.kitecodec.dsl/DecoderSkip.values|values#static(){}[0]
+}
+
+final enum class io.github.yuroyami.kitecodec.dsl/DecoderThreadType : kotlin/Enum<io.github.yuroyami.kitecodec.dsl/DecoderThreadType> { // io.github.yuroyami.kitecodec.dsl/DecoderThreadType|null[0]
+    enum entry Both // io.github.yuroyami.kitecodec.dsl/DecoderThreadType.Both|null[0]
+    enum entry Frame // io.github.yuroyami.kitecodec.dsl/DecoderThreadType.Frame|null[0]
+    enum entry Slice // io.github.yuroyami.kitecodec.dsl/DecoderThreadType.Slice|null[0]
+
+    final val entries // io.github.yuroyami.kitecodec.dsl/DecoderThreadType.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<io.github.yuroyami.kitecodec.dsl/DecoderThreadType> // io.github.yuroyami.kitecodec.dsl/DecoderThreadType.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): io.github.yuroyami.kitecodec.dsl/DecoderThreadType // io.github.yuroyami.kitecodec.dsl/DecoderThreadType.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<io.github.yuroyami.kitecodec.dsl/DecoderThreadType> // io.github.yuroyami.kitecodec.dsl/DecoderThreadType.values|values#static(){}[0]
+}
+
+final enum class io.github.yuroyami.kitecodec.dsl/Deinterlacer : kotlin/Enum<io.github.yuroyami.kitecodec.dsl/Deinterlacer> { // io.github.yuroyami.kitecodec.dsl/Deinterlacer|null[0]
+    enum entry Bwdif // io.github.yuroyami.kitecodec.dsl/Deinterlacer.Bwdif|null[0]
+    enum entry Yadif // io.github.yuroyami.kitecodec.dsl/Deinterlacer.Yadif|null[0]
+
+    final val entries // io.github.yuroyami.kitecodec.dsl/Deinterlacer.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<io.github.yuroyami.kitecodec.dsl/Deinterlacer> // io.github.yuroyami.kitecodec.dsl/Deinterlacer.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): io.github.yuroyami.kitecodec.dsl/Deinterlacer // io.github.yuroyami.kitecodec.dsl/Deinterlacer.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<io.github.yuroyami.kitecodec.dsl/Deinterlacer> // io.github.yuroyami.kitecodec.dsl/Deinterlacer.values|values#static(){}[0]
+}
+
+final enum class io.github.yuroyami.kitecodec.dsl/EncoderPreset : kotlin/Enum<io.github.yuroyami.kitecodec.dsl/EncoderPreset> { // io.github.yuroyami.kitecodec.dsl/EncoderPreset|null[0]
+    enum entry Fast // io.github.yuroyami.kitecodec.dsl/EncoderPreset.Fast|null[0]
+    enum entry Faster // io.github.yuroyami.kitecodec.dsl/EncoderPreset.Faster|null[0]
+    enum entry Medium // io.github.yuroyami.kitecodec.dsl/EncoderPreset.Medium|null[0]
+    enum entry Slow // io.github.yuroyami.kitecodec.dsl/EncoderPreset.Slow|null[0]
+    enum entry Slower // io.github.yuroyami.kitecodec.dsl/EncoderPreset.Slower|null[0]
+    enum entry SuperFast // io.github.yuroyami.kitecodec.dsl/EncoderPreset.SuperFast|null[0]
+    enum entry UltraFast // io.github.yuroyami.kitecodec.dsl/EncoderPreset.UltraFast|null[0]
+    enum entry VeryFast // io.github.yuroyami.kitecodec.dsl/EncoderPreset.VeryFast|null[0]
+    enum entry VerySlow // io.github.yuroyami.kitecodec.dsl/EncoderPreset.VerySlow|null[0]
+
+    final val entries // io.github.yuroyami.kitecodec.dsl/EncoderPreset.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<io.github.yuroyami.kitecodec.dsl/EncoderPreset> // io.github.yuroyami.kitecodec.dsl/EncoderPreset.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): io.github.yuroyami.kitecodec.dsl/EncoderPreset // io.github.yuroyami.kitecodec.dsl/EncoderPreset.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<io.github.yuroyami.kitecodec.dsl/EncoderPreset> // io.github.yuroyami.kitecodec.dsl/EncoderPreset.values|values#static(){}[0]
+}
+
+final enum class io.github.yuroyami.kitecodec.dsl/ErrorDetection : kotlin/Enum<io.github.yuroyami.kitecodec.dsl/ErrorDetection> { // io.github.yuroyami.kitecodec.dsl/ErrorDetection|null[0]
+    enum entry Aggressive // io.github.yuroyami.kitecodec.dsl/ErrorDetection.Aggressive|null[0]
+    enum entry Bitstream // io.github.yuroyami.kitecodec.dsl/ErrorDetection.Bitstream|null[0]
+    enum entry Buffer // io.github.yuroyami.kitecodec.dsl/ErrorDetection.Buffer|null[0]
+    enum entry Careful // io.github.yuroyami.kitecodec.dsl/ErrorDetection.Careful|null[0]
+    enum entry Compliant // io.github.yuroyami.kitecodec.dsl/ErrorDetection.Compliant|null[0]
+    enum entry CrcCheck // io.github.yuroyami.kitecodec.dsl/ErrorDetection.CrcCheck|null[0]
+    enum entry Explode // io.github.yuroyami.kitecodec.dsl/ErrorDetection.Explode|null[0]
+    enum entry IgnoreErrors // io.github.yuroyami.kitecodec.dsl/ErrorDetection.IgnoreErrors|null[0]
+
+    final val entries // io.github.yuroyami.kitecodec.dsl/ErrorDetection.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<io.github.yuroyami.kitecodec.dsl/ErrorDetection> // io.github.yuroyami.kitecodec.dsl/ErrorDetection.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): io.github.yuroyami.kitecodec.dsl/ErrorDetection // io.github.yuroyami.kitecodec.dsl/ErrorDetection.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<io.github.yuroyami.kitecodec.dsl/ErrorDetection> // io.github.yuroyami.kitecodec.dsl/ErrorDetection.values|values#static(){}[0]
+}
+
+final enum class io.github.yuroyami.kitecodec.dsl/QuarterTurn : kotlin/Enum<io.github.yuroyami.kitecodec.dsl/QuarterTurn> { // io.github.yuroyami.kitecodec.dsl/QuarterTurn|null[0]
+    enum entry Clockwise // io.github.yuroyami.kitecodec.dsl/QuarterTurn.Clockwise|null[0]
+    enum entry ClockwiseWithFlip // io.github.yuroyami.kitecodec.dsl/QuarterTurn.ClockwiseWithFlip|null[0]
+    enum entry CounterClockwise // io.github.yuroyami.kitecodec.dsl/QuarterTurn.CounterClockwise|null[0]
+    enum entry CounterClockwiseWithFlip // io.github.yuroyami.kitecodec.dsl/QuarterTurn.CounterClockwiseWithFlip|null[0]
+
+    final val entries // io.github.yuroyami.kitecodec.dsl/QuarterTurn.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<io.github.yuroyami.kitecodec.dsl/QuarterTurn> // io.github.yuroyami.kitecodec.dsl/QuarterTurn.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): io.github.yuroyami.kitecodec.dsl/QuarterTurn // io.github.yuroyami.kitecodec.dsl/QuarterTurn.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<io.github.yuroyami.kitecodec.dsl/QuarterTurn> // io.github.yuroyami.kitecodec.dsl/QuarterTurn.values|values#static(){}[0]
+}
+
 final enum class io.github.yuroyami.kitecodec/ChromaLocation : kotlin/Enum<io.github.yuroyami.kitecodec/ChromaLocation> { // io.github.yuroyami.kitecodec/ChromaLocation|null[0]
     enum entry Bottom // io.github.yuroyami.kitecodec/ChromaLocation.Bottom|null[0]
     enum entry BottomLeft // io.github.yuroyami.kitecodec/ChromaLocation.BottomLeft|null[0]
@@ -143,6 +229,484 @@ final enum class io.github.yuroyami.kitecodec/SeekDirection : kotlin/Enum<io.git
 
     final fun valueOf(kotlin/String): io.github.yuroyami.kitecodec/SeekDirection // io.github.yuroyami.kitecodec/SeekDirection.valueOf|valueOf#static(kotlin.String){}[0]
     final fun values(): kotlin/Array<io.github.yuroyami.kitecodec/SeekDirection> // io.github.yuroyami.kitecodec/SeekDirection.values|values#static(){}[0]
+}
+
+sealed interface io.github.yuroyami.kitecodec.dsl/FilterStep { // io.github.yuroyami.kitecodec.dsl/FilterStep|null[0]
+    abstract val filterName // io.github.yuroyami.kitecodec.dsl/FilterStep.filterName|{}filterName[0]
+        abstract fun <get-filterName>(): kotlin/String? // io.github.yuroyami.kitecodec.dsl/FilterStep.filterName.<get-filterName>|<get-filterName>(){}[0]
+
+    abstract fun compile(): kotlin/String // io.github.yuroyami.kitecodec.dsl/FilterStep.compile|compile(){}[0]
+}
+
+sealed interface io.github.yuroyami.kitecodec.dsl/RateControl { // io.github.yuroyami.kitecodec.dsl/RateControl|null[0]
+    final class AverageBitrate : io.github.yuroyami.kitecodec.dsl/RateControl { // io.github.yuroyami.kitecodec.dsl/RateControl.AverageBitrate|null[0]
+        constructor <init>(kotlin/Long) // io.github.yuroyami.kitecodec.dsl/RateControl.AverageBitrate.<init>|<init>(kotlin.Long){}[0]
+
+        final val bitrateBps // io.github.yuroyami.kitecodec.dsl/RateControl.AverageBitrate.bitrateBps|{}bitrateBps[0]
+            final fun <get-bitrateBps>(): kotlin/Long // io.github.yuroyami.kitecodec.dsl/RateControl.AverageBitrate.bitrateBps.<get-bitrateBps>|<get-bitrateBps>(){}[0]
+
+        final fun component1(): kotlin/Long // io.github.yuroyami.kitecodec.dsl/RateControl.AverageBitrate.component1|component1(){}[0]
+        final fun copy(kotlin/Long = ...): io.github.yuroyami.kitecodec.dsl/RateControl.AverageBitrate // io.github.yuroyami.kitecodec.dsl/RateControl.AverageBitrate.copy|copy(kotlin.Long){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec.dsl/RateControl.AverageBitrate.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/RateControl.AverageBitrate.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.yuroyami.kitecodec.dsl/RateControl.AverageBitrate.toString|toString(){}[0]
+    }
+
+    final class ConstantBitrate : io.github.yuroyami.kitecodec.dsl/RateControl { // io.github.yuroyami.kitecodec.dsl/RateControl.ConstantBitrate|null[0]
+        constructor <init>(kotlin/Long) // io.github.yuroyami.kitecodec.dsl/RateControl.ConstantBitrate.<init>|<init>(kotlin.Long){}[0]
+
+        final val bitrateBps // io.github.yuroyami.kitecodec.dsl/RateControl.ConstantBitrate.bitrateBps|{}bitrateBps[0]
+            final fun <get-bitrateBps>(): kotlin/Long // io.github.yuroyami.kitecodec.dsl/RateControl.ConstantBitrate.bitrateBps.<get-bitrateBps>|<get-bitrateBps>(){}[0]
+
+        final fun component1(): kotlin/Long // io.github.yuroyami.kitecodec.dsl/RateControl.ConstantBitrate.component1|component1(){}[0]
+        final fun copy(kotlin/Long = ...): io.github.yuroyami.kitecodec.dsl/RateControl.ConstantBitrate // io.github.yuroyami.kitecodec.dsl/RateControl.ConstantBitrate.copy|copy(kotlin.Long){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec.dsl/RateControl.ConstantBitrate.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/RateControl.ConstantBitrate.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.yuroyami.kitecodec.dsl/RateControl.ConstantBitrate.toString|toString(){}[0]
+    }
+
+    final class ConstantQuality : io.github.yuroyami.kitecodec.dsl/RateControl { // io.github.yuroyami.kitecodec.dsl/RateControl.ConstantQuality|null[0]
+        constructor <init>(kotlin/Int) // io.github.yuroyami.kitecodec.dsl/RateControl.ConstantQuality.<init>|<init>(kotlin.Int){}[0]
+
+        final val crf // io.github.yuroyami.kitecodec.dsl/RateControl.ConstantQuality.crf|{}crf[0]
+            final fun <get-crf>(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/RateControl.ConstantQuality.crf.<get-crf>|<get-crf>(){}[0]
+
+        final fun component1(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/RateControl.ConstantQuality.component1|component1(){}[0]
+        final fun copy(kotlin/Int = ...): io.github.yuroyami.kitecodec.dsl/RateControl.ConstantQuality // io.github.yuroyami.kitecodec.dsl/RateControl.ConstantQuality.copy|copy(kotlin.Int){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec.dsl/RateControl.ConstantQuality.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/RateControl.ConstantQuality.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.yuroyami.kitecodec.dsl/RateControl.ConstantQuality.toString|toString(){}[0]
+    }
+}
+
+final class io.github.yuroyami.kitecodec.dsl/Aresample : io.github.yuroyami.kitecodec.dsl/FilterStep { // io.github.yuroyami.kitecodec.dsl/Aresample|null[0]
+    constructor <init>(kotlin/Int) // io.github.yuroyami.kitecodec.dsl/Aresample.<init>|<init>(kotlin.Int){}[0]
+
+    final val filterName // io.github.yuroyami.kitecodec.dsl/Aresample.filterName|{}filterName[0]
+        final fun <get-filterName>(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Aresample.filterName.<get-filterName>|<get-filterName>(){}[0]
+    final val sampleRate // io.github.yuroyami.kitecodec.dsl/Aresample.sampleRate|{}sampleRate[0]
+        final fun <get-sampleRate>(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/Aresample.sampleRate.<get-sampleRate>|<get-sampleRate>(){}[0]
+
+    final fun compile(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Aresample.compile|compile(){}[0]
+    final fun component1(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/Aresample.component1|component1(){}[0]
+    final fun copy(kotlin/Int = ...): io.github.yuroyami.kitecodec.dsl/Aresample // io.github.yuroyami.kitecodec.dsl/Aresample.copy|copy(kotlin.Int){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec.dsl/Aresample.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/Aresample.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Aresample.toString|toString(){}[0]
+}
+
+final class io.github.yuroyami.kitecodec.dsl/Atempo : io.github.yuroyami.kitecodec.dsl/FilterStep { // io.github.yuroyami.kitecodec.dsl/Atempo|null[0]
+    constructor <init>(kotlin/Double) // io.github.yuroyami.kitecodec.dsl/Atempo.<init>|<init>(kotlin.Double){}[0]
+
+    final val filterName // io.github.yuroyami.kitecodec.dsl/Atempo.filterName|{}filterName[0]
+        final fun <get-filterName>(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Atempo.filterName.<get-filterName>|<get-filterName>(){}[0]
+    final val tempo // io.github.yuroyami.kitecodec.dsl/Atempo.tempo|{}tempo[0]
+        final fun <get-tempo>(): kotlin/Double // io.github.yuroyami.kitecodec.dsl/Atempo.tempo.<get-tempo>|<get-tempo>(){}[0]
+
+    final fun compile(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Atempo.compile|compile(){}[0]
+    final fun component1(): kotlin/Double // io.github.yuroyami.kitecodec.dsl/Atempo.component1|component1(){}[0]
+    final fun copy(kotlin/Double = ...): io.github.yuroyami.kitecodec.dsl/Atempo // io.github.yuroyami.kitecodec.dsl/Atempo.copy|copy(kotlin.Double){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec.dsl/Atempo.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/Atempo.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Atempo.toString|toString(){}[0]
+}
+
+final class io.github.yuroyami.kitecodec.dsl/AudioEncoderTuning { // io.github.yuroyami.kitecodec.dsl/AudioEncoderTuning|null[0]
+    constructor <init>(kotlin/String? = ..., kotlin/Long? = ...) // io.github.yuroyami.kitecodec.dsl/AudioEncoderTuning.<init>|<init>(kotlin.String?;kotlin.Long?){}[0]
+
+    final val bitrateBps // io.github.yuroyami.kitecodec.dsl/AudioEncoderTuning.bitrateBps|{}bitrateBps[0]
+        final fun <get-bitrateBps>(): kotlin/Long? // io.github.yuroyami.kitecodec.dsl/AudioEncoderTuning.bitrateBps.<get-bitrateBps>|<get-bitrateBps>(){}[0]
+    final val profile // io.github.yuroyami.kitecodec.dsl/AudioEncoderTuning.profile|{}profile[0]
+        final fun <get-profile>(): kotlin/String? // io.github.yuroyami.kitecodec.dsl/AudioEncoderTuning.profile.<get-profile>|<get-profile>(){}[0]
+
+    final fun applyTo(io.github.yuroyami.kitecodec/AudioEncoderSpec): io.github.yuroyami.kitecodec/AudioEncoderSpec // io.github.yuroyami.kitecodec.dsl/AudioEncoderTuning.applyTo|applyTo(io.github.yuroyami.kitecodec.AudioEncoderSpec){}[0]
+    final fun component1(): kotlin/String? // io.github.yuroyami.kitecodec.dsl/AudioEncoderTuning.component1|component1(){}[0]
+    final fun component2(): kotlin/Long? // io.github.yuroyami.kitecodec.dsl/AudioEncoderTuning.component2|component2(){}[0]
+    final fun copy(kotlin/String? = ..., kotlin/Long? = ...): io.github.yuroyami.kitecodec.dsl/AudioEncoderTuning // io.github.yuroyami.kitecodec.dsl/AudioEncoderTuning.copy|copy(kotlin.String?;kotlin.Long?){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec.dsl/AudioEncoderTuning.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/AudioEncoderTuning.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec.dsl/AudioEncoderTuning.toString|toString(){}[0]
+}
+
+final class io.github.yuroyami.kitecodec.dsl/AudioFilterBuilder { // io.github.yuroyami.kitecodec.dsl/AudioFilterBuilder|null[0]
+    final fun aformat(kotlin/String? = ..., kotlin/Int? = ..., kotlin/String? = ...) // io.github.yuroyami.kitecodec.dsl/AudioFilterBuilder.aformat|aformat(kotlin.String?;kotlin.Int?;kotlin.String?){}[0]
+    final fun aresample(kotlin/Int) // io.github.yuroyami.kitecodec.dsl/AudioFilterBuilder.aresample|aresample(kotlin.Int){}[0]
+    final fun atempo(kotlin/Double) // io.github.yuroyami.kitecodec.dsl/AudioFilterBuilder.atempo|atempo(kotlin.Double){}[0]
+    final fun loudnorm(kotlin/Double = ..., kotlin/Double = ..., kotlin/Double = ...) // io.github.yuroyami.kitecodec.dsl/AudioFilterBuilder.loudnorm|loudnorm(kotlin.Double;kotlin.Double;kotlin.Double){}[0]
+    final fun pan(kotlin/String, kotlin/Array<out kotlin/String>...) // io.github.yuroyami.kitecodec.dsl/AudioFilterBuilder.pan|pan(kotlin.String;kotlin.Array<out|kotlin.String>...){}[0]
+    final fun raw(kotlin/String) // io.github.yuroyami.kitecodec.dsl/AudioFilterBuilder.raw|raw(kotlin.String){}[0]
+    final fun volume(kotlin/Double) // io.github.yuroyami.kitecodec.dsl/AudioFilterBuilder.volume|volume(kotlin.Double){}[0]
+}
+
+final class io.github.yuroyami.kitecodec.dsl/AudioFormat : io.github.yuroyami.kitecodec.dsl/FilterStep { // io.github.yuroyami.kitecodec.dsl/AudioFormat|null[0]
+    constructor <init>(kotlin/String? = ..., kotlin/Int? = ..., kotlin/String? = ...) // io.github.yuroyami.kitecodec.dsl/AudioFormat.<init>|<init>(kotlin.String?;kotlin.Int?;kotlin.String?){}[0]
+
+    final val channelLayout // io.github.yuroyami.kitecodec.dsl/AudioFormat.channelLayout|{}channelLayout[0]
+        final fun <get-channelLayout>(): kotlin/String? // io.github.yuroyami.kitecodec.dsl/AudioFormat.channelLayout.<get-channelLayout>|<get-channelLayout>(){}[0]
+    final val filterName // io.github.yuroyami.kitecodec.dsl/AudioFormat.filterName|{}filterName[0]
+        final fun <get-filterName>(): kotlin/String // io.github.yuroyami.kitecodec.dsl/AudioFormat.filterName.<get-filterName>|<get-filterName>(){}[0]
+    final val sampleFormat // io.github.yuroyami.kitecodec.dsl/AudioFormat.sampleFormat|{}sampleFormat[0]
+        final fun <get-sampleFormat>(): kotlin/String? // io.github.yuroyami.kitecodec.dsl/AudioFormat.sampleFormat.<get-sampleFormat>|<get-sampleFormat>(){}[0]
+    final val sampleRate // io.github.yuroyami.kitecodec.dsl/AudioFormat.sampleRate|{}sampleRate[0]
+        final fun <get-sampleRate>(): kotlin/Int? // io.github.yuroyami.kitecodec.dsl/AudioFormat.sampleRate.<get-sampleRate>|<get-sampleRate>(){}[0]
+
+    final fun compile(): kotlin/String // io.github.yuroyami.kitecodec.dsl/AudioFormat.compile|compile(){}[0]
+    final fun component1(): kotlin/String? // io.github.yuroyami.kitecodec.dsl/AudioFormat.component1|component1(){}[0]
+    final fun component2(): kotlin/Int? // io.github.yuroyami.kitecodec.dsl/AudioFormat.component2|component2(){}[0]
+    final fun component3(): kotlin/String? // io.github.yuroyami.kitecodec.dsl/AudioFormat.component3|component3(){}[0]
+    final fun copy(kotlin/String? = ..., kotlin/Int? = ..., kotlin/String? = ...): io.github.yuroyami.kitecodec.dsl/AudioFormat // io.github.yuroyami.kitecodec.dsl/AudioFormat.copy|copy(kotlin.String?;kotlin.Int?;kotlin.String?){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec.dsl/AudioFormat.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/AudioFormat.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec.dsl/AudioFormat.toString|toString(){}[0]
+}
+
+final class io.github.yuroyami.kitecodec.dsl/Crop : io.github.yuroyami.kitecodec.dsl/FilterStep { // io.github.yuroyami.kitecodec.dsl/Crop|null[0]
+    constructor <init>(kotlin/Int, kotlin/Int, kotlin/Int? = ..., kotlin/Int? = ...) // io.github.yuroyami.kitecodec.dsl/Crop.<init>|<init>(kotlin.Int;kotlin.Int;kotlin.Int?;kotlin.Int?){}[0]
+
+    final val filterName // io.github.yuroyami.kitecodec.dsl/Crop.filterName|{}filterName[0]
+        final fun <get-filterName>(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Crop.filterName.<get-filterName>|<get-filterName>(){}[0]
+    final val height // io.github.yuroyami.kitecodec.dsl/Crop.height|{}height[0]
+        final fun <get-height>(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/Crop.height.<get-height>|<get-height>(){}[0]
+    final val width // io.github.yuroyami.kitecodec.dsl/Crop.width|{}width[0]
+        final fun <get-width>(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/Crop.width.<get-width>|<get-width>(){}[0]
+    final val x // io.github.yuroyami.kitecodec.dsl/Crop.x|{}x[0]
+        final fun <get-x>(): kotlin/Int? // io.github.yuroyami.kitecodec.dsl/Crop.x.<get-x>|<get-x>(){}[0]
+    final val y // io.github.yuroyami.kitecodec.dsl/Crop.y|{}y[0]
+        final fun <get-y>(): kotlin/Int? // io.github.yuroyami.kitecodec.dsl/Crop.y.<get-y>|<get-y>(){}[0]
+
+    final fun compile(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Crop.compile|compile(){}[0]
+    final fun component1(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/Crop.component1|component1(){}[0]
+    final fun component2(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/Crop.component2|component2(){}[0]
+    final fun component3(): kotlin/Int? // io.github.yuroyami.kitecodec.dsl/Crop.component3|component3(){}[0]
+    final fun component4(): kotlin/Int? // io.github.yuroyami.kitecodec.dsl/Crop.component4|component4(){}[0]
+    final fun copy(kotlin/Int = ..., kotlin/Int = ..., kotlin/Int? = ..., kotlin/Int? = ...): io.github.yuroyami.kitecodec.dsl/Crop // io.github.yuroyami.kitecodec.dsl/Crop.copy|copy(kotlin.Int;kotlin.Int;kotlin.Int?;kotlin.Int?){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec.dsl/Crop.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/Crop.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Crop.toString|toString(){}[0]
+}
+
+final class io.github.yuroyami.kitecodec.dsl/DecoderOptions { // io.github.yuroyami.kitecodec.dsl/DecoderOptions|null[0]
+    constructor <init>(io.github.yuroyami.kitecodec.dsl/DecoderSkip? = ..., io.github.yuroyami.kitecodec.dsl/DecoderSkip? = ..., kotlin.collections/Set<io.github.yuroyami.kitecodec.dsl/ErrorDetection> = ..., io.github.yuroyami.kitecodec.dsl/DecoderThreadType? = ..., kotlin.collections/Map<kotlin/String, kotlin/String> = ...) // io.github.yuroyami.kitecodec.dsl/DecoderOptions.<init>|<init>(io.github.yuroyami.kitecodec.dsl.DecoderSkip?;io.github.yuroyami.kitecodec.dsl.DecoderSkip?;kotlin.collections.Set<io.github.yuroyami.kitecodec.dsl.ErrorDetection>;io.github.yuroyami.kitecodec.dsl.DecoderThreadType?;kotlin.collections.Map<kotlin.String,kotlin.String>){}[0]
+
+    final val errorDetection // io.github.yuroyami.kitecodec.dsl/DecoderOptions.errorDetection|{}errorDetection[0]
+        final fun <get-errorDetection>(): kotlin.collections/Set<io.github.yuroyami.kitecodec.dsl/ErrorDetection> // io.github.yuroyami.kitecodec.dsl/DecoderOptions.errorDetection.<get-errorDetection>|<get-errorDetection>(){}[0]
+    final val options // io.github.yuroyami.kitecodec.dsl/DecoderOptions.options|{}options[0]
+        final fun <get-options>(): kotlin.collections/Map<kotlin/String, kotlin/String> // io.github.yuroyami.kitecodec.dsl/DecoderOptions.options.<get-options>|<get-options>(){}[0]
+    final val skipFrame // io.github.yuroyami.kitecodec.dsl/DecoderOptions.skipFrame|{}skipFrame[0]
+        final fun <get-skipFrame>(): io.github.yuroyami.kitecodec.dsl/DecoderSkip? // io.github.yuroyami.kitecodec.dsl/DecoderOptions.skipFrame.<get-skipFrame>|<get-skipFrame>(){}[0]
+    final val skipLoopFilter // io.github.yuroyami.kitecodec.dsl/DecoderOptions.skipLoopFilter|{}skipLoopFilter[0]
+        final fun <get-skipLoopFilter>(): io.github.yuroyami.kitecodec.dsl/DecoderSkip? // io.github.yuroyami.kitecodec.dsl/DecoderOptions.skipLoopFilter.<get-skipLoopFilter>|<get-skipLoopFilter>(){}[0]
+    final val threadType // io.github.yuroyami.kitecodec.dsl/DecoderOptions.threadType|{}threadType[0]
+        final fun <get-threadType>(): io.github.yuroyami.kitecodec.dsl/DecoderThreadType? // io.github.yuroyami.kitecodec.dsl/DecoderOptions.threadType.<get-threadType>|<get-threadType>(){}[0]
+
+    final fun compile(): kotlin.collections/List<kotlin/Pair<kotlin/String, kotlin/String>> // io.github.yuroyami.kitecodec.dsl/DecoderOptions.compile|compile(){}[0]
+    final fun component1(): io.github.yuroyami.kitecodec.dsl/DecoderSkip? // io.github.yuroyami.kitecodec.dsl/DecoderOptions.component1|component1(){}[0]
+    final fun component2(): io.github.yuroyami.kitecodec.dsl/DecoderSkip? // io.github.yuroyami.kitecodec.dsl/DecoderOptions.component2|component2(){}[0]
+    final fun component3(): kotlin.collections/Set<io.github.yuroyami.kitecodec.dsl/ErrorDetection> // io.github.yuroyami.kitecodec.dsl/DecoderOptions.component3|component3(){}[0]
+    final fun component4(): io.github.yuroyami.kitecodec.dsl/DecoderThreadType? // io.github.yuroyami.kitecodec.dsl/DecoderOptions.component4|component4(){}[0]
+    final fun component5(): kotlin.collections/Map<kotlin/String, kotlin/String> // io.github.yuroyami.kitecodec.dsl/DecoderOptions.component5|component5(){}[0]
+    final fun copy(io.github.yuroyami.kitecodec.dsl/DecoderSkip? = ..., io.github.yuroyami.kitecodec.dsl/DecoderSkip? = ..., kotlin.collections/Set<io.github.yuroyami.kitecodec.dsl/ErrorDetection> = ..., io.github.yuroyami.kitecodec.dsl/DecoderThreadType? = ..., kotlin.collections/Map<kotlin/String, kotlin/String> = ...): io.github.yuroyami.kitecodec.dsl/DecoderOptions // io.github.yuroyami.kitecodec.dsl/DecoderOptions.copy|copy(io.github.yuroyami.kitecodec.dsl.DecoderSkip?;io.github.yuroyami.kitecodec.dsl.DecoderSkip?;kotlin.collections.Set<io.github.yuroyami.kitecodec.dsl.ErrorDetection>;io.github.yuroyami.kitecodec.dsl.DecoderThreadType?;kotlin.collections.Map<kotlin.String,kotlin.String>){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec.dsl/DecoderOptions.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/DecoderOptions.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec.dsl/DecoderOptions.toString|toString(){}[0]
+
+    final object Companion { // io.github.yuroyami.kitecodec.dsl/DecoderOptions.Companion|null[0]
+        final val Scrubbing // io.github.yuroyami.kitecodec.dsl/DecoderOptions.Companion.Scrubbing|{}Scrubbing[0]
+            final fun <get-Scrubbing>(): io.github.yuroyami.kitecodec.dsl/DecoderOptions // io.github.yuroyami.kitecodec.dsl/DecoderOptions.Companion.Scrubbing.<get-Scrubbing>|<get-Scrubbing>(){}[0]
+    }
+}
+
+final class io.github.yuroyami.kitecodec.dsl/Deinterlace : io.github.yuroyami.kitecodec.dsl/FilterStep { // io.github.yuroyami.kitecodec.dsl/Deinterlace|null[0]
+    constructor <init>(io.github.yuroyami.kitecodec.dsl/Deinterlacer = ...) // io.github.yuroyami.kitecodec.dsl/Deinterlace.<init>|<init>(io.github.yuroyami.kitecodec.dsl.Deinterlacer){}[0]
+
+    final val filterName // io.github.yuroyami.kitecodec.dsl/Deinterlace.filterName|{}filterName[0]
+        final fun <get-filterName>(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Deinterlace.filterName.<get-filterName>|<get-filterName>(){}[0]
+    final val with // io.github.yuroyami.kitecodec.dsl/Deinterlace.with|{}with[0]
+        final fun <get-with>(): io.github.yuroyami.kitecodec.dsl/Deinterlacer // io.github.yuroyami.kitecodec.dsl/Deinterlace.with.<get-with>|<get-with>(){}[0]
+
+    final fun compile(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Deinterlace.compile|compile(){}[0]
+    final fun component1(): io.github.yuroyami.kitecodec.dsl/Deinterlacer // io.github.yuroyami.kitecodec.dsl/Deinterlace.component1|component1(){}[0]
+    final fun copy(io.github.yuroyami.kitecodec.dsl/Deinterlacer = ...): io.github.yuroyami.kitecodec.dsl/Deinterlace // io.github.yuroyami.kitecodec.dsl/Deinterlace.copy|copy(io.github.yuroyami.kitecodec.dsl.Deinterlacer){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec.dsl/Deinterlace.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/Deinterlace.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Deinterlace.toString|toString(){}[0]
+}
+
+final class io.github.yuroyami.kitecodec.dsl/DrawBox : io.github.yuroyami.kitecodec.dsl/FilterStep { // io.github.yuroyami.kitecodec.dsl/DrawBox|null[0]
+    constructor <init>(kotlin/Int, kotlin/Int, kotlin/Int, kotlin/Int, kotlin/String = ..., kotlin/Int = ...) // io.github.yuroyami.kitecodec.dsl/DrawBox.<init>|<init>(kotlin.Int;kotlin.Int;kotlin.Int;kotlin.Int;kotlin.String;kotlin.Int){}[0]
+
+    final val color // io.github.yuroyami.kitecodec.dsl/DrawBox.color|{}color[0]
+        final fun <get-color>(): kotlin/String // io.github.yuroyami.kitecodec.dsl/DrawBox.color.<get-color>|<get-color>(){}[0]
+    final val filterName // io.github.yuroyami.kitecodec.dsl/DrawBox.filterName|{}filterName[0]
+        final fun <get-filterName>(): kotlin/String // io.github.yuroyami.kitecodec.dsl/DrawBox.filterName.<get-filterName>|<get-filterName>(){}[0]
+    final val height // io.github.yuroyami.kitecodec.dsl/DrawBox.height|{}height[0]
+        final fun <get-height>(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/DrawBox.height.<get-height>|<get-height>(){}[0]
+    final val thickness // io.github.yuroyami.kitecodec.dsl/DrawBox.thickness|{}thickness[0]
+        final fun <get-thickness>(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/DrawBox.thickness.<get-thickness>|<get-thickness>(){}[0]
+    final val width // io.github.yuroyami.kitecodec.dsl/DrawBox.width|{}width[0]
+        final fun <get-width>(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/DrawBox.width.<get-width>|<get-width>(){}[0]
+    final val x // io.github.yuroyami.kitecodec.dsl/DrawBox.x|{}x[0]
+        final fun <get-x>(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/DrawBox.x.<get-x>|<get-x>(){}[0]
+    final val y // io.github.yuroyami.kitecodec.dsl/DrawBox.y|{}y[0]
+        final fun <get-y>(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/DrawBox.y.<get-y>|<get-y>(){}[0]
+
+    final fun compile(): kotlin/String // io.github.yuroyami.kitecodec.dsl/DrawBox.compile|compile(){}[0]
+    final fun component1(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/DrawBox.component1|component1(){}[0]
+    final fun component2(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/DrawBox.component2|component2(){}[0]
+    final fun component3(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/DrawBox.component3|component3(){}[0]
+    final fun component4(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/DrawBox.component4|component4(){}[0]
+    final fun component5(): kotlin/String // io.github.yuroyami.kitecodec.dsl/DrawBox.component5|component5(){}[0]
+    final fun component6(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/DrawBox.component6|component6(){}[0]
+    final fun copy(kotlin/Int = ..., kotlin/Int = ..., kotlin/Int = ..., kotlin/Int = ..., kotlin/String = ..., kotlin/Int = ...): io.github.yuroyami.kitecodec.dsl/DrawBox // io.github.yuroyami.kitecodec.dsl/DrawBox.copy|copy(kotlin.Int;kotlin.Int;kotlin.Int;kotlin.Int;kotlin.String;kotlin.Int){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec.dsl/DrawBox.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/DrawBox.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec.dsl/DrawBox.toString|toString(){}[0]
+}
+
+final class io.github.yuroyami.kitecodec.dsl/Eq : io.github.yuroyami.kitecodec.dsl/FilterStep { // io.github.yuroyami.kitecodec.dsl/Eq|null[0]
+    constructor <init>(kotlin/Double? = ..., kotlin/Double? = ..., kotlin/Double? = ..., kotlin/Double? = ...) // io.github.yuroyami.kitecodec.dsl/Eq.<init>|<init>(kotlin.Double?;kotlin.Double?;kotlin.Double?;kotlin.Double?){}[0]
+
+    final val brightness // io.github.yuroyami.kitecodec.dsl/Eq.brightness|{}brightness[0]
+        final fun <get-brightness>(): kotlin/Double? // io.github.yuroyami.kitecodec.dsl/Eq.brightness.<get-brightness>|<get-brightness>(){}[0]
+    final val contrast // io.github.yuroyami.kitecodec.dsl/Eq.contrast|{}contrast[0]
+        final fun <get-contrast>(): kotlin/Double? // io.github.yuroyami.kitecodec.dsl/Eq.contrast.<get-contrast>|<get-contrast>(){}[0]
+    final val filterName // io.github.yuroyami.kitecodec.dsl/Eq.filterName|{}filterName[0]
+        final fun <get-filterName>(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Eq.filterName.<get-filterName>|<get-filterName>(){}[0]
+    final val gamma // io.github.yuroyami.kitecodec.dsl/Eq.gamma|{}gamma[0]
+        final fun <get-gamma>(): kotlin/Double? // io.github.yuroyami.kitecodec.dsl/Eq.gamma.<get-gamma>|<get-gamma>(){}[0]
+    final val saturation // io.github.yuroyami.kitecodec.dsl/Eq.saturation|{}saturation[0]
+        final fun <get-saturation>(): kotlin/Double? // io.github.yuroyami.kitecodec.dsl/Eq.saturation.<get-saturation>|<get-saturation>(){}[0]
+
+    final fun compile(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Eq.compile|compile(){}[0]
+    final fun component1(): kotlin/Double? // io.github.yuroyami.kitecodec.dsl/Eq.component1|component1(){}[0]
+    final fun component2(): kotlin/Double? // io.github.yuroyami.kitecodec.dsl/Eq.component2|component2(){}[0]
+    final fun component3(): kotlin/Double? // io.github.yuroyami.kitecodec.dsl/Eq.component3|component3(){}[0]
+    final fun component4(): kotlin/Double? // io.github.yuroyami.kitecodec.dsl/Eq.component4|component4(){}[0]
+    final fun copy(kotlin/Double? = ..., kotlin/Double? = ..., kotlin/Double? = ..., kotlin/Double? = ...): io.github.yuroyami.kitecodec.dsl/Eq // io.github.yuroyami.kitecodec.dsl/Eq.copy|copy(kotlin.Double?;kotlin.Double?;kotlin.Double?;kotlin.Double?){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec.dsl/Eq.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/Eq.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Eq.toString|toString(){}[0]
+}
+
+final class io.github.yuroyami.kitecodec.dsl/FilterChain { // io.github.yuroyami.kitecodec.dsl/FilterChain|null[0]
+    constructor <init>(kotlin.collections/List<io.github.yuroyami.kitecodec.dsl/FilterStep>) // io.github.yuroyami.kitecodec.dsl/FilterChain.<init>|<init>(kotlin.collections.List<io.github.yuroyami.kitecodec.dsl.FilterStep>){}[0]
+
+    final val steps // io.github.yuroyami.kitecodec.dsl/FilterChain.steps|{}steps[0]
+        final fun <get-steps>(): kotlin.collections/List<io.github.yuroyami.kitecodec.dsl/FilterStep> // io.github.yuroyami.kitecodec.dsl/FilterChain.steps.<get-steps>|<get-steps>(){}[0]
+
+    final fun compile(): kotlin/String // io.github.yuroyami.kitecodec.dsl/FilterChain.compile|compile(){}[0]
+    final fun component1(): kotlin.collections/List<io.github.yuroyami.kitecodec.dsl/FilterStep> // io.github.yuroyami.kitecodec.dsl/FilterChain.component1|component1(){}[0]
+    final fun copy(kotlin.collections/List<io.github.yuroyami.kitecodec.dsl/FilterStep> = ...): io.github.yuroyami.kitecodec.dsl/FilterChain // io.github.yuroyami.kitecodec.dsl/FilterChain.copy|copy(kotlin.collections.List<io.github.yuroyami.kitecodec.dsl.FilterStep>){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec.dsl/FilterChain.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/FilterChain.hashCode|hashCode(){}[0]
+    final fun requireAvailable() // io.github.yuroyami.kitecodec.dsl/FilterChain.requireAvailable|requireAvailable(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec.dsl/FilterChain.toString|toString(){}[0]
+}
+
+final class io.github.yuroyami.kitecodec.dsl/Format : io.github.yuroyami.kitecodec.dsl/FilterStep { // io.github.yuroyami.kitecodec.dsl/Format|null[0]
+    constructor <init>(io.github.yuroyami.kitecodec/PixelFormat) // io.github.yuroyami.kitecodec.dsl/Format.<init>|<init>(io.github.yuroyami.kitecodec.PixelFormat){}[0]
+
+    final val filterName // io.github.yuroyami.kitecodec.dsl/Format.filterName|{}filterName[0]
+        final fun <get-filterName>(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Format.filterName.<get-filterName>|<get-filterName>(){}[0]
+    final val format // io.github.yuroyami.kitecodec.dsl/Format.format|{}format[0]
+        final fun <get-format>(): io.github.yuroyami.kitecodec/PixelFormat // io.github.yuroyami.kitecodec.dsl/Format.format.<get-format>|<get-format>(){}[0]
+
+    final fun compile(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Format.compile|compile(){}[0]
+    final fun component1(): io.github.yuroyami.kitecodec/PixelFormat // io.github.yuroyami.kitecodec.dsl/Format.component1|component1(){}[0]
+    final fun copy(io.github.yuroyami.kitecodec/PixelFormat = ...): io.github.yuroyami.kitecodec.dsl/Format // io.github.yuroyami.kitecodec.dsl/Format.copy|copy(io.github.yuroyami.kitecodec.PixelFormat){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec.dsl/Format.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/Format.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Format.toString|toString(){}[0]
+}
+
+final class io.github.yuroyami.kitecodec.dsl/Fps : io.github.yuroyami.kitecodec.dsl/FilterStep { // io.github.yuroyami.kitecodec.dsl/Fps|null[0]
+    constructor <init>(io.github.yuroyami.kitecodec/Rational) // io.github.yuroyami.kitecodec.dsl/Fps.<init>|<init>(io.github.yuroyami.kitecodec.Rational){}[0]
+
+    final val filterName // io.github.yuroyami.kitecodec.dsl/Fps.filterName|{}filterName[0]
+        final fun <get-filterName>(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Fps.filterName.<get-filterName>|<get-filterName>(){}[0]
+    final val rate // io.github.yuroyami.kitecodec.dsl/Fps.rate|{}rate[0]
+        final fun <get-rate>(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec.dsl/Fps.rate.<get-rate>|<get-rate>(){}[0]
+
+    final fun compile(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Fps.compile|compile(){}[0]
+    final fun component1(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec.dsl/Fps.component1|component1(){}[0]
+    final fun copy(io.github.yuroyami.kitecodec/Rational = ...): io.github.yuroyami.kitecodec.dsl/Fps // io.github.yuroyami.kitecodec.dsl/Fps.copy|copy(io.github.yuroyami.kitecodec.Rational){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec.dsl/Fps.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/Fps.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Fps.toString|toString(){}[0]
+}
+
+final class io.github.yuroyami.kitecodec.dsl/Loudnorm : io.github.yuroyami.kitecodec.dsl/FilterStep { // io.github.yuroyami.kitecodec.dsl/Loudnorm|null[0]
+    constructor <init>(kotlin/Double = ..., kotlin/Double = ..., kotlin/Double = ...) // io.github.yuroyami.kitecodec.dsl/Loudnorm.<init>|<init>(kotlin.Double;kotlin.Double;kotlin.Double){}[0]
+
+    final val filterName // io.github.yuroyami.kitecodec.dsl/Loudnorm.filterName|{}filterName[0]
+        final fun <get-filterName>(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Loudnorm.filterName.<get-filterName>|<get-filterName>(){}[0]
+    final val integrated // io.github.yuroyami.kitecodec.dsl/Loudnorm.integrated|{}integrated[0]
+        final fun <get-integrated>(): kotlin/Double // io.github.yuroyami.kitecodec.dsl/Loudnorm.integrated.<get-integrated>|<get-integrated>(){}[0]
+    final val range // io.github.yuroyami.kitecodec.dsl/Loudnorm.range|{}range[0]
+        final fun <get-range>(): kotlin/Double // io.github.yuroyami.kitecodec.dsl/Loudnorm.range.<get-range>|<get-range>(){}[0]
+    final val truePeak // io.github.yuroyami.kitecodec.dsl/Loudnorm.truePeak|{}truePeak[0]
+        final fun <get-truePeak>(): kotlin/Double // io.github.yuroyami.kitecodec.dsl/Loudnorm.truePeak.<get-truePeak>|<get-truePeak>(){}[0]
+
+    final fun compile(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Loudnorm.compile|compile(){}[0]
+    final fun component1(): kotlin/Double // io.github.yuroyami.kitecodec.dsl/Loudnorm.component1|component1(){}[0]
+    final fun component2(): kotlin/Double // io.github.yuroyami.kitecodec.dsl/Loudnorm.component2|component2(){}[0]
+    final fun component3(): kotlin/Double // io.github.yuroyami.kitecodec.dsl/Loudnorm.component3|component3(){}[0]
+    final fun copy(kotlin/Double = ..., kotlin/Double = ..., kotlin/Double = ...): io.github.yuroyami.kitecodec.dsl/Loudnorm // io.github.yuroyami.kitecodec.dsl/Loudnorm.copy|copy(kotlin.Double;kotlin.Double;kotlin.Double){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec.dsl/Loudnorm.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/Loudnorm.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Loudnorm.toString|toString(){}[0]
+}
+
+final class io.github.yuroyami.kitecodec.dsl/Pad : io.github.yuroyami.kitecodec.dsl/FilterStep { // io.github.yuroyami.kitecodec.dsl/Pad|null[0]
+    constructor <init>(kotlin/Int, kotlin/Int, kotlin/Int = ..., kotlin/Int = ..., kotlin/String = ...) // io.github.yuroyami.kitecodec.dsl/Pad.<init>|<init>(kotlin.Int;kotlin.Int;kotlin.Int;kotlin.Int;kotlin.String){}[0]
+
+    final val color // io.github.yuroyami.kitecodec.dsl/Pad.color|{}color[0]
+        final fun <get-color>(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Pad.color.<get-color>|<get-color>(){}[0]
+    final val filterName // io.github.yuroyami.kitecodec.dsl/Pad.filterName|{}filterName[0]
+        final fun <get-filterName>(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Pad.filterName.<get-filterName>|<get-filterName>(){}[0]
+    final val height // io.github.yuroyami.kitecodec.dsl/Pad.height|{}height[0]
+        final fun <get-height>(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/Pad.height.<get-height>|<get-height>(){}[0]
+    final val width // io.github.yuroyami.kitecodec.dsl/Pad.width|{}width[0]
+        final fun <get-width>(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/Pad.width.<get-width>|<get-width>(){}[0]
+    final val x // io.github.yuroyami.kitecodec.dsl/Pad.x|{}x[0]
+        final fun <get-x>(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/Pad.x.<get-x>|<get-x>(){}[0]
+    final val y // io.github.yuroyami.kitecodec.dsl/Pad.y|{}y[0]
+        final fun <get-y>(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/Pad.y.<get-y>|<get-y>(){}[0]
+
+    final fun compile(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Pad.compile|compile(){}[0]
+    final fun component1(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/Pad.component1|component1(){}[0]
+    final fun component2(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/Pad.component2|component2(){}[0]
+    final fun component3(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/Pad.component3|component3(){}[0]
+    final fun component4(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/Pad.component4|component4(){}[0]
+    final fun component5(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Pad.component5|component5(){}[0]
+    final fun copy(kotlin/Int = ..., kotlin/Int = ..., kotlin/Int = ..., kotlin/Int = ..., kotlin/String = ...): io.github.yuroyami.kitecodec.dsl/Pad // io.github.yuroyami.kitecodec.dsl/Pad.copy|copy(kotlin.Int;kotlin.Int;kotlin.Int;kotlin.Int;kotlin.String){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec.dsl/Pad.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/Pad.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Pad.toString|toString(){}[0]
+}
+
+final class io.github.yuroyami.kitecodec.dsl/Pan : io.github.yuroyami.kitecodec.dsl/FilterStep { // io.github.yuroyami.kitecodec.dsl/Pan|null[0]
+    constructor <init>(kotlin/String, kotlin.collections/List<kotlin/String>) // io.github.yuroyami.kitecodec.dsl/Pan.<init>|<init>(kotlin.String;kotlin.collections.List<kotlin.String>){}[0]
+    constructor <init>(kotlin/String, kotlin/Array<out kotlin/String>...) // io.github.yuroyami.kitecodec.dsl/Pan.<init>|<init>(kotlin.String;kotlin.Array<out|kotlin.String>...){}[0]
+
+    final val filterName // io.github.yuroyami.kitecodec.dsl/Pan.filterName|{}filterName[0]
+        final fun <get-filterName>(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Pan.filterName.<get-filterName>|<get-filterName>(){}[0]
+    final val layout // io.github.yuroyami.kitecodec.dsl/Pan.layout|{}layout[0]
+        final fun <get-layout>(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Pan.layout.<get-layout>|<get-layout>(){}[0]
+    final val outputs // io.github.yuroyami.kitecodec.dsl/Pan.outputs|{}outputs[0]
+        final fun <get-outputs>(): kotlin.collections/List<kotlin/String> // io.github.yuroyami.kitecodec.dsl/Pan.outputs.<get-outputs>|<get-outputs>(){}[0]
+
+    final fun compile(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Pan.compile|compile(){}[0]
+    final fun component1(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Pan.component1|component1(){}[0]
+    final fun component2(): kotlin.collections/List<kotlin/String> // io.github.yuroyami.kitecodec.dsl/Pan.component2|component2(){}[0]
+    final fun copy(kotlin/String = ..., kotlin.collections/List<kotlin/String> = ...): io.github.yuroyami.kitecodec.dsl/Pan // io.github.yuroyami.kitecodec.dsl/Pan.copy|copy(kotlin.String;kotlin.collections.List<kotlin.String>){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec.dsl/Pan.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/Pan.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Pan.toString|toString(){}[0]
+}
+
+final class io.github.yuroyami.kitecodec.dsl/Raw : io.github.yuroyami.kitecodec.dsl/FilterStep { // io.github.yuroyami.kitecodec.dsl/Raw|null[0]
+    constructor <init>(kotlin/String) // io.github.yuroyami.kitecodec.dsl/Raw.<init>|<init>(kotlin.String){}[0]
+
+    final val filterName // io.github.yuroyami.kitecodec.dsl/Raw.filterName|{}filterName[0]
+        final fun <get-filterName>(): kotlin/String? // io.github.yuroyami.kitecodec.dsl/Raw.filterName.<get-filterName>|<get-filterName>(){}[0]
+    final val fragment // io.github.yuroyami.kitecodec.dsl/Raw.fragment|{}fragment[0]
+        final fun <get-fragment>(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Raw.fragment.<get-fragment>|<get-fragment>(){}[0]
+
+    final fun compile(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Raw.compile|compile(){}[0]
+    final fun component1(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Raw.component1|component1(){}[0]
+    final fun copy(kotlin/String = ...): io.github.yuroyami.kitecodec.dsl/Raw // io.github.yuroyami.kitecodec.dsl/Raw.copy|copy(kotlin.String){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec.dsl/Raw.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/Raw.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Raw.toString|toString(){}[0]
+}
+
+final class io.github.yuroyami.kitecodec.dsl/Scale : io.github.yuroyami.kitecodec.dsl/FilterStep { // io.github.yuroyami.kitecodec.dsl/Scale|null[0]
+    constructor <init>(kotlin/Int, kotlin/Int) // io.github.yuroyami.kitecodec.dsl/Scale.<init>|<init>(kotlin.Int;kotlin.Int){}[0]
+
+    final val filterName // io.github.yuroyami.kitecodec.dsl/Scale.filterName|{}filterName[0]
+        final fun <get-filterName>(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Scale.filterName.<get-filterName>|<get-filterName>(){}[0]
+    final val height // io.github.yuroyami.kitecodec.dsl/Scale.height|{}height[0]
+        final fun <get-height>(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/Scale.height.<get-height>|<get-height>(){}[0]
+    final val width // io.github.yuroyami.kitecodec.dsl/Scale.width|{}width[0]
+        final fun <get-width>(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/Scale.width.<get-width>|<get-width>(){}[0]
+
+    final fun compile(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Scale.compile|compile(){}[0]
+    final fun component1(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/Scale.component1|component1(){}[0]
+    final fun component2(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/Scale.component2|component2(){}[0]
+    final fun copy(kotlin/Int = ..., kotlin/Int = ...): io.github.yuroyami.kitecodec.dsl/Scale // io.github.yuroyami.kitecodec.dsl/Scale.copy|copy(kotlin.Int;kotlin.Int){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec.dsl/Scale.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/Scale.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Scale.toString|toString(){}[0]
+}
+
+final class io.github.yuroyami.kitecodec.dsl/Transpose : io.github.yuroyami.kitecodec.dsl/FilterStep { // io.github.yuroyami.kitecodec.dsl/Transpose|null[0]
+    constructor <init>(io.github.yuroyami.kitecodec.dsl/QuarterTurn) // io.github.yuroyami.kitecodec.dsl/Transpose.<init>|<init>(io.github.yuroyami.kitecodec.dsl.QuarterTurn){}[0]
+
+    final val filterName // io.github.yuroyami.kitecodec.dsl/Transpose.filterName|{}filterName[0]
+        final fun <get-filterName>(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Transpose.filterName.<get-filterName>|<get-filterName>(){}[0]
+    final val turn // io.github.yuroyami.kitecodec.dsl/Transpose.turn|{}turn[0]
+        final fun <get-turn>(): io.github.yuroyami.kitecodec.dsl/QuarterTurn // io.github.yuroyami.kitecodec.dsl/Transpose.turn.<get-turn>|<get-turn>(){}[0]
+
+    final fun compile(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Transpose.compile|compile(){}[0]
+    final fun component1(): io.github.yuroyami.kitecodec.dsl/QuarterTurn // io.github.yuroyami.kitecodec.dsl/Transpose.component1|component1(){}[0]
+    final fun copy(io.github.yuroyami.kitecodec.dsl/QuarterTurn = ...): io.github.yuroyami.kitecodec.dsl/Transpose // io.github.yuroyami.kitecodec.dsl/Transpose.copy|copy(io.github.yuroyami.kitecodec.dsl.QuarterTurn){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec.dsl/Transpose.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/Transpose.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Transpose.toString|toString(){}[0]
+}
+
+final class io.github.yuroyami.kitecodec.dsl/VideoEncoderTuning { // io.github.yuroyami.kitecodec.dsl/VideoEncoderTuning|null[0]
+    constructor <init>(io.github.yuroyami.kitecodec.dsl/EncoderPreset? = ..., kotlin/String? = ..., kotlin/String? = ..., io.github.yuroyami.kitecodec.dsl/RateControl? = ...) // io.github.yuroyami.kitecodec.dsl/VideoEncoderTuning.<init>|<init>(io.github.yuroyami.kitecodec.dsl.EncoderPreset?;kotlin.String?;kotlin.String?;io.github.yuroyami.kitecodec.dsl.RateControl?){}[0]
+
+    final val preset // io.github.yuroyami.kitecodec.dsl/VideoEncoderTuning.preset|{}preset[0]
+        final fun <get-preset>(): io.github.yuroyami.kitecodec.dsl/EncoderPreset? // io.github.yuroyami.kitecodec.dsl/VideoEncoderTuning.preset.<get-preset>|<get-preset>(){}[0]
+    final val profile // io.github.yuroyami.kitecodec.dsl/VideoEncoderTuning.profile|{}profile[0]
+        final fun <get-profile>(): kotlin/String? // io.github.yuroyami.kitecodec.dsl/VideoEncoderTuning.profile.<get-profile>|<get-profile>(){}[0]
+    final val rateControl // io.github.yuroyami.kitecodec.dsl/VideoEncoderTuning.rateControl|{}rateControl[0]
+        final fun <get-rateControl>(): io.github.yuroyami.kitecodec.dsl/RateControl? // io.github.yuroyami.kitecodec.dsl/VideoEncoderTuning.rateControl.<get-rateControl>|<get-rateControl>(){}[0]
+    final val tune // io.github.yuroyami.kitecodec.dsl/VideoEncoderTuning.tune|{}tune[0]
+        final fun <get-tune>(): kotlin/String? // io.github.yuroyami.kitecodec.dsl/VideoEncoderTuning.tune.<get-tune>|<get-tune>(){}[0]
+
+    final fun applyTo(io.github.yuroyami.kitecodec/VideoEncoderSpec): io.github.yuroyami.kitecodec/VideoEncoderSpec // io.github.yuroyami.kitecodec.dsl/VideoEncoderTuning.applyTo|applyTo(io.github.yuroyami.kitecodec.VideoEncoderSpec){}[0]
+    final fun compile(): kotlin.collections/Map<kotlin/String, kotlin/String> // io.github.yuroyami.kitecodec.dsl/VideoEncoderTuning.compile|compile(){}[0]
+    final fun component1(): io.github.yuroyami.kitecodec.dsl/EncoderPreset? // io.github.yuroyami.kitecodec.dsl/VideoEncoderTuning.component1|component1(){}[0]
+    final fun component2(): kotlin/String? // io.github.yuroyami.kitecodec.dsl/VideoEncoderTuning.component2|component2(){}[0]
+    final fun component3(): kotlin/String? // io.github.yuroyami.kitecodec.dsl/VideoEncoderTuning.component3|component3(){}[0]
+    final fun component4(): io.github.yuroyami.kitecodec.dsl/RateControl? // io.github.yuroyami.kitecodec.dsl/VideoEncoderTuning.component4|component4(){}[0]
+    final fun copy(io.github.yuroyami.kitecodec.dsl/EncoderPreset? = ..., kotlin/String? = ..., kotlin/String? = ..., io.github.yuroyami.kitecodec.dsl/RateControl? = ...): io.github.yuroyami.kitecodec.dsl/VideoEncoderTuning // io.github.yuroyami.kitecodec.dsl/VideoEncoderTuning.copy|copy(io.github.yuroyami.kitecodec.dsl.EncoderPreset?;kotlin.String?;kotlin.String?;io.github.yuroyami.kitecodec.dsl.RateControl?){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec.dsl/VideoEncoderTuning.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/VideoEncoderTuning.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec.dsl/VideoEncoderTuning.toString|toString(){}[0]
+}
+
+final class io.github.yuroyami.kitecodec.dsl/VideoFilterBuilder { // io.github.yuroyami.kitecodec.dsl/VideoFilterBuilder|null[0]
+    final fun crop(kotlin/Int, kotlin/Int, kotlin/Int? = ..., kotlin/Int? = ...) // io.github.yuroyami.kitecodec.dsl/VideoFilterBuilder.crop|crop(kotlin.Int;kotlin.Int;kotlin.Int?;kotlin.Int?){}[0]
+    final fun deinterlace(io.github.yuroyami.kitecodec.dsl/Deinterlacer = ...) // io.github.yuroyami.kitecodec.dsl/VideoFilterBuilder.deinterlace|deinterlace(io.github.yuroyami.kitecodec.dsl.Deinterlacer){}[0]
+    final fun drawBox(kotlin/Int, kotlin/Int, kotlin/Int, kotlin/Int, kotlin/String = ..., kotlin/Int = ...) // io.github.yuroyami.kitecodec.dsl/VideoFilterBuilder.drawBox|drawBox(kotlin.Int;kotlin.Int;kotlin.Int;kotlin.Int;kotlin.String;kotlin.Int){}[0]
+    final fun eq(kotlin/Double? = ..., kotlin/Double? = ..., kotlin/Double? = ..., kotlin/Double? = ...) // io.github.yuroyami.kitecodec.dsl/VideoFilterBuilder.eq|eq(kotlin.Double?;kotlin.Double?;kotlin.Double?;kotlin.Double?){}[0]
+    final fun format(io.github.yuroyami.kitecodec/PixelFormat) // io.github.yuroyami.kitecodec.dsl/VideoFilterBuilder.format|format(io.github.yuroyami.kitecodec.PixelFormat){}[0]
+    final fun fps(io.github.yuroyami.kitecodec/Rational) // io.github.yuroyami.kitecodec.dsl/VideoFilterBuilder.fps|fps(io.github.yuroyami.kitecodec.Rational){}[0]
+    final fun pad(kotlin/Int, kotlin/Int, kotlin/Int = ..., kotlin/Int = ..., kotlin/String = ...) // io.github.yuroyami.kitecodec.dsl/VideoFilterBuilder.pad|pad(kotlin.Int;kotlin.Int;kotlin.Int;kotlin.Int;kotlin.String){}[0]
+    final fun raw(kotlin/String) // io.github.yuroyami.kitecodec.dsl/VideoFilterBuilder.raw|raw(kotlin.String){}[0]
+    final fun scale(kotlin/Int, kotlin/Int) // io.github.yuroyami.kitecodec.dsl/VideoFilterBuilder.scale|scale(kotlin.Int;kotlin.Int){}[0]
+    final fun transpose(io.github.yuroyami.kitecodec.dsl/QuarterTurn) // io.github.yuroyami.kitecodec.dsl/VideoFilterBuilder.transpose|transpose(io.github.yuroyami.kitecodec.dsl.QuarterTurn){}[0]
+}
+
+final class io.github.yuroyami.kitecodec.dsl/Volume : io.github.yuroyami.kitecodec.dsl/FilterStep { // io.github.yuroyami.kitecodec.dsl/Volume|null[0]
+    constructor <init>(kotlin/Double) // io.github.yuroyami.kitecodec.dsl/Volume.<init>|<init>(kotlin.Double){}[0]
+
+    final val filterName // io.github.yuroyami.kitecodec.dsl/Volume.filterName|{}filterName[0]
+        final fun <get-filterName>(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Volume.filterName.<get-filterName>|<get-filterName>(){}[0]
+    final val gain // io.github.yuroyami.kitecodec.dsl/Volume.gain|{}gain[0]
+        final fun <get-gain>(): kotlin/Double // io.github.yuroyami.kitecodec.dsl/Volume.gain.<get-gain>|<get-gain>(){}[0]
+
+    final fun compile(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Volume.compile|compile(){}[0]
+    final fun component1(): kotlin/Double // io.github.yuroyami.kitecodec.dsl/Volume.component1|component1(){}[0]
+    final fun copy(kotlin/Double = ...): io.github.yuroyami.kitecodec.dsl/Volume // io.github.yuroyami.kitecodec.dsl/Volume.copy|copy(kotlin.Double){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec.dsl/Volume.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec.dsl/Volume.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec.dsl/Volume.toString|toString(){}[0]
 }
 
 final class io.github.yuroyami.kitecodec/AudioEncoder : kotlin/AutoCloseable { // io.github.yuroyami.kitecodec/AudioEncoder|null[0]
@@ -513,7 +1077,7 @@ final class io.github.yuroyami.kitecodec/MediaSource : kotlin/AutoCloseable { //
     final fun close() // io.github.yuroyami.kitecodec/MediaSource.close|close(){}[0]
     final fun decodeStreams(kotlin.collections/List<io.github.yuroyami.kitecodec/StreamInfo>): kotlinx.coroutines.flow/Flow<io.github.yuroyami.kitecodec/Frame> // io.github.yuroyami.kitecodec/MediaSource.decodeStreams|decodeStreams(kotlin.collections.List<io.github.yuroyami.kitecodec.StreamInfo>){}[0]
     final fun decodedFrames(io.github.yuroyami.kitecodec/StreamInfo): kotlinx.coroutines.flow/Flow<io.github.yuroyami.kitecodec/Frame> // io.github.yuroyami.kitecodec/MediaSource.decodedFrames|decodedFrames(io.github.yuroyami.kitecodec.StreamInfo){}[0]
-    final fun openDecoder(io.github.yuroyami.kitecodec/StreamInfo, kotlin/Int = ..., kotlin/Boolean = ..., io.github.yuroyami.kitecodec/CodecId? = ...): io.github.yuroyami.kitecodec/StreamDecoder // io.github.yuroyami.kitecodec/MediaSource.openDecoder|openDecoder(io.github.yuroyami.kitecodec.StreamInfo;kotlin.Int;kotlin.Boolean;io.github.yuroyami.kitecodec.CodecId?){}[0]
+    final fun openDecoder(io.github.yuroyami.kitecodec/StreamInfo, kotlin/Int = ..., kotlin/Boolean = ..., io.github.yuroyami.kitecodec/CodecId? = ..., io.github.yuroyami.kitecodec.dsl/DecoderOptions? = ...): io.github.yuroyami.kitecodec/StreamDecoder // io.github.yuroyami.kitecodec/MediaSource.openDecoder|openDecoder(io.github.yuroyami.kitecodec.StreamInfo;kotlin.Int;kotlin.Boolean;io.github.yuroyami.kitecodec.CodecId?;io.github.yuroyami.kitecodec.dsl.DecoderOptions?){}[0]
     final fun openPacketReader(kotlin.collections/List<io.github.yuroyami.kitecodec/StreamInfo>): io.github.yuroyami.kitecodec/PacketReader // io.github.yuroyami.kitecodec/MediaSource.openPacketReader|openPacketReader(kotlin.collections.List<io.github.yuroyami.kitecodec.StreamInfo>){}[0]
     final suspend fun extractFrame(kotlin/Long, io.github.yuroyami.kitecodec/StreamInfo? = ...): io.github.yuroyami.kitecodec/Frame // io.github.yuroyami.kitecodec/MediaSource.extractFrame|extractFrame(kotlin.Long;io.github.yuroyami.kitecodec.StreamInfo?){}[0]
     final suspend fun seekMicros(kotlin/Long) // io.github.yuroyami.kitecodec/MediaSource.seekMicros|seekMicros(kotlin.Long){}[0]
@@ -1081,3 +1645,6 @@ final val io.github.yuroyami.kitecodec/ptsMicros // io.github.yuroyami.kitecodec
     final fun (io.github.yuroyami.kitecodec/Frame).<get-ptsMicros>(): kotlin/Long? // io.github.yuroyami.kitecodec/ptsMicros.<get-ptsMicros>|<get-ptsMicros>@io.github.yuroyami.kitecodec.Frame(){}[0]
 
 final fun <#A: kotlin/Any?> (io.github.yuroyami.kitecodec/Frame).io.github.yuroyami.kitecodec/withPlanes(kotlin/Function3<kotlin.collections/List<kotlinx.cinterop/CPointer<kotlinx.cinterop/UByteVarOf<kotlin/UByte>>>, kotlin.collections/List<kotlin/Int>, kotlin.collections/List<kotlin/Int>, #A>): #A // io.github.yuroyami.kitecodec/withPlanes|withPlanes@io.github.yuroyami.kitecodec.Frame(kotlin.Function3<kotlin.collections.List<kotlinx.cinterop.CPointer<kotlinx.cinterop.UByteVarOf<kotlin.UByte>>>,kotlin.collections.List<kotlin.Int>,kotlin.collections.List<kotlin.Int>,0:0>){0§<kotlin.Any?>}[0]
+final fun io.github.yuroyami.kitecodec.dsl/audioFilters(kotlin/Function1<io.github.yuroyami.kitecodec.dsl/AudioFilterBuilder, kotlin/Unit>): io.github.yuroyami.kitecodec.dsl/FilterChain // io.github.yuroyami.kitecodec.dsl/audioFilters|audioFilters(kotlin.Function1<io.github.yuroyami.kitecodec.dsl.AudioFilterBuilder,kotlin.Unit>){}[0]
+final fun io.github.yuroyami.kitecodec.dsl/escapeFilterValue(kotlin/String): kotlin/String // io.github.yuroyami.kitecodec.dsl/escapeFilterValue|escapeFilterValue(kotlin.String){}[0]
+final fun io.github.yuroyami.kitecodec.dsl/videoFilters(kotlin/Function1<io.github.yuroyami.kitecodec.dsl/VideoFilterBuilder, kotlin/Unit>): io.github.yuroyami.kitecodec.dsl/FilterChain // io.github.yuroyami.kitecodec.dsl/videoFilters|videoFilters(kotlin.Function1<io.github.yuroyami.kitecodec.dsl.VideoFilterBuilder,kotlin.Unit>){}[0]

@@ -168,6 +168,7 @@ public actual class StreamDecoder internal constructor(
             threadCount: Int,
             lowDelay: Boolean,
             requestedDecoder: CodecId?,
+            options: io.github.yuroyami.kitecodec.dsl.DecoderOptions? = null,
         ): StreamDecoder {
             val streamToken = Internals.fmtStream(formatToken, stream.index)
             var parameters = 0L
@@ -197,6 +198,11 @@ public actual class StreamDecoder internal constructor(
                     check0(Internals.codecCtxFromPar(context, parameters), "avcodec_parameters_to_context")
                     Internals.codecCtxSetThreads(context, threadCount, stream.type == MediaType.Video)
                     Internals.codecCtxSetLowDelay(context, lowDelay)
+                    // KD-2 (KPKMP 17.10): typed options through the existing av_opt_set funnel,
+                    // between context creation and open, exactly where FFmpeg wants them.
+                    options?.compile()?.forEach { (key, value) ->
+                        check0(Internals.codecCtxSetOpt(context, key, value), "av_opt_set ('${'$'}key')")
+                    }
                     check0(Internals.codecCtxOpen(context, codec), "avcodec_open2")
                     return StreamDecoder(stream, context)
                 } catch (error: Throwable) {
