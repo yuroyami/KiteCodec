@@ -34,5 +34,6 @@
 #define kc_ffmpeg_library_name KC_PASTE(KC_CASE, _library_name)
 #define kc_verdict_name KC_PASTE(KC_CASE, _verdict_name)
 #define kc_ffmpeg_configuration KC_PASTE(KC_CASE, _configuration)
+#define kc_jvm_attach KC_PASTE(KC_CASE, _jvm_attach)
 
 #endif /* KC_RENAME_H */

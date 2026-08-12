@@ -34,3 +34,15 @@ KC_API void      ffkmp_packet_rescale_ts(AVPacket *p, int sn, int sd, int dn, in
     AVRational d = { dn, dd ? dd : 1 };
     av_packet_rescale_ts(p, s, d);
 }
+
+KC_API AVPacket* ffkmp_packet_clone(const AVPacket *packet) {
+    AVPacket *out;
+    if (!packet) return NULL;
+    out = av_packet_alloc();
+    if (!out) return NULL;
+    if (av_packet_ref(out, packet) < 0) {
+        av_packet_free(&out);
+        return NULL;
+    }
+    return out;
+}

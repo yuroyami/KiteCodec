@@ -472,3 +472,103 @@ mavenPublishing {
         ),
     )
 }
+
+/*
+ * ── The JNI adapter link tasks (S1.c.1 step 6) ──────────────────────────────────────────────
+ *
+ * Scaffolded 2026-08-12 by the planner from a hand-proved link on this machine; see KPKMP.md
+ * 17.4.3's scaffold layer. Three arms:
+ *
+ *   linkKiteCodecJniMacosArm64   test-only dylib jvmTest loads via the kitecodec.jni.path
+ *                                system property. Links the vendored macOS LGPL FFmpeg plus the
+ *                                Homebrew SvtAv1Enc/graphite2 the vendored archives reference,
+ *                                exactly as the hand proof measured, and exports only JNI_OnLoad
+ *                                through -exported_symbols_list (Mach-O has no version script).
+ *   linkKiteCodecJniAndroidArm64 / linkKiteCodecJniAndroidX64
+ *                                the AAR's jniLibs inputs. NDK r29 clang, 16 KiB page flags and
+ *                                the ELF version script per the S1.c.1 recipe. They require the
+ *                                Android FFmpeg trees the producer tasks vendor first.
+ */
+run {
+    val jniDir = rootDir.resolve("native/kitecodec-jni")
+    val opaqueInclude = rootDir.resolve("native/kitecodec-c/include")
+    val javaHome = javaToolchains
+        .launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) }
+        .map { it.metadata.installationPath.asFile }
+
+    tasks.register<io.github.yuroyami.kitecodec.buildtools.LinkKiteCodecJniTask>(
+        "linkKiteCodecJniMacosArm64",
+    ) {
+        group = "kitecodec"
+        description = "Links the test-only macOS JNI dylib against the vendored LGPL FFmpeg"
+        jniSources.from(fileTree(jniDir) { include("*.c", "*.h", "methods.def", "exports.map") })
+        opaqueIncludeDir.set(opaqueInclude)
+        helperArchive.from(
+            tasks.named("compileKiteCodecCForMacosArm64")
+                .map { it.outputs.files.singleFile.resolve("libkitecodec.a") },
+        )
+        ffmpegLibDir.set(rootDir.resolve("native-libs/lgpl/macos-arm64/lib"))
+        compiler.set("/usr/bin/clang")
+        extraIncludeDirs.set(
+            javaHome.map { listOf("${it.absolutePath}/include", "${it.absolutePath}/include/darwin") },
+        )
+        libSearchDirs.set(listOf("/opt/homebrew/lib"))
+        linkFlags.set(
+            listOf(
+                "-lavformat", "-lavcodec", "-lavfilter", "-lavutil", "-lswscale", "-lswresample",
+                "-lSvtAv1Enc", "-lvpx", "-laom", "-lopus", "-lmp3lame",
+                "-lwebpmux", "-lwebp", "-lsharpyuv",
+                "-lass", "-lharfbuzz", "-lgraphite2", "-lfreetype", "-lfribidi", "-lpng16",
+                "-lz", "-lbz2", "-llzma", "-liconv", "-lc++",
+                "-framework", "CoreGraphics", "-framework", "CoreText",
+                "-framework", "CoreFoundation", "-framework", "CoreMedia",
+                "-framework", "CoreVideo", "-framework", "VideoToolbox",
+                "-framework", "AudioToolbox",
+                "-Wl,-exported_symbols_list,${jniDir.resolve("exports.macos").absolutePath}",
+            ),
+        )
+        outputLibrary.set(layout.buildDirectory.file("kitecodec-jni/macos-arm64/libkitecodec_jni.dylib"))
+    }
+
+    // The two Android arms, exactly the S1.c.1 step 6 recipe. ANDROID_NDK_HOME is read at
+    // configuration from the environment the S1.c commands pin; a missing NDK or FFmpeg tree
+    // fails the arm at execution with the producer task named in the message.
+    data class JniArm(val taskName: String, val ffmpegDir: String, val cTarget: String, val ndkTriple: String, val abiDir: String)
+    val ndkHome = providers.environmentVariable("ANDROID_NDK_HOME")
+        .orElse("/Users/macbook/WORKSTATION/AndroidSDK/ndk/29.0.14206865")
+    listOf(
+        JniArm("linkKiteCodecJniAndroidArm64", "android-arm64", "AndroidArm64", "aarch64-linux-android24", "arm64-v8a"),
+        JniArm("linkKiteCodecJniAndroidX64", "android-x64", "AndroidX64", "x86_64-linux-android24", "x86_64"),
+    ).forEach { arm ->
+        tasks.register<io.github.yuroyami.kitecodec.buildtools.LinkKiteCodecJniTask>(arm.taskName) {
+            group = "kitecodec"
+            description = "Links libkitecodec_jni.so for ${arm.abiDir}"
+            jniSources.from(fileTree(jniDir) { include("*.c", "*.h", "methods.def", "exports.map") })
+            opaqueIncludeDir.set(opaqueInclude)
+            helperArchive.from(
+                tasks.named("compileKiteCodecCFor${arm.cTarget}")
+                    .map { it.outputs.files.singleFile.resolve("libkitecodec.a") },
+            )
+            ffmpegLibDir.set(rootDir.resolve("native-libs/lgpl/${arm.ffmpegDir}/lib"))
+            compiler.set(
+                ndkHome.map { "$it/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang" }.get(),
+            )
+            extraIncludeDirs.set(emptyList())
+            libSearchDirs.set(emptyList())
+            linkFlags.set(
+                listOf(
+                    "--target=${arm.ndkTriple}",
+                    "-lavformat", "-lavcodec", "-lavfilter", "-lavutil", "-lswscale", "-lswresample",
+                    "-lmediandk", "-landroid", "-llog", "-lz", "-ldl", "-lm",
+                    "-Wl,-z,defs", "-Wl,-z,noexecstack", "-Wl,-z,relro", "-Wl,-z,now",
+                    "-Wl,--gc-sections", "-Wl,--exclude-libs,ALL",
+                    "-Wl,-z,max-page-size=16384", "-Wl,-z,common-page-size=16384",
+                    "-Wl,--version-script=${jniDir.resolve("exports.map").absolutePath}",
+                ),
+            )
+            outputLibrary.set(
+                layout.buildDirectory.file("kitecodec-jni/${arm.ffmpegDir}/${arm.abiDir}/libkitecodec_jni.so"),
+            )
+        }
+    }
+}

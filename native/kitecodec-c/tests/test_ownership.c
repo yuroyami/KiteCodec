@@ -439,6 +439,54 @@ static void case_packet_move_ref_transfers_payload(int measure)
     ffkmp_packet_free(src);
 }
 
+/* S1.c.1. The clone the JVM bridge hands across the boundary. Metadata equality, shared payload
+ * (the O(1) property), and independent close in BOTH orders, because the bridge cannot promise
+ * which side dies first. */
+static void case_packet_clone(int measure)
+{
+    AVPacket *src = filled_packet(96);
+    kc_alloc_counts before;
+    AVPacket *clone;
+    ffkmp_packet_set_pts(src, 7001);
+    ffkmp_packet_set_dts(src, 6999);
+    ffkmp_packet_set_stream_index(src, 3);
+    kc_alloc_snapshot(&before);
+    clone = ffkmp_packet_clone(src);
+    KC_NOT_NULL(clone);
+    KC_EQ_PTR(ffkmp_packet_data(clone), ffkmp_packet_data(src));
+    KC_EQ_INT(ffkmp_packet_size(clone), 96);
+    KC_EQ_I64(ffkmp_packet_pts(clone), 7001);
+    KC_EQ_I64(ffkmp_packet_dts(clone), 6999);
+    KC_EQ_INT(ffkmp_packet_stream_index(clone), 3);
+    OWN_LIVE_POSITIVE(measure, &before, "clone");
+    ffkmp_packet_free(clone);
+    OWN_LIVE_EXACTLY(measure, &before, 0, "net_clone_first");
+    ffkmp_packet_free(src);
+}
+
+static void case_packet_clone_source_closes_first(int measure)
+{
+    AVPacket *src = filled_packet(64);
+    AVPacket *clone = ffkmp_packet_clone(src);
+    kc_alloc_counts before;
+    (void)measure;
+    KC_NOT_NULL(clone);
+    kc_alloc_snapshot(&before);
+    ffkmp_packet_free(src);
+    /* The payload survives the source: the clone still reads its own reference. */
+    KC_EQ_INT(ffkmp_packet_size(clone), 64);
+    KC_NOT_NULL(ffkmp_packet_data(clone));
+    ffkmp_packet_free(clone);
+}
+
+static void case_packet_clone_refuses_null(int measure)
+{
+    kc_alloc_counts before;
+    kc_alloc_snapshot(&before);
+    KC_EQ_PTR(ffkmp_packet_clone(NULL), NULL);
+    OWN_LIVE_EXACTLY(measure, &before, 0, "refusal");
+}
+
 static void case_codecctx_alloc_free(int measure)
 {
     const AVCodec *dec = ffkmp_find_decoder_by_id(AV_CODEC_ID_PCM_S16LE);
@@ -1073,6 +1121,9 @@ static const own_case cases[] = {
     { "packet_alloc then packet_free",                    case_packet_alloc_free },
     { "packet_unref releases the payload only",           case_packet_unref_releases_payload },
     { "packet_move_ref transfers the payload",            case_packet_move_ref_transfers_payload },
+    { "packet_clone shares payload and closes independently", case_packet_clone },
+    { "packet_clone survives its source closing first",   case_packet_clone_source_closes_first },
+    { "packet_clone refuses NULL",                        case_packet_clone_refuses_null },
     { "codecctx_alloc then codecctx_free",                case_codecctx_alloc_free },
     { "codecctx_open then codecctx_free",                 case_codecctx_open_then_free },
     { "codecctx_set_audio over an existing layout",       case_codecctx_set_audio_twice },

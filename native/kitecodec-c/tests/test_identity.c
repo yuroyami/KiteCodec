@@ -371,5 +371,20 @@ int main(void)
     kc_detail("still rejecting, still not marked bypassed");
 
     KC_EQ_INT(unsetenv(KC_BYPASS_ENV), 0);
+
+    /* S1.c.1. kc_jvm_attach on a host build: NULL is a bad argument everywhere, and any non-NULL
+     * VM is unsupported because this is not an Android build. The sentinel is a stack address;
+     * the host arm must refuse before ever dereferencing it, which is exactly what makes this
+     * safe to assert. */
+    kc_case("kc_jvm_attach refuses NULL with KC_JVM_BAD_ARGUMENT");
+    KC_EQ_INT(kc_jvm_attach(NULL), KC_JVM_BAD_ARGUMENT);
+
+    kc_case("kc_jvm_attach on a non-Android build is KC_JVM_UNSUPPORTED and touches nothing");
+    {
+        int sentinel = 0;
+        KC_EQ_INT(kc_jvm_attach(&sentinel), KC_JVM_UNSUPPORTED);
+        KC_EQ_INT(sentinel, 0);
+    }
+
     return kc_suite_end();
 }

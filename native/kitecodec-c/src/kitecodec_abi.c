@@ -339,3 +339,21 @@ KC_API const char *kc_ffmpeg_configuration(void)
     configuration = avcodec_configuration();
     return configuration != NULL ? configuration : "";
 }
+
+/* S1.c.1. The JavaVM handoff for the JNI bridge. The Android arm includes libavcodec/jni.h only
+ * inside this guard, so a host FFmpeg built without --enable-jni still links this archive. */
+#ifdef __ANDROID__
+#include <libavcodec/jni.h>
+#endif
+
+KC_API int kc_jvm_attach(void *java_vm)
+{
+    if (java_vm == NULL) return KC_JVM_BAD_ARGUMENT;
+#ifdef __ANDROID__
+    pthread_once(&kc_gate_once, kc_run_gate);
+    if (av_jni_set_java_vm(java_vm, NULL) < 0) return KC_JVM_FFMPEG_REFUSED;
+    return KC_JVM_OK;
+#else
+    return KC_JVM_UNSUPPORTED;
+#endif
+}

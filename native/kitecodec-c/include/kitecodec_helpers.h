@@ -152,6 +152,15 @@ KC_API void      ffkmp_packet_set_pts(kc_packet *p, int64_t v);
 KC_API void      ffkmp_packet_set_dts(kc_packet *p, int64_t v);
 KC_API void      ffkmp_packet_rescale_ts(kc_packet *p, int sn, int sd, int dn, int dd);
 
+/* Ownership. Returns a new kc_packet the caller owns, carrying one more reference to the same
+ * compressed payload as the input (av_packet_ref), so it is O(1) over the payload size. The two
+ * packets close independently, in either order, each with ffkmp_packet_free. A NULL input is
+ * refused with NULL. Allocation or ref failure frees everything this call created and returns
+ * NULL. S1.c.1 adds this for the retained-GOP fallback and Packet.copy(); the typed outcome model
+ * for packets remains later work, and this wrapper exists because the JVM bridge needs an owned
+ * clone it can hand across the boundary. */
+KC_API kc_packet* ffkmp_packet_clone(const kc_packet *packet);
+
 /* kc_codec_par */
 KC_API int     ffkmp_codecpar_codec_type(kc_codec_par *p);
 KC_API int     ffkmp_media_type_video(void);

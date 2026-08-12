@@ -387,7 +387,7 @@ fi
 # Comments and preprocessor lines are discarded. Declarations may span lines, and a semicolon ends
 # a record only at brace depth zero, so enum fields and the report fields remain inside their one
 # complete record. Whitespace is normalized, records are C-locale sorted WITHOUT deduplication, and
-# the exact installed scope is 189 records.
+# the exact installed scope is 192 records.
 #
 # THE MOVE (also in KPKMP.md section 9's ratchet move table): change a public declaration
 # deliberately, run
@@ -512,8 +512,8 @@ ACTUAL_SIGNATURE_COUNT="$(wc -l < "$WORK/actual_signatures.txt" | tr -d ' ')"
 
 if [ "$WRITE_SIGNATURE_BASELINE" = 1 ]; then
     echo "7. normalized public declaration baseline"
-    if [ "$ACTUAL_SIGNATURE_COUNT" -ne 189 ]; then
-        fail "refusing to rewrite $SIGNATURE_BASELINE_FILE: expected 189 records, found $ACTUAL_SIGNATURE_COUNT"
+    if [ "$ACTUAL_SIGNATURE_COUNT" -ne 192 ]; then
+        fail "refusing to rewrite $SIGNATURE_BASELINE_FILE: expected 192 records, found $ACTUAL_SIGNATURE_COUNT"
     else
         {
             echo "# The normalized public C declaration baseline of KiteCodec (S1.a.8)."
@@ -521,7 +521,7 @@ if [ "$WRITE_SIGNATURE_BASELINE" = 1 ]; then
             echo "# Exact scope: 169 helper KC_API prototypes, eleven opaque handle typedefs, six"
             echo "# ABI KC_API prototypes, two ABI enum definitions and the full kc_ffmpeg_report"
             echo "# typedef. Comments and preprocessor lines are absent; whitespace is normalized;"
-            echo "# records are sorted without deduplication. There must be exactly 189 records."
+            echo "# records are sorted without deduplication. There must be exactly 192 records."
             echo "#"
             echo "# THE MOVE (also in KPKMP.md section 9's ratchet move table): change the public"
             echo "# declaration deliberately, run ./scripts/symbol-audit.sh"
@@ -529,15 +529,15 @@ if [ "$WRITE_SIGNATURE_BASELINE" = 1 ]; then
             echo "# the Execution log entry. --write-baseline is separate and changes export names."
             cat "$WORK/actual_signatures.txt"
         } > "$SIGNATURE_BASELINE_FILE"
-        echo "  baseline REWRITTEN at $SIGNATURE_BASELINE_FILE (189 records)"
+        echo "  baseline REWRITTEN at $SIGNATURE_BASELINE_FILE (192 records)"
         echo "  commit it with the declaration change it records and log every changed record"
     fi
     echo
 else
     echo "7. public declaration shapes equal the committed signature baseline"
-    echo "  selected $ACTUAL_SIGNATURE_COUNT normalized record(s); expected 189"
-    if [ "$ACTUAL_SIGNATURE_COUNT" -ne 189 ]; then
-        fail "public declaration selection changed scope: expected 189 records, found $ACTUAL_SIGNATURE_COUNT"
+    echo "  selected $ACTUAL_SIGNATURE_COUNT normalized record(s); expected 192"
+    if [ "$ACTUAL_SIGNATURE_COUNT" -ne 192 ]; then
+        fail "public declaration selection changed scope: expected 192 records, found $ACTUAL_SIGNATURE_COUNT"
     fi
     if [ ! -f "$SIGNATURE_BASELINE_FILE" ]; then
         fail "$SIGNATURE_BASELINE_FILE does not exist; create it with: $0 --write-signature-baseline"
@@ -551,8 +551,8 @@ else
         comm -13 "$WORK/baseline_signatures.txt" "$WORK/actual_signatures.txt" \
             > "$WORK/signatures_extra.txt"
         echo "  baseline lists $BASELINE_SIGNATURE_COUNT record(s)"
-        if [ "$BASELINE_SIGNATURE_COUNT" -ne 189 ]; then
-            fail "signature baseline scope is not 189 records"
+        if [ "$BASELINE_SIGNATURE_COUNT" -ne 192 ]; then
+            fail "signature baseline scope is not 192 records"
         fi
         if [ -s "$WORK/signatures_missing.txt" ]; then
             fail "in the signature baseline but not in the headers (removed or changed):"
@@ -564,7 +564,7 @@ else
             echo "        Deliberate? Rerun with --write-signature-baseline in the same commit."
         fi
         [ -s "$WORK/signatures_missing.txt" ] || [ -s "$WORK/signatures_extra.txt" ] || \
-            echo "  ok: all 189 records are equal"
+            echo "  ok: all 192 records are equal"
     fi
     echo
 fi

@@ -42,7 +42,7 @@
 /* The version of THIS C surface, not of FFmpeg. Major changes when a declaration in its public headers
  * changes shape; minor when something is added compatibly. Read at runtime by kc_abi_version(). */
 #define KITECODEC_C_ABI_MAJOR 2
-#define KITECODEC_C_ABI_MINOR 0
+#define KITECODEC_C_ABI_MINOR 1
 
 /* The six libraries the gate covers, and their fixed order inside the report's arrays. Every array
  * in kc_ffmpeg_report is indexed by these, and kc_ffmpeg_library_name() names them. */
@@ -220,6 +220,26 @@ KC_API const char *kc_verdict_name(int verdict);
  * asking what FFmpeg it has is asking an identity question. Runs kc_init() first. The returned
  * pointer is into libavcodec's own static storage and lives for the life of the process. */
 KC_API const char *kc_ffmpeg_configuration(void);
+
+/* The outcomes of kc_jvm_attach. S1.c.1 adds this pair so a JVM consumer (the JNI bridge) can hand
+ * FFmpeg the JavaVM it needs for its own MediaCodec JNI calls. Kept beside the identity surface
+ * because attaching a VM is a process-identity act, not a media operation. */
+enum kc_jvm_status {
+    KC_JVM_OK = 0,
+    KC_JVM_BAD_ARGUMENT = -1,
+    KC_JVM_UNSUPPORTED = -2,
+    KC_JVM_FFMPEG_REFUSED = -3
+};
+
+/* Hands the JavaVM to FFmpeg on Android and refuses meaningfully everywhere else.
+ *
+ * A NULL argument returns KC_JVM_BAD_ARGUMENT on every platform. On an Android build this runs the
+ * identity gate first, then av_jni_set_java_vm(java_vm, NULL) inside this archive, and returns
+ * KC_JVM_OK on success or KC_JVM_FFMPEG_REFUSED when FFmpeg rejects the VM. On every non-Android
+ * build it returns KC_JVM_UNSUPPORTED without referencing the FFmpeg JNI symbol at all, so the
+ * archive keeps linking on hosts whose FFmpeg was built without --enable-jni. The caller may invoke
+ * it more than once with the same VM; FFmpeg treats a repeated identical VM as a no-op. */
+KC_API int kc_jvm_attach(void *java_vm);
 
 #ifdef __cplusplus
 }

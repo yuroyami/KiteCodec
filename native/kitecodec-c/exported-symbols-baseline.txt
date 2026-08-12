@@ -142,6 +142,7 @@ ffkmp_media_type_subtitle
 ffkmp_media_type_video
 ffkmp_oformat_global_header
 ffkmp_packet_alloc
+ffkmp_packet_clone
 ffkmp_packet_data
 ffkmp_packet_dts
 ffkmp_packet_duration
@@ -182,4 +183,5 @@ kc_ffmpeg_configuration
 kc_ffmpeg_library_name
 kc_ffmpeg_report_get
 kc_init
+kc_jvm_attach
 kc_verdict_name

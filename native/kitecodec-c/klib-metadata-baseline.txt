@@ -163,6 +163,12 @@ library {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public typealias kc_verdict = kotlin/UInt /* = kotlin/UInt */
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public typealias kc_jvm_statusVar = kotlinx/cinterop/IntVarOf<ffmpeg/kc_jvm_status^> /* = kotlinx/cinterop/IntVarOf<kotlin/Int /* = ffmpeg/kc_jvm_status^ */> */
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public typealias kc_jvm_status = kotlin/Int /* = kotlin/Int */
     }
   }
 
@@ -386,6 +392,10 @@ library {
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_packet_rescale_ts")
       @kotlinx/cinterop/ExperimentalForeignApi
       public final external fun ffkmp_packet_rescale_ts(p: kotlinx/cinterop/CValuesRef<cnames/structs/AVPacket /* = ffmpeg/kc_packet^ */>?, sn: kotlin/Int, sd: kotlin/Int, dn: kotlin/Int, dd: kotlin/Int): kotlin/Unit
+
+      @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_packet_clone")
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final external fun ffkmp_packet_clone(packet: kotlinx/cinterop/CValuesRef<cnames/structs/AVPacket /* = ffmpeg/kc_packet^ */>?): kotlinx/cinterop/CPointer<cnames/structs/AVPacket /* = ffmpeg/kc_packet^ */>?
 
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_codecpar_codec_type")
       @kotlinx/cinterop/ExperimentalForeignApi
@@ -678,10 +688,6 @@ library {
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_stream_set_time_base")
       @kotlinx/cinterop/ExperimentalForeignApi
       public final external fun ffkmp_stream_set_time_base(s: kotlinx/cinterop/CValuesRef<cnames/structs/AVStream /* = ffmpeg/kc_stream^ */>?, n: kotlin/Int, d: kotlin/Int): kotlin/Unit
-
-      @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_filter_exists")
-      @kotlinx/cinterop/ExperimentalForeignApi
-      public final external fun ffkmp_filter_exists(@kotlinx/cinterop/internal/CCall.CString name: kotlin/String?): kotlin/Int
     }
   }
 
@@ -689,6 +695,10 @@ library {
     // package name: ffmpeg
 
     package {
+
+      @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_filter_exists")
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final external fun ffkmp_filter_exists(@kotlinx/cinterop/internal/CCall.CString name: kotlin/String?): kotlin/Int
 
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_graph_build_video")
       @kotlinx/cinterop/ExperimentalForeignApi
@@ -878,12 +888,16 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final external fun kc_ffmpeg_configuration(): kotlinx/cinterop/CPointer<kotlinx/cinterop/ByteVarOf<kotlin/Byte> /* = kotlinx/cinterop/ByteVar^ */>?
 
+      @kotlinx/cinterop/internal/CCall.Direct(name = "_kc_jvm_attach")
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final external fun kc_jvm_attach(java_vm: kotlinx/cinterop/CValuesRef<*>?): kotlin/Int
+
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val KITECODEC_C_ABI_MAJOR: kotlin/Int /* = 2 */
         public final get
 
       @kotlinx/cinterop/ExperimentalForeignApi
-      public final const val KITECODEC_C_ABI_MINOR: kotlin/Int /* = 0 */
+      public final const val KITECODEC_C_ABI_MINOR: kotlin/Int /* = 1 */
         public final get
 
       @kotlinx/cinterop/ExperimentalForeignApi
@@ -968,6 +982,22 @@ library {
 
       @kotlinx/cinterop/ExperimentalForeignApi
       public final const val KC_VERDICT_CONFIGURATION_DISAGREES: kotlin/UInt /* = ffmpeg/kc_verdict^ */ /* = 4u */
+        public final get
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final const val KC_JVM_OK: kotlin/Int /* = ffmpeg/kc_jvm_status^ */ /* = 0 */
+        public final get
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final const val KC_JVM_BAD_ARGUMENT: kotlin/Int /* = ffmpeg/kc_jvm_status^ */ /* = -1 */
+        public final get
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final const val KC_JVM_UNSUPPORTED: kotlin/Int /* = ffmpeg/kc_jvm_status^ */ /* = -2 */
+        public final get
+
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final const val KC_JVM_FFMPEG_REFUSED: kotlin/Int /* = ffmpeg/kc_jvm_status^ */ /* = -3 */
         public final get
     }
   }

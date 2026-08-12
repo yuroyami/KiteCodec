@@ -3,7 +3,7 @@
 # Exact scope: 169 helper KC_API prototypes, eleven opaque handle typedefs, six
 # ABI KC_API prototypes, two ABI enum definitions and the full kc_ffmpeg_report
 # typedef. Comments and preprocessor lines are absent; whitespace is normalized;
-# records are sorted without deduplication. There must be exactly 189 records.
+# records are sorted without deduplication. There must be exactly 192 records.
 #
 # THE MOVE (also in KPKMP.md section 9's ratchet move table): change the public
 # declaration deliberately, run ./scripts/symbol-audit.sh
@@ -114,6 +114,7 @@ KC_API int ffkmp_stream_disposition(kc_stream *s);
 KC_API int ffkmp_stream_index(kc_stream *s);
 KC_API int ffkmp_stream_rotation_degrees(kc_stream *s);
 KC_API int kc_init(void);
+KC_API int kc_jvm_attach(void *java_vm);
 KC_API int64_t ffkmp_codecpar_bit_rate(kc_codec_par *p);
 KC_API int64_t ffkmp_codecpar_ch_layout_mask(kc_codec_par *p);
 KC_API int64_t ffkmp_fmt_duration(kc_fmt_ctx *c);
@@ -137,6 +138,7 @@ KC_API kc_frame* ffkmp_frame_alloc(void);
 KC_API kc_frame* ffkmp_frame_clone(const kc_frame *f);
 KC_API kc_frame* ffkmp_frame_convert_pixfmt(const kc_frame *src, int dst_fmt);
 KC_API kc_packet* ffkmp_packet_alloc(void);
+KC_API kc_packet* ffkmp_packet_clone(const kc_packet *packet);
 KC_API kc_stream* ffkmp_fmt_new_stream(kc_fmt_ctx *ctx, const kc_codec *codec);
 KC_API kc_stream* ffkmp_fmt_stream(kc_fmt_ctx *c, unsigned i);
 KC_API uint32_t kc_abi_version(void);
@@ -184,6 +186,7 @@ KC_API void ffkmp_stream_set_time_base(kc_stream *s, int n, int d);
 KC_API void ffkmp_stream_time_base(kc_stream *s, int *n, int *d);
 KC_API void kc_ffmpeg_report_get(kc_ffmpeg_report *out);
 KC_API void* ffkmp_frame_hw_surface(kc_frame *f);
+enum kc_jvm_status { KC_JVM_OK = 0, KC_JVM_BAD_ARGUMENT = -1, KC_JVM_UNSUPPORTED = -2, KC_JVM_FFMPEG_REFUSED = -3 };
 enum kc_status { KC_STATUS_OK = 0, KC_STATUS_MAJOR_MISMATCH = -1, KC_STATUS_RUNTIME_OLDER = -2, KC_STATUS_CONFIGURATION_MISMATCH = -3 };
 enum kc_verdict { KC_VERDICT_OK = 0, KC_VERDICT_MAJOR_MISMATCH = 1, KC_VERDICT_RUNTIME_OLDER = 2, KC_VERDICT_MICRO_OLDER = 3, KC_VERDICT_CONFIGURATION_DISAGREES = 4 };
 typedef struct AVCodec kc_codec;
