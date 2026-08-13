@@ -49,6 +49,7 @@ ffkmp_codecpar_channels
 ffkmp_codecpar_codec_id
 ffkmp_codecpar_codec_type
 ffkmp_codecpar_copy_for_mux
+ffkmp_codecpar_extradata
 ffkmp_codecpar_format
 ffkmp_codecpar_from_context
 ffkmp_codecpar_height

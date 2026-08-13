@@ -478,6 +478,7 @@ private fun buildStreams(format: Long): List<StreamInfo> = buildList {
                         .takeIf { it != Long.MIN_VALUE }
                         ?.let { Internals.rescaleQ(it, timeBase, Rational.Tb_us) }
                         ?: 0L,
+                    codecExtradata = Internals.codecParExtradata(parameters),
                 ),
             )
         } finally {

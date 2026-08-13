@@ -11,6 +11,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 The library is source-only for now. Nothing has been published, not `kitecodec-core`, not the Gradle plugin, and not the FFmpeg Release assets the plugin's `FFmpegSource.Prebuilt` default downloads. Release state and the per-target table live in the [README](https://github.com/yuroyami/KiteCodec#release-status) rather than being restated here.
 
 ### Added
+- **Owned codec-configuration snapshots for hardware decoders.** `StreamInfo.codecExtradata`
+  carries a copy of records such as avcC and hvcC across both the native and JNI boundaries,
+  without exposing an FFmpeg pointer. The bounded C copy helper rejects invalid sizes and advances
+  the compatible C ABI from 2.4 to 2.5, the export set from 185 to 186 names, and the signature
+  baseline from 200 to 201 records.
 - **VideoToolbox hardware decode behind the opaque boundary (window 3, KPKMP 17.4.8 S2.a).**
   Every Apple FFmpeg build (macOS, iOS device, iOS simulator) now enables the `h264_videotoolbox`
   and `hevc_videotoolbox` HWACCELs, and two C funnels carry them: `ffkmp_codecctx_use_videotoolbox`

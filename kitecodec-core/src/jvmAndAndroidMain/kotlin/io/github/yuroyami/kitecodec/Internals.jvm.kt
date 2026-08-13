@@ -108,6 +108,7 @@ internal object Internals {
     private external fun nativeCodecParFormat(token: Long): Int
     private external fun nativeCodecParSampleRate(token: Long): Int
     private external fun nativeCodecParChannels(token: Long): Int
+    private external fun nativeCodecParExtradata(token: Long): ByteArray?
     private external fun nativeCodecParSar(token: Long): Long
     private external fun nativeCodecParChannelLayout(token: Long): Long
     private external fun nativeCodecParFromContext(parameters: Long, context: Long): Int
@@ -354,6 +355,7 @@ internal object Internals {
     internal fun codecParFormat(token: Long) = checked { nativeCodecParFormat(token) }
     internal fun codecParSampleRate(token: Long) = checked { nativeCodecParSampleRate(token) }
     internal fun codecParChannels(token: Long) = checked { nativeCodecParChannels(token) }
+    internal fun codecParExtradata(token: Long) = checked { nativeCodecParExtradata(token) }
     internal fun codecParSar(token: Long) = unpackRational(checked { nativeCodecParSar(token) })
     internal fun codecParChannelLayout(token: Long) = checked { nativeCodecParChannelLayout(token) }
     internal fun codecParFromContext(parameters: Long, context: Long) = checked { nativeCodecParFromContext(parameters, context) }

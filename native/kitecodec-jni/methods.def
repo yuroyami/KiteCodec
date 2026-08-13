@@ -131,6 +131,7 @@ KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeCodecParHeight",    "
 KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeCodecParFormat",    "(J)I",                   kj_codecpar_format)
 KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeCodecParSampleRate","(J)I",                  kj_codecpar_sample_rate)
 KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeCodecParChannels",  "(J)I",                   kj_codecpar_channels)
+KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeCodecParExtradata", "(J)[B",                  kj_codecpar_extradata)
 KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeCodecParSar",       "(J)J",                   kj_codecpar_sar)
 KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeCodecParChannelLayout","(J)J",              kj_codecpar_layout)
 KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeCodecParFromContext","(JJ)I",                kj_codecpar_from_context)

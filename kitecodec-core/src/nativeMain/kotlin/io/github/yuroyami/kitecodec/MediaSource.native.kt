@@ -12,6 +12,7 @@ import ffmpeg.ffkmp_codecpar_ch_layout_mask
 import ffmpeg.ffkmp_codecpar_channels
 import ffmpeg.ffkmp_codecpar_codec_id
 import ffmpeg.ffkmp_codecpar_codec_type
+import ffmpeg.ffkmp_codecpar_extradata
 import ffmpeg.ffkmp_codecpar_format
 import ffmpeg.ffkmp_codecpar_height
 import ffmpeg.ffkmp_codecpar_sample_aspect_ratio
@@ -82,11 +83,14 @@ import kotlinx.cinterop.Arena
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.CPointerVar
 import kotlinx.cinterop.IntVar
+import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.allocPointerTo
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
+import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.toKString
+import kotlinx.cinterop.usePinned
 import kotlinx.cinterop.set
 import kotlinx.cinterop.value
 import kotlinx.coroutines.currentCoroutineContext
@@ -705,9 +709,24 @@ private fun buildStreams(ctx: CPointer<kc_fmt_ctx>): List<StreamInfo> {
                 .takeIf { it != Long.MIN_VALUE }
                 ?.let { ffkmp_rescale_q(it, timeBase.num, timeBase.den, 1, 1_000_000) }
                 ?: 0L,
+            codecExtradata = readCodecExtradata(par),
         )
     }
     return out
+}
+
+private fun readCodecExtradata(parameters: CPointer<kc_codec_par>): ByteArray? {
+    val size = ffkmp_codecpar_extradata(parameters, null, 0)
+    check0(size, "codec parameter extradata size")
+    if (size == 0) return null
+
+    val bytes = ByteArray(size)
+    val copied = bytes.usePinned { pinned ->
+        ffkmp_codecpar_extradata(parameters, pinned.addressOf(0).reinterpret(), size)
+    }
+    check0(copied, "codec parameter extradata copy")
+    check(copied == size) { "Codec extradata changed while stream metadata was being copied" }
+    return bytes
 }
 
 private fun readDisposition(flags: Int): Disposition = Disposition(

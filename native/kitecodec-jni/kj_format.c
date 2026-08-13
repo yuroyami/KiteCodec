@@ -390,6 +390,36 @@ JNIEXPORT jint JNICALL kj_codecpar_sample_rate(JNIEnv *env,jclass cls,jlong toke
 {kc_codec_par*p=(kc_codec_par*)kj_handle_get(env,token,KJ_KIND_CODEC_PAR);(void)cls;return p?ffkmp_codecpar_sample_rate(p):0;}
 JNIEXPORT jint JNICALL kj_codecpar_channels(JNIEnv *env,jclass cls,jlong token)
 {kc_codec_par*p=(kc_codec_par*)kj_handle_get(env,token,KJ_KIND_CODEC_PAR);(void)cls;return p?ffkmp_codecpar_channels(p):0;}
+JNIEXPORT jbyteArray JNICALL kj_codecpar_extradata(JNIEnv *env, jclass cls, jlong token)
+{
+    kc_codec_par *p = (kc_codec_par *)kj_handle_get(env, token, KJ_KIND_CODEC_PAR);
+    uint8_t *bytes;
+    jbyteArray result;
+    int size, copied;
+    (void)cls;
+    if (p == NULL) return NULL;
+    size = ffkmp_codecpar_extradata(p, NULL, 0);
+    if (size < 0) {
+        kj_throw_ffmpeg(env, size, "codecpar_extradata size");
+        return NULL;
+    }
+    if (size == 0) return NULL;
+    bytes = (uint8_t *)malloc((size_t)size);
+    if (bytes == NULL) {
+        kj_throw_handle(env, "out of memory copying codec parameter extradata");
+        return NULL;
+    }
+    copied = ffkmp_codecpar_extradata(p, bytes, size);
+    if (copied != size) {
+        free(bytes);
+        if (copied < 0) kj_throw_ffmpeg(env, copied, "codecpar_extradata copy");
+        else kj_throw_handle(env, "codec parameter extradata changed while copying");
+        return NULL;
+    }
+    result = kj_bytes_new(env, bytes, size);
+    free(bytes);
+    return result;
+}
 JNIEXPORT jlong JNICALL kj_codecpar_sar(JNIEnv *env,jclass cls,jlong token)
 {kc_codec_par*p=(kc_codec_par*)kj_handle_get(env,token,KJ_KIND_CODEC_PAR);int n=0,d=1;(void)cls;if(p)ffkmp_codecpar_sample_aspect_ratio(p,&n,&d);return((jlong)(uint32_t)n<<32)|(uint32_t)d;}
 JNIEXPORT jlong JNICALL kj_codecpar_layout(JNIEnv *env,jclass cls,jlong token)

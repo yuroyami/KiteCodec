@@ -8,6 +8,7 @@ import kotlinx.coroutines.runBlocking
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -67,6 +68,9 @@ class HwaccelContractTest {
 
         MediaSource.open(path).use { src ->
             val stream = src.primaryVideo ?: error("the encoder wrote no video stream")
+            val extradata = assertNotNull(stream.codecExtradata, "MP4 H.264 must expose avcC")
+            assertTrue(extradata.isNotEmpty(), "the avcC record must not be empty")
+            assertEquals(1, extradata[0].toInt() and 0xff, "the avcC version must be one")
             src.openDecoder(stream, hardware = HardwareAccel.VideoToolbox).use { decoder ->
                 src.openPacketReader(listOf(stream)).use { reader ->
                     var hardwareFrames = 0

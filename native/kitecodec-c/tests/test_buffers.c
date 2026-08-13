@@ -57,6 +57,11 @@
  *   ffkmp_frame_fill_video        def 148   src 125
  *   ffkmp_frame_fill_audio        def 163   src 140
  *
+ * ABI 2.5 adds ffkmp_codecpar_extradata as another bounded copy surface. Its cases cover the
+ * sizing call, exact and partial copies with canaries, empty data, NULL parameters and negative
+ * sizes. The negative-size row supplies only one destination byte, so a missing signed guard is
+ * visible to ASan rather than becoming a huge memcpy.
+ *
  * Plan section 15.0 records that the bound inside ffkmp_frame_copy_to_buffer already exists and
  * is simply unexercised, so those rows are evidence, not repair.
  *
@@ -69,6 +74,7 @@
 
 #include "kitecodec_helpers.h"
 
+#include <libavcodec/avcodec.h>
 #include <libavfilter/buffersink.h>
 #include <libavutil/channel_layout.h>
 #include <libavutil/error.h>
@@ -191,7 +197,63 @@ static int pin_suffix_length(void)
            snprintf(NULL, 0, ":channel_layouts=%dc", PIN_CHANNELS);
 }
 
-/* ---- The four size-taking copy helpers ---- */
+/* ---- Codec parameter extradata copy ---- */
+
+static void case_codecpar_extradata_query_and_exact_copy(void)
+{
+    uint8_t config[] = { 1, 100, 0, 31, 0xff, 0xe1, 0x23 };
+    uint8_t destination[9];
+    AVCodecParameters par = { 0 };
+    par.extradata = config;
+    par.extradata_size = (int)sizeof(config);
+    memset(destination, 0xa5, sizeof(destination));
+
+    KC_EQ_INT(ffkmp_codecpar_extradata(&par, NULL, 0), (int)sizeof(config));
+    KC_EQ_INT(ffkmp_codecpar_extradata(&par, destination, (int)sizeof(config)),
+              (int)sizeof(config));
+    KC_EQ_MEM(destination, config, sizeof(config));
+    KC_EQ_INT((int)destination[7], 0xa5);
+    KC_EQ_INT((int)destination[8], 0xa5);
+    kc_detail("bytes=%zu", sizeof(config));
+}
+
+static void case_codecpar_extradata_partial_copy(void)
+{
+    uint8_t config[] = { 1, 2, 3, 4, 5 };
+    uint8_t destination[7];
+    AVCodecParameters par = { 0 };
+    size_t i;
+    par.extradata = config;
+    par.extradata_size = (int)sizeof(config);
+    memset(destination, 0xa5, sizeof(destination));
+
+    KC_EQ_INT(ffkmp_codecpar_extradata(&par, destination, 3), 3);
+    KC_EQ_MEM(destination, config, 3u);
+    for (i = 3; i < sizeof(destination); i++) {
+        KC_EQ_INT((int)destination[i], 0xa5);
+    }
+    KC_EQ_INT(ffkmp_codecpar_extradata(&par, destination, 0), 0);
+    KC_EQ_MEM(destination, config, 3u);
+    kc_detail("available=%zu copied=3", sizeof(config));
+}
+
+static void case_codecpar_extradata_empty_and_invalid(void)
+{
+    uint8_t config[] = { 9, 8, 7 };
+    uint8_t destination = 0x5a;
+    AVCodecParameters par = { 0 };
+
+    KC_EQ_INT(ffkmp_codecpar_extradata(NULL, NULL, 0), AVERROR(EINVAL));
+    KC_EQ_INT(ffkmp_codecpar_extradata(&par, &destination, 1), 0);
+    par.extradata_size = (int)sizeof(config);
+    KC_EQ_INT(ffkmp_codecpar_extradata(&par, &destination, 1), 0);
+    par.extradata = config;
+    KC_EQ_INT(ffkmp_codecpar_extradata(&par, &destination, -1), AVERROR(EINVAL));
+    KC_EQ_INT(ffkmp_codecpar_extradata(&par, NULL, INT_MIN), AVERROR(EINVAL));
+    KC_EQ_INT((int)destination, 0x5a);
+}
+
+/* ---- The four frame and sample size-taking copy helpers ---- */
 
 static void case_frame_copy_to_buffer_exact(void)
 {
@@ -1034,6 +1096,9 @@ typedef struct {
 } buffer_case;
 
 static const buffer_case cases[] = {
+    { "codecpar extradata query and exact copy",           case_codecpar_extradata_query_and_exact_copy },
+    { "codecpar extradata partial copy",                   case_codecpar_extradata_partial_copy },
+    { "codecpar extradata empty and invalid arguments",    case_codecpar_extradata_empty_and_invalid },
     { "frame_copy_to_buffer at exactly the needed size",   case_frame_copy_to_buffer_exact },
     { "frame_copy_to_buffer one byte short",               case_frame_copy_to_buffer_one_byte_short },
     { "frame_copy_to_buffer at degenerate sizes",          case_frame_copy_to_buffer_degenerate_sizes },

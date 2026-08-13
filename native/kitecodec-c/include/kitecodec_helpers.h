@@ -175,6 +175,12 @@ KC_API int     ffkmp_codecpar_height(kc_codec_par *p);
 KC_API int     ffkmp_codecpar_format(kc_codec_par *p);
 KC_API int     ffkmp_codecpar_sample_rate(kc_codec_par *p);
 KC_API int     ffkmp_codecpar_channels(kc_codec_par *p);
+/* Copies the codec configuration record or other raw extradata. A NULL destination queries the
+ * full byte count. A non-NULL destination receives at most dst_size bytes and the copied count is
+ * returned. No extradata returns zero. A NULL parameters object or negative size is refused with
+ * AVERROR(EINVAL).
+ */
+KC_API int     ffkmp_codecpar_extradata(kc_codec_par *p, uint8_t *dst, int dst_size);
 KC_API void    ffkmp_codecpar_sample_aspect_ratio(kc_codec_par *p, int *num, int *den);
 
 /* Ownership. Fills the parameters from the context, freeing and replacing any extradata the

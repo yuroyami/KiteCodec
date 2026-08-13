@@ -12,6 +12,8 @@
 
 #include <libavcodec/avcodec.h>
 
+#include <string.h>
+
 /* ════════════ AVCodecParameters ════════════ */
 
 KC_API int     ffkmp_codecpar_codec_type(AVCodecParameters *p) { return p ? (int)p->codec_type : -1; }
@@ -27,6 +29,15 @@ KC_API int     ffkmp_codecpar_height(AVCodecParameters *p)     { return p ? p->h
 KC_API int     ffkmp_codecpar_format(AVCodecParameters *p)     { return p ? p->format : -1; }
 KC_API int     ffkmp_codecpar_sample_rate(AVCodecParameters *p){ return p ? p->sample_rate : 0; }
 KC_API int     ffkmp_codecpar_channels(AVCodecParameters *p)   { return p ? p->ch_layout.nb_channels : 0; }
+KC_API int     ffkmp_codecpar_extradata(AVCodecParameters *p, uint8_t *dst, int dst_size) {
+    int copied;
+    if (!p || dst_size < 0) return AVERROR(EINVAL);
+    if (!p->extradata || p->extradata_size <= 0) return 0;
+    if (!dst) return p->extradata_size;
+    copied = p->extradata_size < dst_size ? p->extradata_size : dst_size;
+    if (copied > 0) memcpy(dst, p->extradata, (size_t)copied);
+    return copied;
+}
 KC_API void    ffkmp_codecpar_sample_aspect_ratio(AVCodecParameters *p, int *num, int *den) {
     if (!p || !num || !den) return;
     *num = p->sample_aspect_ratio.num;

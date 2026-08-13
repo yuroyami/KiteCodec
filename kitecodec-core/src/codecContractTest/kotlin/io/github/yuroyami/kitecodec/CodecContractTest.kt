@@ -68,8 +68,14 @@ internal class CodecContractTest {
             transcript.put("source.video.codec", video.codec.name)
             transcript.put("source.video.width", video.video?.width)
             transcript.put("source.video.height", video.video?.height)
+            val videoExtradata = assertNotNull(video.codecExtradata)
+            transcript.put("source.video.extradata.size", videoExtradata.size)
+            transcript.put("source.video.extradata.sha256", sha256Hex(videoExtradata))
             transcript.put("source.audio.codec", audio.codec.name)
             transcript.put("source.audio.rate", audio.audio?.sampleRate)
+            val audioExtradata = assertNotNull(audio.codecExtradata)
+            transcript.put("source.audio.extradata.size", audioExtradata.size)
+            transcript.put("source.audio.extradata.sha256", sha256Hex(audioExtradata))
             transcript.put("source.seekable", source.isSeekable)
             transcript.put("source.duration.positive", (source.durationMicros ?: 0L) > 0L)
 
@@ -125,6 +131,15 @@ internal class CodecContractTest {
         exerciseFramesAndFilters(transcript)
         exerciseMuxRemuxAndTranscode(input, transcript)
         writeContractTranscript(transcript.render())
+    }
+
+    @Test
+    fun streamCodecExtradataIsAnOwnedSnapshot() {
+        val extradata = MediaSource.open(mediaPath()).useOwner { source ->
+            assertNotNull(source.primaryVideo?.codecExtradata)
+        }
+
+        assertTrue(extradata.isNotEmpty())
     }
 
     @Test

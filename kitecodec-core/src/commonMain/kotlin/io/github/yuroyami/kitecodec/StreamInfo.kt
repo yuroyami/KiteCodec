@@ -23,6 +23,11 @@ public data class StreamInfo(
     val rotationDegrees: Int = 0,
     /** Where this stream's own timeline starts, in microseconds. May differ from the container's. */
     val startTimeMicros: Long = 0,
+    /**
+     * An owned copy of the codec configuration carried by the container, such as an avcC or hvcC
+     * record. Null when the stream has no separate configuration record.
+     */
+    val codecExtradata: ByteArray? = null,
 ) {
     /** BCP 47 or the raw three letter code, whichever the container provided. Null when absent. */
     val language: String? get() = metadata["language"]
