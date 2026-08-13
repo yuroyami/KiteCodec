@@ -393,7 +393,15 @@ class KiteCodecPlugin : Plugin<Project> {
                         binary.linkerOpts("-L${hostLib.absolutePath}")
                         binary.linkerOpts(PrebuiltLinkFlags.extraLinkerOpts(triple, license.get()))
                     } else if (triple in IOS_TARGETS) {
-                        binary.linkerOpts("-lz")
+                        // The mobile trees carry VideoToolbox DECODE since the S2.a window, so a
+                        // static iOS link must name the media frameworks the archives reference.
+                        binary.linkerOpts(
+                            "-lz",
+                            "-framework", "CoreFoundation",
+                            "-framework", "CoreMedia",
+                            "-framework", "CoreVideo",
+                            "-framework", "VideoToolbox",
+                        )
                     } else {
                         binary.linkerOpts(PrebuiltLinkFlags.extraLinkerOpts(triple, license.get()))
                     }
