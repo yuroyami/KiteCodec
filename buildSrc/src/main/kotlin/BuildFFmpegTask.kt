@@ -616,8 +616,8 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
 
     companion object {
         /**
-         * NDK API level the native libs are built against. The published minSdk is 29 (Android
-         * 10), but the FFmpeg trees deliberately stay at 24: binaries built against a lower API
+         * NDK API level the native libs are built against. The published minSdk is 26 (Android
+         * 8.0), but the FFmpeg trees deliberately stay at 24: binaries built against a lower API
          * level run unchanged on newer devices, and raising this forces a full rebuild of every
          * Android FFmpeg tree for zero functional gain. Raise it only when a libav feature
          * actually needs a newer NDK symbol.
