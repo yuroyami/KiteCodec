@@ -615,7 +615,13 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
     data class FFmpegRefSite(val where: String, val ref: String)
 
     companion object {
-        /** minSdk the native libs are built against: the native-codec bridge needs 21+, 24 is a safe floor. */
+        /**
+         * NDK API level the native libs are built against. The published minSdk is 29 (Android
+         * 10), but the FFmpeg trees deliberately stay at 24: binaries built against a lower API
+         * level run unchanged on newer devices, and raising this forces a full rebuild of every
+         * Android FFmpeg tree for zero functional gain. Raise it only when a libav feature
+         * actually needs a newer NDK symbol.
+         */
         const val ANDROID_API = 24
 
         /** The FFmpeg tag `vendor/ffmpeg` is expected to be checked out at. */
