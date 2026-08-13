@@ -352,8 +352,16 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
         // wide demuxer class includes members that SELECT network protocols (rtsp and its
         // relatives); the class disable above must win, so the configure banner's protocol
         // line is checked against exactly this five-name list after every profile change.
+        // `fd` is what makes an Android content:// URI playable. The picker hands back a
+        // descriptor, and the usual escape of re-opening `/proc/self/fd/N` through the `file`
+        // protocol fails with EACCES on a modern device, because re-opening rechecks permissions
+        // against the PATH while the descriptor itself stays perfectly valid (measured on a real
+        // phone, 2026-08-13). The `fd` protocol takes the descriptor as a pre-open option and
+        // `dup()`s it, so nothing is re-opened, and its fstat sets is_streamed correctly, which
+        // keeps a regular file SEEKABLE. `pipe:<fd>` is not a substitute: it dups too, but hard
+        // codes is_streamed = 1, so seeking dies and with it any sync.
         "--enable-network",
-        "--enable-protocol=file,pipe,data,http,tcp",
+        "--enable-protocol=file,fd,pipe,data,http,tcp",
         // Fixed point 5 of 17.4.9, observed on the first wide configure: the rtsp/sdp demuxers
         // SELECT udp and rtp, and configure's select is stronger than a class disable, so the
         // banner grew both. A named disable is stronger than a select: with these two hard-off,

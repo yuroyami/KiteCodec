@@ -84,13 +84,22 @@ The authoritative list is `sharedCoreArgs()` in [`BuildFFmpegTask.kt`](https://g
 | **Decode** | every native FFmpeg decoder, plus the external ones the flavor links (libvpx, libaom, libwebp) | same | every native FFmpeg decoder; VideoToolbox hwaccel behind h264/hevc | every native FFmpeg decoder + MediaCodec h264/hevc |
 | **Demux** | every native FFmpeg demuxer | same | same | same |
 | **Mux (write)** | mp4/mov, matroska/webm (including `.mka`), mpegts, mp3, wav, flac, ogg/opus, image2 | same | same | same |
-| **Protocols** | `file`, `pipe`, `data`, `http`, `tcp` | same | same | same |
+| **Protocols** | `file`, `fd`, `pipe`, `data`, `http`, `tcp` | same | same | same |
 | **Filters** | scale, pad, overlay, hue, unsharp, vignette, colorbalance, colorlevels, curves, lut, colorchannelmixer, split, trim/setpts, drawtext, and the audio set | + `eq`, `boxblur` | shared set without `drawtext`, `eq` or `boxblur` | same as Mobile Apple |
 | **Bitstream filters** | all of them (they ride with the wide demuxer class) | same | same | same |
 
 `eq` and `boxblur` are marked `deps="gpl"` by FFmpeg itself, which is why they appear only in the GPL column. Use `hue` (it has a brightness parameter `b`), `colorlevels` or `curves` instead. The bitstream filters are never named by KiteCodec. libavformat inserts them during a stream copy, which is a copy of encoded packets with no decode or encode. Without them, a copy between container families produces a *corrupt file* rather than an error.
 
 `mpeg4` is the dependency-free video baseline: it is always present, in every flavor, so code that must encode *something* without pulling in a GPL or hardware encoder has a target. `https` is **not** built. It needs a TLS backend cross-compiled for every target, and this profile does not include one. Use `http`, a local file, or link a system FFmpeg that has TLS.
+
+The `fd` protocol is what makes an Android `content://` file playable. Open a descriptor with `ContentResolver.openFileDescriptor`, then open `"fd:"` with the pre-open option `fd` set to the descriptor number:
+
+```kotlin
+val pfd = contentResolver.openFileDescriptor(uri, "r")!!
+val source = MediaSource.open("fd:", mapOf("fd" to pfd.fd.toString()))
+```
+
+FFmpeg `dup()`s the descriptor, so the caller keeps ownership, and its `fstat` marks a regular file seekable. Do **not** reach for `/proc/self/fd/N` through the `file` protocol instead: that re-opens by path, the kernel rechecks permissions against the path, and a descriptor a process may legitimately read can still fail with `Permission denied`. `pipe:<fd>` also dups but hardcodes the stream as non-seekable, which costs you seeking.
 
 Probe rather than assume. `FFmpeg.hasEncoder("libx264")` is cheap. It turns a runtime failure on a user's machine into a clear message.
 
