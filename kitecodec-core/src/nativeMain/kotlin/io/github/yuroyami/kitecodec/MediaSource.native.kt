@@ -169,7 +169,12 @@ public actual class MediaSource internal constructor(
      */
     public actual val isSeekable: Boolean = ffkmp_fmt_is_seekable(ctx) != 0
 
-    public actual val primaryVideo: StreamInfo? get() = streams.firstOrNull { it.type == MediaType.Video }
+    // Attached pictures (album art) are excluded first: they are video streams by type but not
+    // moving pictures, and "primary video" choosing the cover of an mp3 was the defect. A file
+    // whose ONLY video is its art still returns it, because a picture beats nothing.
+    public actual val primaryVideo: StreamInfo?
+        get() = streams.firstOrNull { it.type == MediaType.Video && !it.disposition.attachedPicture }
+            ?: streams.firstOrNull { it.type == MediaType.Video }
     public actual val primaryAudio: StreamInfo? get() = streams.firstOrNull { it.type == MediaType.Audio }
 
     public actual fun decodedFrames(stream: StreamInfo): Flow<Frame> = decodeStreams(listOf(stream))
@@ -196,6 +201,7 @@ public actual class MediaSource internal constructor(
         require(all.isNotEmpty()) { "Need at least one stream to demux" }
         require(decode.all { it.type.isAv }) { "Only video/audio streams can be decoded" }
         require(all.distinctBy { it.index }.size == all.size) { "Duplicate stream indices" }
+        all.forEach(::requireOwnStream)
 
         beginDemux()
         val decoders = mutableListOf<DecoderState>()
@@ -305,10 +311,16 @@ public actual class MediaSource internal constructor(
             // Decoders fill best_effort_timestamp even for files with missing pts. Promote it
             // so everything downstream (filters, encoders) sees a usable timestamp.
             ffkmp_frame_use_best_effort_ts(frame.nativeFrame)
-            onFrame(FrameOps.wrap(frame.nativeFrame, decoder.stream.index, decoder.stream.type, decoder.stream.timeBase))
-            // The wrap'd Frame is reference-only; the callback reads info / pixels and calls
-            // close() which does av_frame_unref. The underlying AVFrame pointer is reused for
-            // the next iteration after the callback returns.
+            // The wrap'd Frame is reference-only; the callback reads info / pixels and a consumer
+            // that needs the data afterwards takes a copy(). The underlying AVFrame pointer is
+            // reused for the next iteration, so the wrapper is force-closed here (idempotently) —
+            // a callback that retained it without closing must never see it as still open.
+            val view = FrameOps.wrap(frame.nativeFrame, decoder.stream.index, decoder.stream.type, decoder.stream.timeBase)
+            try {
+                onFrame(view)
+            } finally {
+                view.close()
+            }
         }
     }
 
@@ -411,6 +423,7 @@ public actual class MediaSource internal constructor(
     public actual fun openPacketReader(streams: List<StreamInfo>): PacketReader {
         require(streams.isNotEmpty()) { "Need at least one stream to read" }
         require(streams.distinctBy { it.index }.size == streams.size) { "Duplicate stream indices" }
+        streams.forEach(::requireOwnStream)
 
         synchronized(stateLock) {
             check(!closed) { "MediaSource is closed" }
@@ -457,7 +470,23 @@ public actual class MediaSource internal constructor(
     ): StreamDecoder {
         check(!isClosed) { "MediaSource is closed" }
         require(stream.type.isAv) { "Only video and audio streams can be decoded, got ${stream.type}" }
+        requireOwnStream(stream)
         return StreamDecoder.open(ctx, stream, threadCount, lowDelay, decoder, options, hardware)
+    }
+
+    /**
+     * Canonicalizes a caller-supplied [StreamInfo] against this source's own table. StreamInfo is
+     * a public data class and therefore forgeable: stream zero of another source has a valid index
+     * here but foreign timing and type metadata, and accepting it would interpret this source's
+     * packets with another file's time base (audit KiteCodec P1-8). Structural equality against
+     * the entry this source itself published is the check.
+     */
+    private fun requireOwnStream(supplied: StreamInfo) {
+        val own = streams.firstOrNull { it.index == supplied.index }
+        require(own == supplied) {
+            "StreamInfo(index=${supplied.index}) does not belong to this MediaSource. Pass entries " +
+                "from THIS source's streams list; stream identity is source-bound."
+        }
     }
 
     actual override fun close() {

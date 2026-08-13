@@ -87,8 +87,29 @@ public actual class Frame internal constructor(
 
     private fun checkOpen() = check(!closed) { "Frame is closed, its native buffers are gone" }
 
-    public actual val info: FrameInfo by lazy {
-        checkOpen()
+    /**
+     * The native pointer, gated on the open state. Every access outside this class must go through
+     * this accessor: a cached [FrameInfo] proves nothing about whether the native frame is still
+     * alive, so the open check has to run at the moment of the dereference, not before it.
+     */
+    internal val checkedNative: CPointer<kc_frame>
+        get() {
+            checkOpen()
+            return nativeFrame
+        }
+
+    private var cachedInfo: FrameInfo? = null
+
+    public actual val info: FrameInfo
+        get() {
+            // The metadata snapshot may be cached, but the open check must run on every read:
+            // a warm cache must never stand in for proof that the native frame is still alive.
+            checkOpen()
+            cachedInfo?.let { return it }
+            return buildInfo().also { cachedInfo = it }
+        }
+
+    private fun buildInfo(): FrameInfo =
         FrameInfo(
             streamIndex   = streamIndex,
             type          = streamType,
@@ -112,7 +133,6 @@ public actual class Frame internal constructor(
             sampleAspectRatio = if (streamType == MediaType.Video) readFrameSar() else Rational(1, 1),
             isHardware    = ffkmp_frame_is_hardware(nativeFrame) != 0,
         )
-    }
 
     private fun readColorInfo(): ColorInfo {
         val declared = ColorInfo(
@@ -310,6 +330,11 @@ public actual class Frame internal constructor(
             // The FFmpeg identity gate, register item B1-02. Before the first allocation.
             requireCompatibleFFmpeg()
             require(width > 0 && height > 0) { "Invalid dimensions ${width}x$height" }
+            // Before the pin: addressOf(0) on an empty array throws its own index error, which is
+            // not the short-buffer diagnostic this factory promises (audit KiteCodec P1-15).
+            require(bytes.isNotEmpty()) {
+                "bytes is empty; a ${width}x$height ${pixelFormat.name} frame needs its packed planes"
+            }
             val fmt = pixelFormatToAv(pixelFormat)
             if (fmt < 0) throw FFmpegException(FFmpegError.Internal("Unknown pixel format '${pixelFormat.name}'"))
             val raw = ffkmp_frame_alloc()
@@ -347,6 +372,9 @@ public actual class Frame internal constructor(
             require(sampleCount > 0) { "sampleCount must be positive" }
             require(sampleRate > 0) { "sampleRate must be positive" }
             require(channels in 1..8) { "channels must be 1..8 (got $channels)" }
+            require(bytes.isNotEmpty()) {
+                "bytes is empty; $sampleCount ${sampleFormat.name} samples x $channels channels were promised"
+            }
             val fmt = sampleFormatToAv(sampleFormat)
             if (fmt < 0) throw FFmpegException(FFmpegError.Internal("Unknown sample format '${sampleFormat.name}'"))
             val raw = ffkmp_frame_alloc()

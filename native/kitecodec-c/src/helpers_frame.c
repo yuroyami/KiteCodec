@@ -56,25 +56,68 @@ KC_API void     ffkmp_frame_use_best_effort_ts(AVFrame *f) {
    The clone owns its references: safe to hold after the source frame is reused/unref'd. */
 KC_API AVFrame* ffkmp_frame_clone(const AVFrame *f) { return f ? av_frame_clone(f) : NULL; }
 
-/* One-shot pixel format conversion (e.g. yuv420p → rgb24 for PNG export). Returns a freshly
-   allocated frame the caller must av_frame_free, or NULL on failure. */
+/* Maps an AVColorSpace onto the SWS_CS_* table sws_getCoefficients understands. */
+static int kc_sws_cs_for(enum AVColorSpace spc, int height) {
+    switch (spc) {
+        case AVCOL_SPC_BT709:            return SWS_CS_ITU709;
+        case AVCOL_SPC_SMPTE170M:
+        case AVCOL_SPC_BT470BG:          return SWS_CS_ITU601;
+        case AVCOL_SPC_SMPTE240M:        return SWS_CS_SMPTE240M;
+        case AVCOL_SPC_BT2020_NCL:
+        case AVCOL_SPC_BT2020_CL:        return SWS_CS_BT2020;
+        default:
+            /* Undeclared colour is normal; guess by the rule every player uses: SD is 601,
+               HD and above is 709. */
+            return height >= 720 ? SWS_CS_ITU709 : SWS_CS_ITU601;
+    }
+}
+
+/* Pixel format conversion (e.g. yuv420p → rgb24). Returns a freshly allocated frame the caller
+   must av_frame_free, or NULL on failure.
+
+   The converter is CACHED per thread through sws_getCachedContext, which reuses the existing
+   context while the geometry and formats match and rebuilds it when they change: the repository's
+   own allocation baseline measured 9 to 61 allocations per call for the create-and-free shape
+   this replaces (audit KiteCodec P1-4). One context per calling thread is deliberate: swscale
+   contexts are not thread-safe, and decode/encode paths are thread-confined already.
+
+   Colour is configured, not assumed: the source's matrix and range feed sws_setColorspaceDetails
+   (swscale otherwise assumes 601/limited for everything, visibly wrong for HD), and RGB output is
+   produced full-range, which is what every RGB consumer expects. Frame properties (SAR, colour
+   tags, timestamps, duration) are carried over with av_frame_copy_props instead of losing
+   everything but pts. Hardware frames are refused: their data pointers are opaque handles, not
+   planes; download first. */
 KC_API AVFrame* ffkmp_frame_convert_pixfmt(const AVFrame *src, int dst_fmt) {
+    static _Thread_local struct SwsContext *kc_sws_cache = NULL;
     if (!src || src->width <= 0 || src->height <= 0) return NULL;
-    struct SwsContext *sws = sws_getContext(
+    if (src->hw_frames_ctx) return NULL;
+    kc_sws_cache = sws_getCachedContext(kc_sws_cache,
         src->width, src->height, (enum AVPixelFormat)src->format,
         src->width, src->height, (enum AVPixelFormat)dst_fmt,
         SWS_BILINEAR, NULL, NULL, NULL);
-    if (!sws) return NULL;
-    AVFrame *dst = av_frame_alloc();
-    if (!dst) { sws_freeContext(sws); return NULL; }
-    dst->width = src->width; dst->height = src->height; dst->format = dst_fmt;
-    dst->pts = src->pts;
-    if (av_frame_get_buffer(dst, 0) < 0 ||
-        sws_scale(sws, (const uint8_t * const *)src->data, src->linesize,
-                  0, src->height, dst->data, dst->linesize) < 0) {
-        av_frame_free(&dst); sws_freeContext(sws); return NULL;
+    if (!kc_sws_cache) return NULL;
+    {
+        const AVPixFmtDescriptor *dst_desc = av_pix_fmt_desc_get((enum AVPixelFormat)dst_fmt);
+        int src_full = src->color_range == AVCOL_RANGE_JPEG;
+        int dst_rgb = dst_desc != NULL && (dst_desc->flags & AV_PIX_FMT_FLAG_RGB) != 0;
+        int dst_full = dst_rgb ? 1 : src_full;
+        const int *coeffs = sws_getCoefficients(kc_sws_cs_for(src->colorspace, src->height));
+        /* Refuses (-1) for pure RGB<->RGB conversions, where there is nothing to configure. */
+        (void)sws_setColorspaceDetails(kc_sws_cache, coeffs, src_full, coeffs, dst_full,
+                                       0, 1 << 16, 1 << 16);
     }
-    sws_freeContext(sws);
+    AVFrame *dst = av_frame_alloc();
+    if (!dst) return NULL;
+    dst->width = src->width; dst->height = src->height; dst->format = dst_fmt;
+    if (av_frame_get_buffer(dst, 0) < 0 ||
+        sws_scale(kc_sws_cache, (const uint8_t * const *)src->data, src->linesize,
+                  0, src->height, dst->data, dst->linesize) < 0) {
+        av_frame_free(&dst);
+        return NULL;
+    }
+    /* SAR, colour tags, pts, duration and the rest travel with the picture. copy_props does not
+       touch width/height/format/data, so the conversion's own fields stand. */
+    if (av_frame_copy_props(dst, src) < 0) { av_frame_free(&dst); return NULL; }
     return dst;
 }
 

@@ -106,7 +106,10 @@ KC_API int64_t       ffkmp_fmt_duration(AVFormatContext *c)   { return c ? c->du
    bounds and extractFrame, is media-RELATIVE, so this is the offset between the two. Returns 0
    when the container doesn't declare one. */
 KC_API int64_t       ffkmp_fmt_start_time(AVFormatContext *c) {
-    if (!c || c->start_time == AV_NOPTS_VALUE || c->start_time <= 0) return 0;
+    /* Only AV_NOPTS_VALUE means "not declared". A NEGATIVE start is a real position: edit lists
+       and encoder priming legitimately put the first timestamp below zero, and flattening those
+       to 0 shifted every relative timestamp of such a file. */
+    if (!c || c->start_time == AV_NOPTS_VALUE) return 0;
     return c->start_time;
 }
 KC_API unsigned      ffkmp_fmt_nb_streams(AVFormatContext *c) { return c ? c->nb_streams : 0; }

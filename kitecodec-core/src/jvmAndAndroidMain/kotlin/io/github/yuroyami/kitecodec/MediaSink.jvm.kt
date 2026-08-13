@@ -13,6 +13,9 @@ public actual class MediaSink internal constructor(
     private var headerState = HeaderState.NotWritten
     private var sharedBaseMicros = Long.MIN_VALUE
 
+    /** Streams declared on this sink; close() owes a real container once this is nonzero. */
+    private var declaredStreams = 0
+
     private fun checkOpen(): Long {
         check(formatToken != 0L) { "MediaSink is closed" }
         return formatToken
@@ -23,11 +26,14 @@ public actual class MediaSink internal constructor(
         sharedBaseMicros
     }
 
+    /** Runs [block] under the mux lock so a concurrent [close] cannot free the format mid-call. */
+    internal fun <T> withMuxLock(block: () -> T): T = synchronized(muxLock) { block() }
+
     private val headerWritten: Boolean
         get() = synchronized(muxLock) { headerState == HeaderState.Written }
 
     @Throws(FFmpegException::class)
-    public actual fun addVideoEncoder(spec: VideoEncoderSpec): VideoEncoder {
+    public actual fun addVideoEncoder(spec: VideoEncoderSpec): VideoEncoder = synchronized(muxLock) {
         val context = newEncoderContext(spec.codec.name) { _, codecContext ->
             Internals.codecCtxSetVideo(
                 codecContext,
@@ -46,11 +52,11 @@ public actual class MediaSink internal constructor(
         val stream = newStreamFor(context)
         val core = EncoderCore(this, context, stream, Internals.codecCtxTimeBase(context), false)
         encoderCores += core
-        return VideoEncoder(core)
+        VideoEncoder(core)
     }
 
     @Throws(FFmpegException::class)
-    public actual fun addAudioEncoder(spec: AudioEncoderSpec): AudioEncoder {
+    public actual fun addAudioEncoder(spec: AudioEncoderSpec): AudioEncoder = synchronized(muxLock) {
         var negotiated = spec.sampleFormat
         val context = newEncoderContext(spec.codec.name) { codec, codecContext ->
             if (negotiated == SampleFormat.None) {
@@ -79,7 +85,7 @@ public actual class MediaSink internal constructor(
         val stream = newStreamFor(context)
         val core = EncoderCore(this, context, stream, Internals.codecCtxTimeBase(context), true)
         encoderCores += core
-        return AudioEncoder(
+        AudioEncoder(
             core,
             Internals.codecCtxFrameSize(context),
             negotiated,
@@ -89,10 +95,10 @@ public actual class MediaSink internal constructor(
     }
 
     @Throws(FFmpegException::class)
-    public actual fun addCopyStream(source: MediaSource, stream: StreamInfo): CopyStream {
+    public actual fun addCopyStream(source: MediaSource, stream: StreamInfo): CopyStream = synchronized(muxLock) {
         check(!headerWritten) { "Cannot add streams after the muxer has started writing." }
         val format = checkOpen()
-        return source.withCodecParameters(stream) { sourceParameters ->
+        source.withCodecParameters(stream) { sourceParameters ->
             val outputStream = Internals.fmtNewStream(format)
             var outputParameters = 0L
             try {
@@ -102,6 +108,7 @@ public actual class MediaSink internal constructor(
                     "avcodec_parameters_copy",
                 )
                 Internals.streamSetTimeBase(outputStream, stream.timeBase)
+                declaredStreams += 1
                 CopyStream(this, outputStream, stream.timeBase, stream.index)
             } catch (error: Throwable) {
                 Internals.borrowedRelease(outputStream, Internals.KIND_STREAM)
@@ -146,6 +153,7 @@ public actual class MediaSink internal constructor(
             parameters = Internals.streamCodecPar(stream)
             check0(Internals.codecParFromContext(parameters, context), "avcodec_parameters_from_context")
             Internals.streamSetTimeBase(stream, Internals.codecCtxTimeBase(context))
+            declaredStreams += 1
             return stream
         } catch (error: Throwable) {
             if (stream != 0L) Internals.borrowedRelease(stream, Internals.KIND_STREAM)
@@ -157,7 +165,7 @@ public actual class MediaSink internal constructor(
     }
 
     @Throws(FFmpegException::class)
-    public actual fun setMetadata(metadata: Map<String, String>) {
+    public actual fun setMetadata(metadata: Map<String, String>): Unit = synchronized(muxLock) {
         check(!headerWritten) { "Metadata must be set before the muxer writes its header." }
         val format = checkOpen()
         metadata.forEach { (key, value) ->
@@ -187,20 +195,44 @@ public actual class MediaSink internal constructor(
     }
 
     actual override fun close() {
+        // Cores are finished and closed BEFORE muxLock is taken for the trailer. An encode on
+        // another thread holds core.lock and then takes muxLock to write its packets, so closing
+        // cores from inside muxLock would invert that order and deadlock. finish/close below take
+        // each core's own lock, which also serializes against any in-flight encode.
+        val cores = synchronized(muxLock) {
+            if (formatToken == 0L) return
+            encoderCores.toList().also { encoderCores.clear() }
+        }
+        // The FIRST flush error is retained and thrown after cleanup (audit P1-6): tail frames
+        // lost while close reports success is a silent truncation, and one encoder failing is
+        // not a reason to skip draining the others or the trailer for what did land.
+        var firstFailure: Throwable? = null
+        try {
+            if (cores.isNotEmpty()) {
+                withPacket { packet ->
+                    cores.forEach { core ->
+                        runCatching { core.finish(packet) }.exceptionOrNull()?.let { failure ->
+                            if (firstFailure == null) firstFailure = failure
+                            else firstFailure?.addSuppressed(failure)
+                        }
+                    }
+                }
+            }
+        } finally {
+            cores.forEach { runCatching { it.close() } }
+        }
         val trailerRc = synchronized(muxLock) {
             val format = formatToken
             if (format == 0L) return
             var result = 0
             try {
-                try {
-                    if (encoderCores.isNotEmpty()) {
-                        withPacket { packet ->
-                            encoderCores.forEach { core -> runCatching { core.finish(packet) } }
-                        }
+                // Declared streams and no packet means the header never wrote itself on demand;
+                // the sink still owes a real container or an explicit failure (audit P1-5).
+                if (headerState == HeaderState.NotWritten && declaredStreams > 0) {
+                    runCatching { ensureHeaderWritten() }.exceptionOrNull()?.let { failure ->
+                        if (firstFailure == null) firstFailure = failure
+                        else firstFailure?.addSuppressed(failure)
                     }
-                } finally {
-                    encoderCores.forEach { runCatching { it.close() } }
-                    encoderCores.clear()
                 }
                 if (headerState == HeaderState.Written) result = Internals.fmtWriteTrailer(format)
             } finally {
@@ -209,6 +241,7 @@ public actual class MediaSink internal constructor(
             }
             result
         }
+        firstFailure?.let { throw it }
         if (trailerRc < 0) throw FFmpegException(avError(trailerRc))
     }
 
@@ -242,27 +275,36 @@ internal class EncoderCore(
     private var lastPts = Long.MIN_VALUE
     private var basePts = Long.MIN_VALUE
     private var lastSampleCount = 0
+
+    // Excludes MediaSink.close() (which finishes and closes cores) while an encode is inside
+    // native code. Lock order is core → frame → muxLock; MediaSink.close honors it by closing
+    // cores before taking muxLock for the trailer.
+    private val lock = Any()
+
     var framesEncoded: Long = 0L
         private set
 
+    // The last frame's own extent is included, mirroring the native side: measuring only its
+    // start left successful work finishing below 100 percent.
     val outputMicros: Long
         get() = if (lastPts == Long.MIN_VALUE) 0L
-        else Internals.rescaleQ(lastPts, codecTimeBase, Rational.Tb_us)
+        else Internals.rescaleQ(lastPts + stepPastLastPts(), codecTimeBase, Rational.Tb_us)
 
-    fun encode(packet: Long, frame: Frame) {
+    fun encode(packet: Long, frame: Frame): Unit = synchronized(lock) {
         check(codecContext != 0L) { "Encoder is closed" }
-        restampPts(frame)
         try {
-            val source = frame.checkOpen()
-            val converted = if (audio) 0L else conversionFor(source)
-            if (converted != 0L) {
-                try {
-                    sendAndDrain(packet, converted)
-                } finally {
-                    Internals.frameFree(converted)
+            frame.locked { source ->
+                restampPts(frame, source)
+                val converted = if (audio) 0L else conversionFor(source)
+                if (converted != 0L) {
+                    try {
+                        sendAndDrain(packet, converted)
+                    } finally {
+                        Internals.frameFree(converted)
+                    }
+                } else {
+                    sendAndDrain(packet, source)
                 }
-            } else {
-                sendAndDrain(packet, source)
             }
         } finally {
             frame.close()
@@ -292,13 +334,15 @@ internal class EncoderCore(
         return Internals.frameConvert(frame, wanted)
     }
 
-    fun finish(packet: Long) {
-        check(codecContext != 0L) { "Encoder is closed" }
+    fun finish(packet: Long): Unit = synchronized(lock) {
+        // A closed core has nothing left to flush: MediaSink.close finishes every core it ever
+        // created, including ones the caller already drove to completion and closed, and that
+        // must stay a no-op rather than an error mistaken for a lost tail.
+        if (codecContext == 0L) return
         sendAndDrain(packet, 0L)
     }
 
-    private fun restampPts(frame: Frame) {
-        val token = frame.checkOpen()
+    private fun restampPts(frame: Frame, token: Long) {
         val raw = Internals.framePts(token)
         val sampleCount = if (audio) Internals.frameSampleCount(token) else 0
         var pts = if (raw == FrameInfo.NOPTS) {
@@ -352,13 +396,15 @@ internal class EncoderCore(
     fun ensureHeaderWritten() = sink.ensureHeaderWritten()
 
     fun close() {
-        val context = codecContext
-        if (context == 0L) return
-        codecContext = 0L
-        Internals.codecCtxFree(context)
-        val stream = streamToken
-        streamToken = 0L
-        if (stream != 0L) Internals.borrowedRelease(stream, Internals.KIND_STREAM)
+        synchronized(lock) {
+            val context = codecContext
+            if (context == 0L) return
+            codecContext = 0L
+            Internals.codecCtxFree(context)
+            val stream = streamToken
+            streamToken = 0L
+            if (stream != 0L) Internals.borrowedRelease(stream, Internals.KIND_STREAM)
+        }
     }
 }
 
@@ -380,7 +426,7 @@ public actual class CopyStream internal constructor(
     private val streamIndex = Internals.streamIndex(streamToken)
     private var baseTimestamp = FrameInfo.NOPTS
 
-    internal fun writeCopyPacket(packet: Long) {
+    internal fun writeCopyPacket(packet: Long): Unit = sink.withMuxLock {
         check(streamToken != 0L) { "CopyStream is closed with its MediaSink" }
         sink.ensureHeaderWritten()
         Internals.packetSetStreamIndex(packet, streamIndex)

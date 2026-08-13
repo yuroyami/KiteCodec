@@ -14,6 +14,11 @@ public actual class FilterGraph internal constructor(
 ) : AutoCloseable {
     private var outFrameHolder: Frame? = null
 
+    // Excludes close() while an operation is inside native code. The JNI handle table catches a
+    // stale token after close, but it cannot keep the graph alive across a call that already
+    // resolved it; this lock can. Lock order is graph → frame.
+    private val lock = Any()
+
     private fun checkOpen(): Long {
         check(graphToken != 0L) { "FilterGraph is closed" }
         return graphToken
@@ -30,20 +35,20 @@ public actual class FilterGraph internal constructor(
     }
 
     @Throws(FFmpegException::class)
-    public actual fun setOutputFrameSize(samples: Int) {
+    public actual fun setOutputFrameSize(samples: Int): Unit = synchronized(lock) {
         checkOpen()
         require(samples > 0) { "frame size must be positive" }
         Internals.graphSetFrameSize(sinkToken, samples)
     }
 
     @Throws(FFmpegException::class)
-    public actual fun feedInput(index: Int, frame: Frame, onOutput: (Frame) -> Unit) {
+    public actual fun feedInput(index: Int, frame: Frame, onOutput: (Frame) -> Unit): Unit = synchronized(lock) {
         try {
             checkOpen()
             val source = sources.getOrNull(index)
                 ?: throw IllegalArgumentException("Input $index out of range (graph has ${sources.size} inputs)")
             sendUntilAccepted(index, eofIsDone = false, onOutput = onOutput) {
-                Internals.graphSend(source, frame.checkOpen())
+                frame.locked { Internals.graphSend(source, it) }
             }
             drainTo(onOutput)
         } finally {
@@ -52,7 +57,7 @@ public actual class FilterGraph internal constructor(
     }
 
     @Throws(FFmpegException::class)
-    public actual fun flushInput(index: Int, onOutput: (Frame) -> Unit) {
+    public actual fun flushInput(index: Int, onOutput: (Frame) -> Unit): Unit = synchronized(lock) {
         checkOpen()
         val source = sources.getOrNull(index)
             ?: throw IllegalArgumentException("Input $index out of range (graph has ${sources.size} inputs)")
@@ -91,7 +96,7 @@ public actual class FilterGraph internal constructor(
             "row, so retrying cannot make progress."
     }
 
-    internal fun feedFrame(frame: Frame, onOutput: (Frame) -> Unit) = feedInput(0, frame, onOutput)
+    internal fun feedFrame(frame: Frame, onOutput: (Frame) -> Unit): Unit = feedInput(0, frame, onOutput)
 
     internal fun flushInto(onOutput: (Frame) -> Unit) {
         sources.indices.forEach { flushInput(it, onOutput) }
@@ -120,23 +125,37 @@ public actual class FilterGraph internal constructor(
         val source = sources[0]
         try {
             val landing = outFrame()
+            // Each native call runs under the graph lock so a cross-thread close() cannot free the
+            // graph mid-call; the lock is NOT held across emit(), which is a suspension point.
             suspend fun FlowCollector<Frame>.drainEmit() {
                 while (true) {
-                    val rc = Internals.graphReceive(sinkToken, landing.checkOpen())
-                    if (rc == Internals.errorEagain || rc == Internals.errorEof) return
-                    if (rc < 0) throw FFmpegException(avError(rc))
-                    val callback = FrameOps.wrap(landing.checkOpen(), -1, inputType, outputTimeBase)
+                    val out = synchronized(lock) {
+                        checkOpen()
+                        val rc = Internals.graphReceive(sinkToken, landing.checkOpen())
+                        if (rc == Internals.errorEagain || rc == Internals.errorEof) return@synchronized null
+                        if (rc < 0) throw FFmpegException(avError(rc))
+                        val callback = FrameOps.wrap(landing.checkOpen(), -1, inputType, outputTimeBase)
+                        try {
+                            callback.copy()
+                        } finally {
+                            callback.close()
+                        }
+                    } ?: return
                     try {
-                        emit(callback.copy())
-                    } finally {
-                        callback.close()
+                        emit(out)
+                    } catch (error: Throwable) {
+                        out.close()
+                        throw error
                     }
                 }
             }
             input.collect { frame ->
                 try {
                     while (true) {
-                        val rc = Internals.graphSend(source, frame.checkOpen())
+                        val rc = synchronized(lock) {
+                            checkOpen()
+                            frame.locked { Internals.graphSend(source, it) }
+                        }
                         if (rc >= 0) break
                         if (rc == Internals.errorEagain) {
                             drainEmit()
@@ -150,7 +169,10 @@ public actual class FilterGraph internal constructor(
                 drainEmit()
             }
             while (true) {
-                val rc = Internals.graphSend(source, 0L)
+                val rc = synchronized(lock) {
+                    checkOpen()
+                    Internals.graphSend(source, 0L)
+                }
                 if (rc >= 0 || rc == Internals.errorEof) break
                 if (rc == Internals.errorEagain) {
                     drainEmit()
@@ -165,13 +187,14 @@ public actual class FilterGraph internal constructor(
     }
 
     actual override fun close() {
-        val owned = synchronized(this) {
+        synchronized(lock) {
             if (graphToken == 0L) return
-            graphToken.also { graphToken = 0L }
+            val owned = graphToken
+            graphToken = 0L
+            outFrameHolder?.close()
+            outFrameHolder = null
+            Internals.graphFree(owned)
         }
-        outFrameHolder?.close()
-        outFrameHolder = null
-        Internals.graphFree(owned)
     }
 
     public actual companion object {

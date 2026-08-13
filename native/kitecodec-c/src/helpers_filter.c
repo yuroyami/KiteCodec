@@ -61,9 +61,11 @@ KC_API int ffkmp_graph_build_video(
     const AVFilter *sink = avfilter_get_by_name("buffersink");
     if (!src || !sink) { avfilter_graph_free(&graph); return AVERROR_FILTER_NOT_FOUND; }
 
-    /* FFmpeg 8: the `buffer` filter wants pix_fmt as a NAME, not an int. */
+    /* FFmpeg 8: the `buffer` filter wants pix_fmt as a NAME, not an int. An unknown format is an
+       argument error, NOT an invitation to substitute yuv420p: a graph silently built for a
+       different format than the caller's frames misreads every plane. */
     const char *pix_fmt_name = av_get_pix_fmt_name((enum AVPixelFormat)pix_fmt);
-    if (!pix_fmt_name) pix_fmt_name = "yuv420p";
+    if (!pix_fmt_name) { avfilter_graph_free(&graph); return AVERROR(EINVAL); }
 
     char args[512];
     snprintf(args, sizeof(args),

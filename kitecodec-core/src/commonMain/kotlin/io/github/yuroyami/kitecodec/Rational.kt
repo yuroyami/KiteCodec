@@ -76,17 +76,36 @@ public class Rational private constructor(public val num: Int, public val den: I
          */
         public operator fun invoke(num: Int, den: Int): Rational = of(num.toLong(), den.toLong())
 
-        /** Build from a Long-valued fraction, scaling down (with precision loss) only if it can't fit Int. */
+        /**
+         * Build from a Long-valued fraction, exactly or not at all.
+         *
+         * The old behaviour halved both components until they fit and coerced a denominator that
+         * reached zero back to one, which silently turned 50000/1 * 50000/1 into 1250000000/1
+         * (audit KiteCodec P1-9). A rational that cannot hold the exact value now throws, the
+         * same decision `times(scalar)` already made, and the message points at the 128-bit
+         * av_rescale_q path that exists for exactly this.
+         *
+         * @throws ArithmeticException when the reduced fraction does not fit Int components
+         */
         internal fun of(num: Long, den: Long): Rational {
             require(den != 0L) { "Rational denominator can't be zero" }
+            if (num == Long.MIN_VALUE || den == Long.MIN_VALUE) {
+                // Negating Long.MIN_VALUE wraps to itself, so the sign normalization below would
+                // be wrong before any range check could see it.
+                throw ArithmeticException("$num/$den cannot be represented as a Rational")
+            }
             val sign = if (den < 0) -1 else 1
-            var n = sign * num; var d = sign * den
+            var n = sign * num
+            var d = sign * den
             val g = gcd(n, d)
             if (g > 1) { n /= g; d /= g }
-            while (n !in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong() || d > Int.MAX_VALUE) {
-                n /= 2; d /= 2
+            if (n !in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong() || d > Int.MAX_VALUE) {
+                throw ArithmeticException(
+                    "$num/$den reduces to $n/$d, which does not fit 32-bit components. " +
+                        "Use av_rescale_q-backed APIs for timestamp math",
+                )
             }
-            return Rational(n.toInt(), d.toInt().coerceAtLeast(1))
+            return Rational(n.toInt(), d.toInt())
         }
 
         private fun gcd(a: Long, b: Long): Long {

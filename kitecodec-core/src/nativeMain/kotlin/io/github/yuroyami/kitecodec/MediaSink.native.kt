@@ -79,6 +79,9 @@ public actual class MediaSink internal constructor(
     private enum class HeaderState { NotWritten, Written, Failed }
 
     private val encoderCores = mutableListOf<EncoderCore>()
+
+    /** Streams declared on this sink; close() owes a real container once this is nonzero. */
+    private var declaredStreams = 0
     private var headerState = HeaderState.NotWritten
     private var closed = false
 
@@ -153,6 +156,7 @@ public actual class MediaSink internal constructor(
         // avformat_write_header, which is why writeCopyPacket re-reads it per packet.
         ffkmp_stream_set_time_base(outStream, stream.timeBase.num, stream.timeBase.den)
 
+        declaredStreams += 1
         return CopyStream(sink = this, stream = outStream, sourceTimeBase = stream.timeBase, sourceIndex = stream.index)
     }
 
@@ -238,6 +242,7 @@ public actual class MediaSink internal constructor(
             check0(ffkmp_codecpar_from_context(par, codecCtx), "avcodec_parameters_from_context")
             val tb = codecCtxTimeBase(codecCtx)
             ffkmp_stream_set_time_base(stream, tb.num, tb.den)
+            declaredStreams += 1
             return stream
         } catch (t: Throwable) {
             ffkmp_codecctx_free(codecCtx)
@@ -278,6 +283,7 @@ public actual class MediaSink internal constructor(
     }
 
     actual override fun close() {
+        var firstFailure: Throwable? = null
         val trailerRc = synchronized(muxLock) {
             if (closed) return
             closed = true
@@ -285,16 +291,31 @@ public actual class MediaSink internal constructor(
             try {
                 // Flush BEFORE freeing the contexts. Encoders buffer (libx264's lookahead holds
                 // tens of frames); freeing without an EOF drain silently truncates the tail. The
-                // drain is best-effort; close() must still write a trailer for whatever did land
-                // if an encoder errors out here, and drive()/Transcoder have usually finished
-                // already, in which case finish() is a no-op on a spent encoder.
+                // FIRST flush error is retained and thrown after cleanup: tail frames lost while
+                // close reports success was the audit's P1-6, and one encoder failing is not a
+                // reason to skip draining the others or the trailer for what did land.
                 if (encoderCores.isNotEmpty()) {
                     withPacket { packet ->
-                        encoderCores.forEach { core -> runCatching { core.finish(packet) } }
+                        encoderCores.forEach { core ->
+                            runCatching { core.finish(packet) }.exceptionOrNull()?.let { failure ->
+                                if (firstFailure == null) firstFailure = failure
+                                else firstFailure?.addSuppressed(failure)
+                            }
+                        }
                     }
                 }
                 encoderCores.forEach { runCatching { it.close() } }
                 encoderCores.clear()
+                // Declared streams and no packet means the header never wrote itself on demand.
+                // The sink still owes a real container: header now, trailer below, or an explicit
+                // failure. Declaring streams and closing used to perform no I/O and report
+                // success (audit P1-5).
+                if (headerState == HeaderState.NotWritten && declaredStreams > 0) {
+                    runCatching { ensureHeaderWritten() }.exceptionOrNull()?.let { failure ->
+                        if (firstFailure == null) firstFailure = failure
+                        else firstFailure?.addSuppressed(failure)
+                    }
+                }
                 if (headerState == HeaderState.Written) {
                     rc = ffkmp_fmt_write_trailer(ctx)
                 }
@@ -306,6 +327,7 @@ public actual class MediaSink internal constructor(
             }
             rc
         }
+        firstFailure?.let { throw it }
         // A failed trailer means the file on disk is broken (e.g. mp4 moov never written), and
         // surfacing that beats handing the caller a corrupt output with a green checkmark.
         if (trailerRc < 0) throw FFmpegException(avError(trailerRc))
@@ -369,10 +391,14 @@ internal class EncoderCore(
     private var lastSampleCount = 0
     var framesEncoded: Long = 0; private set
 
-    /** Where the output timeline currently ends, in microseconds. 0 until the first frame. */
+    /**
+     * Where the output timeline currently ENDS, in microseconds. 0 until the first frame.
+     * The last frame's own extent is included: measuring only its start left successful work
+     * finishing below 100 percent (audit KiteCodec P1-14).
+     */
     val outputMicros: Long
         get() = if (lastPts == Long.MIN_VALUE) 0
-        else ffkmp_rescale_q(lastPts, codecTimeBase.num, codecTimeBase.den, 1, 1_000_000)
+        else ffkmp_rescale_q(lastPts + stepPastLastPts(), codecTimeBase.num, codecTimeBase.den, 1, 1_000_000)
 
     /** Encode one frame, converting its pixel format to the encoder's if needed. Closes [frame]. */
     fun encode(packet: CPointer<kc_packet>, frame: Frame) {
@@ -441,7 +467,9 @@ internal class EncoderCore(
 
     /** Signal EOF to the encoder and write out everything it still buffers. */
     fun finish(packet: CPointer<kc_packet>) {
-        check(!closed) { "Encoder is closed" }
+        // No-op on a spent encoder: MediaSink.close finishes every core, including ones already
+        // driven to completion and closed, and that must not read as a lost tail.
+        if (closed) return
         sendAndDrain(packet, null)
     }
 

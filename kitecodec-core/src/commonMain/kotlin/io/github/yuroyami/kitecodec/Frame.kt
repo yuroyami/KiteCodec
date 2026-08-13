@@ -6,10 +6,16 @@ package io.github.yuroyami.kitecodec
  *
  * **Ownership rule.** Frames emitted by the public `Flow` APIs ([MediaSource.decodedFrames],
  * [MediaSource.decodeStreams], [FilterGraph.process]) are owned by the collector. Each frame
- * stays valid until you [close] it, so buffering operators such as `buffer()` and `toList()`
- * are safe. Close every collected frame. An unclosed frame leaks its native buffers. Frames
- * handed to a callback ([FilterGraph.feedInput]'s `onOutput`) are valid only for that call.
- * Call [copy] to take an owned snapshot of one.
+ * stays valid until you [close] it. Close every collected frame. An unclosed frame leaks its
+ * native buffers. Frames handed to a callback ([FilterGraph.feedInput]'s `onOutput`) are valid
+ * only for that call. Call [copy] to take an owned snapshot of one.
+ *
+ * **Buffering caveat.** `toList()` is safe: every frame reaches you. Operators that hold frames
+ * in an intermediate channel, `buffer()` above all, are only safe when the flow is collected to
+ * completion. Cancelling mid-stream (for example `buffer().take(1)`) strands the frames still
+ * queued inside the operator, and the standard library gives this flow no hook to close them,
+ * so they leak. When you need early termination, collect without `buffer()`, or apply `take`
+ * BEFORE any buffering operator so only frames you will actually receive are ever cloned.
  *
  * The native representation is intentionally not exposed. Pipeline operators ([FilterGraph],
  * encoders) accept Frames directly and resolve their platform handle internally.

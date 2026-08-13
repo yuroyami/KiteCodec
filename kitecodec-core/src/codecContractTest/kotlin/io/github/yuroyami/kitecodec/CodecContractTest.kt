@@ -163,7 +163,9 @@ internal class CodecContractTest {
         val source = MediaSource.open(sourcePath)
         val video = assertNotNull(source.primaryVideo)
         val sourceBaseline = contractLiveHandleCount()
-        assertFailsWith<FFmpegException> {
+        // A forged StreamInfo is now refused by canonicalization BEFORE any decoder opens
+        // (audit P1-8): the refusal is a typed argument error, and nothing was allocated to leak.
+        assertFailsWith<IllegalArgumentException> {
             runBlocking {
                 source.decodeStreams(
                     listOf(video, video.copy(index = Int.MAX_VALUE)),
@@ -173,7 +175,7 @@ internal class CodecContractTest {
         assertEquals(
             sourceBaseline,
             contractLiveHandleCount(),
-            "a later decoder-open failure leaked an earlier decoder owner",
+            "a refused stream set must allocate no decoder owner",
         )
         val reader = source.openPacketReader(listOf(video))
         reader.close()

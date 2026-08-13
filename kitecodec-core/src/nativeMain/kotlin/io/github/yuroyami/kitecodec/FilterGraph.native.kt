@@ -168,10 +168,15 @@ public actual class FilterGraph internal constructor(
             if (rc == FFErrors.EAGAIN || rc == FFErrors.EOF) return produced
             if (rc < 0) throw FFmpegException(avError(rc))
             produced = true
+            // The wrapper itself must be closed, not just the landing frame unreffed: a callback
+            // that retains the wrapper would otherwise hold an "open" Frame whose pointer aliases
+            // storage this loop reuses and the graph eventually frees. Closing the wrapper both
+            // invalidates it for any retainer and performs the unref the landing frame needs.
+            val view = FrameOps.wrap(landing.nativeFrame, -1, inputType, outputTimeBase)
             try {
-                onOutput(FrameOps.wrap(landing.nativeFrame, -1, inputType, outputTimeBase))
+                onOutput(view)
             } finally {
-                ffkmp_frame_unref(landing.nativeFrame)
+                view.close()
             }
         }
     }

@@ -7,16 +7,26 @@ public actual class Frame internal constructor(
     internal val streamType: MediaType,
     internal val streamTimeBase: Rational,
 ) : AutoCloseable {
+    /**
+     * Guards the token for the full duration of every native call against a concurrent [close].
+     * The JNI handle table only guarantees a non-torn lookup; it does not keep the native object
+     * alive across an operation, so the mutual exclusion has to happen here, at the boundary where
+     * both the operation and the close enter native code.
+     */
+    internal val lock: Any = Any()
+
     internal fun checkOpen(): Long {
         check(token != 0L) { "Frame is closed, its native buffers are gone" }
         return token
     }
 
+    /** Run [block] with the open token while holding [lock], excluding a concurrent [close]. */
+    internal inline fun <R> locked(block: (Long) -> R): R = synchronized(lock) { block(checkOpen()) }
+
     private var cachedInfo: FrameInfo? = null
     public actual val info: FrameInfo
-        get() {
-            val open = checkOpen()
-            return cachedInfo ?: readInfo(open).also { cachedInfo = it }
+        get() = locked { open ->
+            cachedInfo ?: readInfo(open).also { cachedInfo = it }
         }
 
     private fun readInfo(open: Long): FrameInfo = FrameInfo(
@@ -65,27 +75,28 @@ public actual class Frame internal constructor(
     }
 
     @Throws(FFmpegException::class)
-    public actual fun copyPlanesToByteArray(): ByteArray = Internals.frameCopyPlanes(checkOpen())
+    public actual fun copyPlanesToByteArray(): ByteArray = locked { Internals.frameCopyPlanes(it) }
 
     @Throws(FFmpegException::class)
-    public actual fun copy(): Frame = Frame(
-        token = Internals.frameClone(checkOpen()),
-        ownsToken = true,
-        streamIndex = streamIndex,
-        streamType = streamType,
-        streamTimeBase = streamTimeBase,
-    )
+    public actual fun copy(): Frame = locked { open ->
+        Frame(
+            token = Internals.frameClone(open),
+            ownsToken = true,
+            streamIndex = streamIndex,
+            streamType = streamType,
+            streamTimeBase = streamTimeBase,
+        )
+    }
 
     @Throws(FFmpegException::class)
-    public actual fun downloadFromHardware(): Frame {
-        val source = checkOpen()
+    public actual fun downloadFromHardware(): Frame = locked { source ->
         val downloaded = Internals.frameAlloc()
         val rc = Internals.frameHwDownload(source, downloaded)
         if (rc < 0) {
             Internals.frameFree(downloaded)
             throw FFmpegException(avError(rc))
         }
-        return Frame(
+        Frame(
             token = downloaded,
             ownsToken = true,
             streamIndex = streamIndex,
@@ -95,8 +106,11 @@ public actual class Frame internal constructor(
     }
 
     @Throws(FFmpegException::class)
-    public actual fun encodeImage(codec: CodecId): ByteArray {
-        val source = checkOpen()
+    public actual fun encodeImage(codec: CodecId): ByteArray = locked { source ->
+        encodeImageLocked(source, codec)
+    }
+
+    private fun encodeImageLocked(source: Long, codec: CodecId): ByteArray {
         if (streamType != MediaType.Video) {
             throw FFmpegException(
                 FFmpegError.Internal("encodeImage works on video frames, this is a $streamType frame"),
@@ -191,10 +205,12 @@ public actual class Frame internal constructor(
     }
 
     actual override fun close() {
-        val owned = token
-        if (owned == 0L) return
-        token = 0L
-        if (ownsToken) Internals.frameFree(owned) else Internals.frameUnref(owned)
+        synchronized(lock) {
+            val owned = token
+            if (owned == 0L) return
+            token = 0L
+            if (ownsToken) Internals.frameFree(owned) else Internals.frameUnref(owned)
+        }
     }
 
     public actual companion object {

@@ -5,18 +5,24 @@ public actual class Packet internal constructor(
     internal var token: Long,
     public actual val timeBase: Rational,
 ) : AutoCloseable {
+    // Guards the token across each native call, excluding a concurrent close(): the JNI handle
+    // table only guarantees a non-torn lookup, not object lifetime for the whole operation.
+    internal val lock: Any = Any()
+
     internal fun checkOpen(): Long {
         check(token != 0L) { "Packet is closed" }
         return token
     }
 
-    public actual val streamIndex: Int get() = Internals.packetStreamIndex(checkOpen())
-    public actual val pts: Long get() = Internals.packetPts(checkOpen())
-    public actual val dts: Long get() = Internals.packetDts(checkOpen())
-    public actual val duration: Long get() = Internals.packetDuration(checkOpen())
-    public actual val isKeyframe: Boolean get() = Internals.packetIsKeyframe(checkOpen())
-    public actual val sizeBytes: Int get() = Internals.packetSize(checkOpen())
-    public actual val bytePosition: Long get() = Internals.packetPosition(checkOpen())
+    internal inline fun <R> locked(block: (Long) -> R): R = synchronized(lock) { block(checkOpen()) }
+
+    public actual val streamIndex: Int get() = locked { Internals.packetStreamIndex(it) }
+    public actual val pts: Long get() = locked { Internals.packetPts(it) }
+    public actual val dts: Long get() = locked { Internals.packetDts(it) }
+    public actual val duration: Long get() = locked { Internals.packetDuration(it) }
+    public actual val isKeyframe: Boolean get() = locked { Internals.packetIsKeyframe(it) }
+    public actual val sizeBytes: Int get() = locked { Internals.packetSize(it) }
+    public actual val bytePosition: Long get() = locked { Internals.packetPosition(it) }
     public actual val hasPts: Boolean get() = pts != FrameInfo.NOPTS
     public actual val ptsMicros: Long?
         get() = if (hasPts) Internals.rescaleQ(pts, timeBase, Rational.Tb_us) else null
@@ -27,15 +33,17 @@ public actual class Packet internal constructor(
 
     @KiteCodecLowLevelApi
     @Throws(FFmpegException::class)
-    public actual fun copy(): Packet = Packet(Internals.packetClone(checkOpen()), timeBase)
+    public actual fun copy(): Packet = locked { Packet(Internals.packetClone(it), timeBase) }
 
-    public actual fun copyBytes(): ByteArray = Internals.packetBytes(checkOpen())
+    public actual fun copyBytes(): ByteArray = locked { Internals.packetBytes(it) }
 
     actual override fun close() {
-        val owned = token
-        if (owned == 0L) return
-        token = 0L
-        Internals.packetFree(owned)
+        synchronized(lock) {
+            val owned = token
+            if (owned == 0L) return
+            token = 0L
+            Internals.packetFree(owned)
+        }
     }
 }
 
@@ -50,35 +58,45 @@ public actual class PacketReader internal constructor(
 ) : AutoCloseable {
     private var scratch = Internals.packetAlloc()
 
+    // Excludes close() while a read or seek is inside native code. A close arriving mid-read
+    // blocks until the read returns instead of freeing the scratch packet under it.
+    private val lock = Any()
+
     @Throws(FFmpegException::class)
     public actual fun read(): Packet? {
-        check(scratch != 0L) { "PacketReader is closed" }
-        while (true) {
-            val rc = Internals.fmtReadFrame(formatToken, scratch)
-            if (rc == Internals.errorEof) return null
-            if (rc < 0) throw FFmpegException(avError(rc))
-            val timeBase = timeBaseByStream[Internals.packetStreamIndex(scratch)]
-            if (timeBase == null) {
-                Internals.packetUnref(scratch)
-                continue
-            }
-            val owned = Internals.packetAlloc()
-            try {
-                Internals.packetMoveRef(owned, scratch)
-                return Packet(owned, timeBase)
-            } catch (error: Throwable) {
-                Internals.packetFree(owned)
-                throw error
+        synchronized(lock) {
+            check(scratch != 0L) { "PacketReader is closed" }
+            while (true) {
+                val rc = Internals.fmtReadFrame(formatToken, scratch)
+                if (rc == Internals.errorEof) return null
+                if (rc < 0) throw FFmpegException(avError(rc))
+                val timeBase = timeBaseByStream[Internals.packetStreamIndex(scratch)]
+                if (timeBase == null) {
+                    Internals.packetUnref(scratch)
+                    continue
+                }
+                val owned = Internals.packetAlloc()
+                try {
+                    Internals.packetMoveRef(owned, scratch)
+                    return Packet(owned, timeBase)
+                } catch (error: Throwable) {
+                    Internals.packetFree(owned)
+                    throw error
+                }
             }
         }
     }
 
     @Throws(FFmpegException::class)
-    public actual fun seek(micros: Long, direction: SeekDirection, notEarlierThan: Long?) {
+    public actual fun seek(micros: Long, direction: SeekDirection, notEarlierThan: Long?): Unit = synchronized(lock) {
         check(scratch != 0L) { "PacketReader is closed" }
         val target = source.toAbsoluteMicros(micros)
         val min = notEarlierThan?.let(source::toAbsoluteMicros) ?: Long.MIN_VALUE
-        val max = if (direction == SeekDirection.Forward) Long.MAX_VALUE else target
+        // Same bound rule as the native actual: Any may land after the target by contract.
+        val max = when (direction) {
+            SeekDirection.Backward -> target
+            SeekDirection.Forward, SeekDirection.Any -> Long.MAX_VALUE
+        }
         val flags = when (direction) {
             SeekDirection.Backward -> Internals.seekFlagBackward
             SeekDirection.Forward -> 0
@@ -89,16 +107,18 @@ public actual class PacketReader internal constructor(
     }
 
     actual override fun close() {
-        val owned = scratch
-        if (owned == 0L) return
-        scratch = 0L
-        try {
-            Internals.packetFree(owned)
-        } finally {
+        synchronized(lock) {
+            val owned = scratch
+            if (owned == 0L) return
+            scratch = 0L
             try {
-                source.restoreStreamDiscardDefaults()
+                Internals.packetFree(owned)
             } finally {
-                source.endPacketReader()
+                try {
+                    source.restoreStreamDiscardDefaults()
+                } finally {
+                    source.endPacketReader()
+                }
             }
         }
     }
@@ -111,14 +131,21 @@ public actual class StreamDecoder internal constructor(
 ) : AutoCloseable {
     private var landing = Internals.frameAlloc()
 
+    // Excludes close() while a decode call is inside native code; lock order is decoder → packet.
+    private val lock = Any()
+
     public actual var isDrained: Boolean = false
         private set
 
     @Throws(FFmpegException::class)
-    public actual fun send(packet: Packet?): Boolean {
+    public actual fun send(packet: Packet?): Boolean = synchronized(lock) {
         check(codecContext != 0L) { "StreamDecoder is closed" }
-        val rc = Internals.codecCtxSendPacket(codecContext, packet?.checkOpen() ?: 0L)
-        return when (rc) {
+        val rc = if (packet == null) {
+            Internals.codecCtxSendPacket(codecContext, 0L)
+        } else {
+            packet.locked { Internals.codecCtxSendPacket(codecContext, it) }
+        }
+        when (rc) {
             0, Internals.errorEof, FFmpegError.AVERROR_INVALIDDATA -> true
             Internals.errorEagain -> false
             else -> if (rc < 0) throw FFmpegException(avError(rc)) else true
@@ -126,7 +153,7 @@ public actual class StreamDecoder internal constructor(
     }
 
     @Throws(FFmpegException::class)
-    public actual fun receive(): Frame? {
+    public actual fun receive(): Frame? = synchronized(lock) {
         check(codecContext != 0L) { "StreamDecoder is closed" }
         val rc = Internals.codecCtxReceiveFrame(codecContext, landing)
         when (rc) {
@@ -147,20 +174,22 @@ public actual class StreamDecoder internal constructor(
         )
     }
 
-    public actual fun flush() {
+    public actual fun flush(): Unit = synchronized(lock) {
         check(codecContext != 0L) { "StreamDecoder is closed" }
         Internals.codecCtxFlush(codecContext)
         isDrained = false
     }
 
     actual override fun close() {
-        val context = codecContext
-        if (context == 0L) return
-        codecContext = 0L
-        val frame = landing
-        landing = 0L
-        if (frame != 0L) Internals.frameFree(frame)
-        Internals.codecCtxFree(context)
+        synchronized(lock) {
+            val context = codecContext
+            if (context == 0L) return
+            codecContext = 0L
+            val frame = landing
+            landing = 0L
+            if (frame != 0L) Internals.frameFree(frame)
+            Internals.codecCtxFree(context)
+        }
     }
 
     internal companion object {

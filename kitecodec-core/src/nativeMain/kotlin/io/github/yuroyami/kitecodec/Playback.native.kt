@@ -267,7 +267,13 @@ public actual class PacketReader internal constructor(
         check(!closed) { "PacketReader is closed" }
         val target = source.toAbsoluteMicros(micros)
         val min = notEarlierThan?.let { source.toAbsoluteMicros(it) } ?: Long.MIN_VALUE
-        val max = if (direction == SeekDirection.Forward) Long.MAX_VALUE else target
+        // Any documents "the nearest indexed frame, whether or not it is a keyframe", which may
+        // sit AFTER the target; capping max at the target made a closer later frame unreachable
+        // and quietly turned Any into Backward-without-keyframes (audit KiteCodec P1-13).
+        val max = when (direction) {
+            SeekDirection.Backward -> target
+            SeekDirection.Forward, SeekDirection.Any -> Long.MAX_VALUE
+        }
         val flags = when (direction) {
             SeekDirection.Backward -> ffkmp_avseek_flag_backward()
             SeekDirection.Forward -> 0
@@ -508,15 +514,18 @@ public fun <R> Frame.withPlanes(
         "This frame lives in hardware memory and has no readable planes. Use hardwareSurface, or " +
             "download it first."
     }
-    val count = ffkmp_frame_plane_count(nativeFrame)
+    // checkedNative re-runs the open check at dereference time: the info reads above may have
+    // been served from the metadata cache, which proves nothing about the pointer's lifetime.
+    val native = checkedNative
+    val count = ffkmp_frame_plane_count(native)
     val planes = ArrayList<CPointer<UByteVar>>(count)
     val strides = ArrayList<Int>(count)
     val heights = ArrayList<Int>(count)
     for (i in 0 until count) {
-        val plane = ffkmp_frame_plane(nativeFrame, i) ?: break
+        val plane = ffkmp_frame_plane(native, i) ?: break
         planes += plane
-        strides += ffkmp_frame_linesize(nativeFrame, i)
-        heights += ffkmp_frame_plane_height(nativeFrame, i)
+        strides += ffkmp_frame_linesize(native, i)
+        heights += ffkmp_frame_plane_height(native, i)
     }
     return block(planes, strides, heights)
 }
@@ -531,4 +540,4 @@ public fun <R> Frame.withPlanes(
 @KiteCodecLowLevelApi
 @OptIn(ExperimentalForeignApi::class)
 public val Frame.hardwareSurface: COpaquePointer?
-    get() = ffkmp_frame_hw_surface(nativeFrame)
+    get() = ffkmp_frame_hw_surface(checkedNative)

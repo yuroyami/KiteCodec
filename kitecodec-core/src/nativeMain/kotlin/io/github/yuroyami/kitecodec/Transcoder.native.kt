@@ -79,39 +79,14 @@ public actual object Transcoder {
                 val acopy = if (audioCopy && audioStream != null) sink.addCopyStream(source, audioStream) else null
                 val subCopies = subtitleStreams.associate { it.index to sink.addCopyStream(source, it) }
 
-                // Graphs are built INSIDE the try so a failing audio-graph build can't leak an
-                // already-built video graph (encoders are recovered by sink.close(), graphs are not).
+                // Graphs are built LAZILY, from the first decoded frame of each stream, and
+                // rebuilt when a frame's format changes mid-stream. Codec parameters lie exactly
+                // where it hurts: they can be unknown, differ from what the decoder actually
+                // negotiated, and say nothing about mid-file transitions (audit KiteCodec P1-2).
+                // The vars live at this scope so the finally below owns them either way.
                 var videoGraph: FilterGraph? = null
                 var audioGraph: FilterGraph? = null
                 try {
-                    videoGraph = if (videoFilter != null && vinfo != null && videoStream != null) {
-                        FilterGraph.buildVideo(
-                            description = videoFilter,
-                            width = vinfo.width,
-                            height = vinfo.height,
-                            pixelFormat = vinfo.pixelFormat,
-                            timeBase = videoStream.timeBase,
-                            frameRate = vinfo.frameRate,
-                            sampleAspectRatio = vinfo.sampleAspectRatio,
-                        )
-                    } else null
-                    // Re-encoded audio always runs through a graph: it resamples/reformats to what
-                    // the encoder negotiated and chunks output to the codec's fixed frame size.
-                    audioGraph = if (aenc != null && audioStream != null && ainfo != null) {
-                        FilterGraph.buildAudio(
-                            description = audioFilter ?: "anull",
-                            sampleRate = ainfo.sampleRate,
-                            sampleFormat = ainfo.sampleFormat,
-                            channels = ainfo.channels,
-                            timeBase = audioStream.timeBase,
-                            outputSampleRate = aenc.sampleRate,
-                            outputSampleFormat = aenc.sampleFormat,
-                            outputChannels = aenc.channels,
-                        ).also { graph ->
-                            if (aenc.frameSize > 0) graph.setOutputFrameSize(aenc.frameSize)
-                        }
-                    } else null
-
                     // Write the header eagerly, like Remuxer does. Without this a source that
                     // yields no frames at all never reaches the drain loop that would trigger it,
                     // so avio_open never runs and the call returns "successfully" having created
@@ -171,9 +146,65 @@ public actual object Transcoder {
                                 if (venc == null) reportMaybe()
                             }
 
+                            // The lazy graph builders. Keyed on what the DECODER produced; a key
+                            // change flushes the old graph into the encoder (its buffered frames
+                            // belong to the old format) and builds a fresh one.
+                            var videoGraphKey: List<Any>? = null
+                            fun videoGraphFor(frame: Frame): FilterGraph? {
+                                if (videoFilter == null || videoStream == null) return null
+                                val info = frame.info
+                                val key = listOf(info.width, info.height, info.pixelFormat.name)
+                                videoGraph?.let { existing ->
+                                    if (key == videoGraphKey) return existing
+                                    existing.flushInto(::encodeVideo)
+                                    existing.close()
+                                    videoGraph = null
+                                }
+                                return FilterGraph.buildVideo(
+                                    description = videoFilter,
+                                    width = info.width,
+                                    height = info.height,
+                                    pixelFormat = info.pixelFormat,
+                                    timeBase = videoStream.timeBase,
+                                    frameRate = vinfo?.frameRate ?: Rational(25, 1),
+                                    sampleAspectRatio = info.sampleAspectRatio,
+                                ).also {
+                                    videoGraph = it
+                                    videoGraphKey = key
+                                }
+                            }
+                            var audioGraphKey: List<Any>? = null
+                            fun audioGraphFor(frame: Frame): FilterGraph {
+                                val info = frame.info
+                                val key = listOf(info.sampleRate, info.channelCount, info.sampleFormat.name)
+                                audioGraph?.let { existing ->
+                                    if (key == audioGraphKey) return existing
+                                    existing.flushInto(::encodeAudio)
+                                    existing.close()
+                                    audioGraph = null
+                                }
+                                // Re-encoded audio always runs through a graph: it resamples and
+                                // reformats to what the encoder negotiated and chunks output to
+                                // the codec's fixed frame size.
+                                return FilterGraph.buildAudio(
+                                    description = audioFilter ?: "anull",
+                                    sampleRate = info.sampleRate,
+                                    sampleFormat = info.sampleFormat,
+                                    channels = info.channelCount,
+                                    timeBase = audioStream!!.timeBase,
+                                    outputSampleRate = aenc!!.sampleRate,
+                                    outputSampleFormat = aenc.sampleFormat,
+                                    outputChannels = aenc.channels,
+                                ).also { graph ->
+                                    if (aenc.frameSize > 0) graph.setOutputFrameSize(aenc.frameSize)
+                                    audioGraph = graph
+                                    audioGraphKey = key
+                                }
+                            }
+
                             val decodeList = listOfNotNull(
                                 videoStream?.takeIf { venc != null },
-                                audioStream?.takeIf { audioGraph != null },
+                                audioStream?.takeIf { aenc != null },
                             )
                             val copyList = listOfNotNull(
                                 videoStream?.takeIf { vcopy != null },
@@ -198,11 +229,13 @@ public actual object Transcoder {
                                         startMicros > 0 && micros != Long.MIN_VALUE && micros < startMicros ->
                                             frame.close()  // decode-discard up to the exact start
                                         else -> when (frame.streamIndex) {
-                                            videoStream?.index ->
-                                                if (videoGraph != null) videoGraph!!.feedFrame(frame, ::encodeVideo)
+                                            videoStream?.index -> {
+                                                val graph = videoGraphFor(frame)
+                                                if (graph != null) graph.feedFrame(frame, ::encodeVideo)
                                                 else encodeVideo(frame)
+                                            }
                                             audioStream?.index ->
-                                                audioGraph!!.feedFrame(frame, ::encodeAudio)
+                                                audioGraphFor(frame).feedFrame(frame, ::encodeAudio)
                                             else -> frame.close()
                                         }
                                     }

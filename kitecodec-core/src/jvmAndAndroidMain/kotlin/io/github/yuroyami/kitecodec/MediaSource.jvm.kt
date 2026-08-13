@@ -46,7 +46,7 @@ public actual class MediaSource internal constructor(
     private fun endDemux() = synchronized(stateLock) { demuxing = false }
     internal fun endPacketReader() = synchronized(stateLock) { readerActive = false }
 
-    internal fun restoreStreamDiscardDefaults() {
+    internal fun restoreStreamDiscardDefaults(): Unit = synchronized(stateLock) {
         val context = checkOpen()
         streams.forEach { info ->
             val stream = Internals.fmtStream(context, info.index)
@@ -59,7 +59,10 @@ public actual class MediaSource internal constructor(
     }
 
     public actual val isSeekable: Boolean = Internals.fmtIsSeekable(formatToken)
-    public actual val primaryVideo: StreamInfo? get() = streams.firstOrNull { it.type == MediaType.Video }
+    // Attached pictures (album art) are excluded first, exactly as the native side does.
+    public actual val primaryVideo: StreamInfo?
+        get() = streams.firstOrNull { it.type == MediaType.Video && !it.disposition.attachedPicture }
+            ?: streams.firstOrNull { it.type == MediaType.Video }
     public actual val primaryAudio: StreamInfo? get() = streams.firstOrNull { it.type == MediaType.Audio }
 
     public actual fun decodedFrames(stream: StreamInfo): Flow<Frame> = decodeStreams(listOf(stream))
@@ -83,6 +86,7 @@ public actual class MediaSource internal constructor(
         require(all.isNotEmpty()) { "Need at least one stream to demux" }
         require(decode.all { it.type.isAv }) { "Only video/audio streams can be decoded" }
         require(all.distinctBy { it.index }.size == all.size) { "Duplicate stream indices" }
+        all.forEach(::requireOwnStream)
 
         val context = beginDemux()
         val decoders = mutableListOf<DecoderState>()
@@ -189,34 +193,37 @@ public actual class MediaSource internal constructor(
     }
 
     public actual suspend fun seekMicros(micros: Long) {
-        val context = synchronized(stateLock) {
+        // The native seek runs while stateLock is held: releasing it after the token read would
+        // let a concurrent close() free the format context mid-seek. A close arriving during the
+        // seek now blocks until the seek returns, which is the safe ordering.
+        synchronized(stateLock) {
             check(formatToken != 0L) { "MediaSource is closed" }
             check(!demuxing) { "Cannot seek while a decode flow is collecting: the demuxer cursor is shared" }
             check(!readerActive) {
                 "Cannot seek this MediaSource while a PacketReader is open: the reader owns the " +
                     "demuxer cursor. Use PacketReader.seek instead."
             }
-            formatToken
+            val rc = Internals.fmtSeekMicros(formatToken, -1, toAbsoluteMicros(micros))
+            if (rc < 0) throw FFmpegException(avError(rc))
         }
-        val rc = Internals.fmtSeekMicros(context, -1, toAbsoluteMicros(micros))
-        if (rc < 0) throw FFmpegException(avError(rc))
     }
 
     internal suspend fun seekForDecode(micros: Long) {
         seekMicros((micros - DECODE_SEEK_BACKOFF_MICROS).coerceAtLeast(0L))
     }
 
-    internal inline fun <T> withCodecParameters(stream: StreamInfo, block: (Long) -> T): T {
-        val streamToken = Internals.fmtStream(checkOpen(), stream.index)
-        var parameters = 0L
-        try {
-            parameters = Internals.streamCodecPar(streamToken)
-            return block(parameters)
-        } finally {
-            if (parameters != 0L) Internals.borrowedRelease(parameters, Internals.KIND_CODEC_PAR)
-            Internals.borrowedRelease(streamToken, Internals.KIND_STREAM)
+    internal fun <T> withCodecParameters(stream: StreamInfo, block: (Long) -> T): T =
+        synchronized(stateLock) {
+            val streamToken = Internals.fmtStream(checkOpen(), stream.index)
+            var parameters = 0L
+            try {
+                parameters = Internals.streamCodecPar(streamToken)
+                block(parameters)
+            } finally {
+                if (parameters != 0L) Internals.borrowedRelease(parameters, Internals.KIND_CODEC_PAR)
+                Internals.borrowedRelease(streamToken, Internals.KIND_STREAM)
+            }
         }
-    }
 
     public actual suspend fun extractFrame(atMicros: Long, stream: StreamInfo?): Frame {
         val target = stream ?: primaryVideo
@@ -245,6 +252,7 @@ public actual class MediaSource internal constructor(
     public actual fun openPacketReader(streams: List<StreamInfo>): PacketReader {
         require(streams.isNotEmpty()) { "Need at least one stream to read" }
         require(streams.distinctBy { it.index }.size == streams.size) { "Duplicate stream indices" }
+        streams.forEach(::requireOwnStream)
         val context = synchronized(stateLock) {
             check(formatToken != 0L) { "MediaSource is closed" }
             check(!demuxing) { "A decode flow is collecting on this MediaSource" }
@@ -287,9 +295,23 @@ public actual class MediaSource internal constructor(
         options: io.github.yuroyami.kitecodec.dsl.DecoderOptions?,
         hardware: HardwareAccel?,
     ): StreamDecoder {
-        val context = checkOpen()
         require(stream.type.isAv) { "Only video and audio streams can be decoded, got ${stream.type}" }
-        return StreamDecoder.open(context, stream, threadCount, lowDelay, decoder, options, hardware)
+        requireOwnStream(stream)
+        return synchronized(stateLock) {
+            StreamDecoder.open(checkOpen(), stream, threadCount, lowDelay, decoder, options, hardware)
+        }
+    }
+
+    /**
+     * Canonicalizes a caller-supplied [StreamInfo] against this source's own table; StreamInfo is
+     * a public data class and therefore forgeable (audit KiteCodec P1-8). Same rule as native.
+     */
+    private fun requireOwnStream(supplied: StreamInfo) {
+        val own = streams.firstOrNull { it.index == supplied.index }
+        require(own == supplied) {
+            "StreamInfo(index=${supplied.index}) does not belong to this MediaSource. Pass entries " +
+                "from THIS source's streams list; stream identity is source-bound."
+        }
     }
 
     actual override fun close() {
