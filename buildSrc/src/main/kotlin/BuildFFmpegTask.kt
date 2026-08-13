@@ -332,37 +332,45 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
         "--disable-programs", "--disable-doc", "--disable-debug",
         "--disable-htmlpages", "--disable-manpages", "--disable-podpages", "--disable-txtpages",
 
-        // Codecs / muxers: opinionated, editor-relevant subset.
-        "--disable-everything",
+        // The READ side is wide by class (KitePlayer KPKMP.md 17.4.9, owner order 2026-08-13):
+        // decoders, demuxers, parsers, bitstream filters and hwaccels compile whole, so a
+        // consumer plays what FFmpeg can play and an FFmpeg bump widens coverage without
+        // touching this file. Bitstream filters ride whole with the demuxers because
+        // libavformat inserts them ITSELF during stream copy; leaving one out corrupts output
+        // silently instead of failing loudly. Only the WRITE side and the protocol list stay
+        // curated: encoders, muxers and filters are the deliberate editor subset re-enabled by
+        // name below, and protocols stay small because they are the attack surface (playlist
+        // demuxers dial out through whatever protocols exist). Capture and playback devices
+        // stay off entirely.
+        "--disable-encoders", "--disable-muxers", "--disable-filters",
+        "--disable-devices", "--disable-protocols",
         // file/pipe/data always; http+tcp so MediaSource.open() can actually take the URLs its
         // KDoc advertises. https is deliberately absent: it needs a TLS backend (openssl/gnutls/
         // mbedtls) cross-built for every target, which is a dependency escalation this profile
         // does not take on. See docs/platforms.md. --enable-network is explicit rather than
-        // inherited so a target whose configure probe defaults it off fails loudly here.
+        // inherited so a target whose configure probe defaults it off fails loudly here. The
+        // wide demuxer class includes members that SELECT network protocols (rtsp and its
+        // relatives); the class disable above must win, so the configure banner's protocol
+        // line is checked against exactly this five-name list after every profile change.
         "--enable-network",
         "--enable-protocol=file,pipe,data,http,tcp",
+        // Fixed point 5 of 17.4.9, observed on the first wide configure: the rtsp/sdp demuxers
+        // SELECT udp and rtp, and configure's select is stronger than a class disable, so the
+        // banner grew both. A named disable is stronger than a select: with these two hard-off,
+        // configure drops the demuxers that need them instead of resurrecting the protocols.
+        "--disable-protocol=udp,rtp",
         // Several everyday extensions map to their OWN muxer rather than to the obvious one, and
         // `avformat_alloc_output_context2` simply fails to find a format when that muxer is absent:
         //   .mka → matroska_audio (not matroska)   .m4a → ipod (not mp4)
         // mpegts is what every "trim a broadcast capture" path needs, and it is the format whose
         // nonzero container start time the timestamp code is written against.
-        "--enable-demuxer=mov,mp4,m4v,matroska,webm,mp3,wav,aac,flac,ogg,opus,mpegts,image2,png_pipe,jpeg_pipe",
         "--enable-muxer=mp4,mov,ipod,webm,matroska,matroska_audio,mp3,wav,flac,ogg,opus,mpegts,image2",
-        "--enable-decoder=h264,hevc,vp8,vp9,av1,mpeg4,aac,mp3,opus,vorbis,flac,pcm_s16le,pcm_s24le,pcm_f32le,png,mjpeg,webp",
         // Encoders that need no third-party library, so every profile (desktop LGPL, desktop GPL,
         // Android) has them. mpeg4 is the dependency-free video baseline: without it an LGPL build
         // can only encode video via libsvtav1 (slow) or mjpeg (intra-only), and the library's own
         // round-trip tests and sample have nothing portable to write with. flac and the pcm_* set
         // are what make the already-enabled flac/wav MUXERS able to write anything at all.
         "--enable-encoder=mpeg4,flac,pcm_s16le,pcm_s24le,pcm_f32le,png,mjpeg",
-        "--enable-parser=h264,hevc,vp8,vp9,av1,mpeg4video,aac,mpegaudio,opus,vorbis,flac,png",
-
-        // Bitstream filters. libavformat inserts these ITSELF during stream copy, so leaving them
-        // out does not produce a clear error. It produces a corrupt output file. Copying h264 out
-        // of MPEG-TS into mp4 needs extract_extradata (TS carries parameter sets in band, mp4 wants
-        // them in the header) and copying AAC out of TS/ADTS needs aac_adtstoasc. Without them the
-        // muxer writes a file that ffprobe rejects with "No start code is found".
-        "--enable-bsf=extract_extradata,h264_mp4toannexb,hevc_mp4toannexb,aac_adtstoasc,vp9_superframe,null",
 
         // buffer/buffersink/abuffer/abuffersink are how KiteCodec feeds and drains every graph.
         // Without them ffkmp_graph_build_* returns AVERROR_FILTER_NOT_FOUND.
@@ -418,7 +426,7 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
      * VideoToolbox hardware encode on macOS desktop targets.
      *
      * `--enable-videotoolbox` alone only turns on the framework dependency. Under
-     * `--disable-everything` every encoder must additionally be named in `--enable-encoder=`, or
+     * `--disable-encoders` every encoder must additionally be named in `--enable-encoder=`, or
      * the resulting build advertises VideoToolbox support and then has no `h264_videotoolbox`
      * encoder to find at runtime. The Android profile avoids that mistake by listing
      * `h264_mediacodec` explicitly. Simulator targets are excluded: VideoToolbox encode is not
@@ -432,13 +440,13 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
     /**
      * VideoToolbox hardware DECODE (KiteCodec window 3, KPKMP 17.4.8 S2.a). Unlike MediaCodec
      * there is no named decoder to enable: VideoToolbox decode is an hwaccel behind the ordinary
-     * `h264`/`hevc` decoders, and under `--disable-everything` every hwaccel must be named in
-     * `--enable-hwaccel=` or the framework link exists with no decode path behind it, the same
-     * silent hole the encoder comment above records. Decode is enabled for EVERY Apple target
-     * including the simulator (decode works there on Apple silicon; it is encode that does not),
-     * and a runtime refusal on any particular machine is FFmpeg's own typed answer through
-     * `ffkmp_codecctx_use_videotoolbox`, which D-2's measured fallback treats as one more
-     * fallback cause.
+     * `h264`/`hevc` decoders. Since the 17.4.9 wide profile the hwaccel class compiles whole, so
+     * this list is a PIN rather than the sole source: it guarantees the two hwaccels the player's
+     * D-2 route depends on exist even if the class policy above ever changes. Decode is enabled
+     * for EVERY Apple target including the simulator (decode works there on Apple silicon; it is
+     * encode that does not), and a runtime refusal on any particular machine is FFmpeg's own
+     * typed answer through `ffkmp_codecctx_use_videotoolbox`, which D-2's measured fallback
+     * treats as one more fallback cause.
      */
     private fun appleHwaccelDecodeArgs(): List<String> = listOf(
         "--enable-hwaccel=h264_videotoolbox,hevc_videotoolbox",
