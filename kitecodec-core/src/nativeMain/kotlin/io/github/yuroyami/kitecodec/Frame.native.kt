@@ -135,21 +135,26 @@ public actual class Frame internal constructor(
         )
 
     private fun readColorInfo(): ColorInfo {
+        val range = ffkmp_frame_color_range(nativeFrame)
         val declared = ColorInfo(
             matrix = ColorMatrix.fromAv(ffkmp_frame_colorspace(nativeFrame)),
             primaries = ColorPrimaries.fromAv(ffkmp_frame_color_primaries(nativeFrame)),
             transfer = ColorTransfer.fromAv(ffkmp_frame_color_trc(nativeFrame)),
             // AVCOL_RANGE_JPEG is 2 and means full range. Anything else, including unspecified,
             // means the studio range, which is what almost all video uses.
-            fullRange = ffkmp_frame_color_range(nativeFrame) == 2,
+            fullRange = range == 2,
             chromaLocation = ChromaLocation.fromAv(ffkmp_frame_chroma_location(nativeFrame)),
+            rangeSpecified = range == 1 || range == 2,
         )
         // A container that declares nothing is common. Handing the renderer "unspecified" would make
         // it guess, and it would guess without knowing the height. Guess here, where the height is
         // known, and by the rule every player uses.
-        if (!declared.isUnspecified) return declared
         val guessed = ColorInfo.guessFor(ffkmp_frame_height(nativeFrame))
-        return declared.copy(matrix = guessed.matrix, primaries = guessed.primaries, transfer = guessed.transfer)
+        return declared.copy(
+            matrix = declared.matrix.takeUnless { it == ColorMatrix.Unspecified } ?: guessed.matrix,
+            primaries = declared.primaries.takeUnless { it == ColorPrimaries.Unspecified } ?: guessed.primaries,
+            transfer = declared.transfer.takeUnless { it == ColorTransfer.Unspecified } ?: guessed.transfer,
+        )
     }
 
     private fun readFrameSar(): Rational = memScoped {

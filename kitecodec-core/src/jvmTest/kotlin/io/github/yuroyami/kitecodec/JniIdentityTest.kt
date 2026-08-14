@@ -10,11 +10,11 @@ import kotlin.test.assertTrue
 class JniIdentityTest {
     @Test
     fun identityHasAllTypedFieldsAndTheCurrentAbi() {
-        // The pin is deliberate: an ABI bump nobody wrote down must fail here. 2.5 adds the
-        // bounded codec-extradata copy; move this with KITECODEC_C_ABI_MINOR only.
+        // The pin is deliberate: an ABI bump nobody wrote down must fail here. 2.6 adds owned
+        // stream colour and codec-profile metadata; move this with KITECODEC_C_ABI_MINOR only.
         val identity = FFmpeg.identity
         assertTrue(identity.isAcceptable, identity.describe())
-        assertEquals("2.5", identity.cAbiVersion)
+        assertEquals("2.6", identity.cAbiVersion)
         assertEquals(
             listOf("libavutil", "libavcodec", "libavformat", "libavfilter", "libswscale", "libswresample"),
             identity.libraries.map { it.name },

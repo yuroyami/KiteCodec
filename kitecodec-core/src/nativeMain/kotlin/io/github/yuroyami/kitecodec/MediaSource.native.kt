@@ -8,13 +8,22 @@ import ffmpeg.ffkmp_codecctx_open
 import ffmpeg.ffkmp_codecctx_receive_frame
 import ffmpeg.ffkmp_codecctx_send_packet
 import ffmpeg.ffkmp_codecpar_bit_rate
+import ffmpeg.ffkmp_codecpar_bit_depth
 import ffmpeg.ffkmp_codecpar_ch_layout_mask
+import ffmpeg.ffkmp_codecpar_chroma_location
+import ffmpeg.ffkmp_codecpar_chroma_subsampling
 import ffmpeg.ffkmp_codecpar_channels
 import ffmpeg.ffkmp_codecpar_codec_id
 import ffmpeg.ffkmp_codecpar_codec_type
+import ffmpeg.ffkmp_codecpar_color_primaries
+import ffmpeg.ffkmp_codecpar_color_range
+import ffmpeg.ffkmp_codecpar_color_space
+import ffmpeg.ffkmp_codecpar_color_transfer
 import ffmpeg.ffkmp_codecpar_extradata
 import ffmpeg.ffkmp_codecpar_format
 import ffmpeg.ffkmp_codecpar_height
+import ffmpeg.ffkmp_codecpar_level
+import ffmpeg.ffkmp_codecpar_profile
 import ffmpeg.ffkmp_codecpar_sample_aspect_ratio
 import ffmpeg.ffkmp_codecpar_sample_rate
 import ffmpeg.ffkmp_codecpar_width
@@ -694,6 +703,8 @@ private fun buildStreams(ctx: CPointer<kc_fmt_ctx>): List<StreamInfo> {
                 pixelFormat = pixelFormatFromAv(ffkmp_codecpar_format(par)),
                 frameRate = avgFr,
                 sampleAspectRatio = sar,
+                color = readCodecParameterColor(par),
+                vp9 = if (codecName == "vp9") readVp9CodecInfo(par) else null,
             ) else null,
             audio = if (type == MediaType.Audio) AudioStreamInfo(
                 sampleRate = ffkmp_codecpar_sample_rate(par),
@@ -714,6 +725,31 @@ private fun buildStreams(ctx: CPointer<kc_fmt_ctx>): List<StreamInfo> {
     }
     return out
 }
+
+private fun readCodecParameterColor(parameters: CPointer<kc_codec_par>): ColorInfo {
+    val range = ffkmp_codecpar_color_range(parameters)
+    val declared = ColorInfo(
+        matrix = ColorMatrix.fromAv(ffkmp_codecpar_color_space(parameters)),
+        primaries = ColorPrimaries.fromAv(ffkmp_codecpar_color_primaries(parameters)),
+        transfer = ColorTransfer.fromAv(ffkmp_codecpar_color_transfer(parameters)),
+        fullRange = range == 2,
+        chromaLocation = ChromaLocation.fromAv(ffkmp_codecpar_chroma_location(parameters)),
+        rangeSpecified = range == 1 || range == 2,
+    )
+    val guessed = ColorInfo.guessFor(ffkmp_codecpar_height(parameters))
+    return declared.copy(
+        matrix = declared.matrix.takeUnless { it == ColorMatrix.Unspecified } ?: guessed.matrix,
+        primaries = declared.primaries.takeUnless { it == ColorPrimaries.Unspecified } ?: guessed.primaries,
+        transfer = declared.transfer.takeUnless { it == ColorTransfer.Unspecified } ?: guessed.transfer,
+    )
+}
+
+private fun readVp9CodecInfo(parameters: CPointer<kc_codec_par>): Vp9CodecInfo = Vp9CodecInfo(
+    profile = Vp9Profile.fromNumber(ffkmp_codecpar_profile(parameters)),
+    level = Vp9Level.fromCode(ffkmp_codecpar_level(parameters)),
+    bitDepth = Vp9BitDepth.fromBits(ffkmp_codecpar_bit_depth(parameters)),
+    chromaSubsampling = Vp9ChromaSubsampling.fromCode(ffkmp_codecpar_chroma_subsampling(parameters)),
+)
 
 private fun readCodecExtradata(parameters: CPointer<kc_codec_par>): ByteArray? {
     val size = ffkmp_codecpar_extradata(parameters, null, 0)

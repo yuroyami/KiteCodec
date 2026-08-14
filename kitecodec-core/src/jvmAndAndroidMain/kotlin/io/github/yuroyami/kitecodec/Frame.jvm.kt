@@ -58,19 +58,20 @@ public actual class Frame internal constructor(
     )
 
     private fun readColorInfo(open: Long): ColorInfo {
+        val range = Internals.frameColorRange(open)
         val declared = ColorInfo(
             matrix = ColorMatrix.fromAv(Internals.frameColorSpace(open)),
             primaries = ColorPrimaries.fromAv(Internals.frameColorPrimaries(open)),
             transfer = ColorTransfer.fromAv(Internals.frameColorTransfer(open)),
-            fullRange = Internals.frameColorRange(open) == 2,
+            fullRange = range == 2,
             chromaLocation = ChromaLocation.fromAv(Internals.frameChromaLocation(open)),
+            rangeSpecified = range == 1 || range == 2,
         )
-        if (!declared.isUnspecified) return declared
         val guessed = ColorInfo.guessFor(Internals.frameHeight(open))
         return declared.copy(
-            matrix = guessed.matrix,
-            primaries = guessed.primaries,
-            transfer = guessed.transfer,
+            matrix = declared.matrix.takeUnless { it == ColorMatrix.Unspecified } ?: guessed.matrix,
+            primaries = declared.primaries.takeUnless { it == ColorPrimaries.Unspecified } ?: guessed.primaries,
+            transfer = declared.transfer.takeUnless { it == ColorTransfer.Unspecified } ?: guessed.transfer,
         )
     }
 

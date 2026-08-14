@@ -20,9 +20,11 @@ public data class ColorInfo(
     val matrix: ColorMatrix = ColorMatrix.Unspecified,
     val primaries: ColorPrimaries = ColorPrimaries.Unspecified,
     val transfer: ColorTransfer = ColorTransfer.Unspecified,
-    /** True for 0 to 255. False for the 16 to 235 studio range, which most video uses. */
+    /** True for 0 to 255. False for the 16 to 235 studio range, or when no range was declared. */
     val fullRange: Boolean = false,
     val chromaLocation: ChromaLocation = ChromaLocation.Unspecified,
+    /** Distinguishes an explicitly declared studio range from an absent range declaration. */
+    val rangeSpecified: Boolean = false,
 ) {
     /** True when the transfer function means high dynamic range. */
     public val isHdr: Boolean
@@ -30,7 +32,11 @@ public data class ColorInfo(
 
     /** True when nothing usable was declared, so [guessFor] should be applied. */
     public val isUnspecified: Boolean
-        get() = matrix == ColorMatrix.Unspecified && primaries == ColorPrimaries.Unspecified
+        get() = matrix == ColorMatrix.Unspecified &&
+            primaries == ColorPrimaries.Unspecified &&
+            transfer == ColorTransfer.Unspecified &&
+            chromaLocation == ChromaLocation.Unspecified &&
+            !rangeSpecified
 
     public companion object {
         public val Unspecified: ColorInfo = ColorInfo()

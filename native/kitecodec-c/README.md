@@ -19,21 +19,22 @@ legacy declarations that named FFmpeg types now use those aliases, the public he
 no FFmpeg header, and Kotlin consumes the wrappers and accessors rather than raw libav functions,
 constants or struct layouts. ABI 2.1 adds the compatible packet clone and JavaVM handoff. ABI 2.2
 adds the selected-codec-id accessor that rejects an incompatible named decoder before context
-allocation/open. ABI 2.5 adds the bounded codec-parameter extradata copy. The current symbol set is
-179 `ffkmp_` functions plus seven `kc_` identity functions, 186 total.
+allocation/open. ABI 2.6 adds owned codec-parameter colour, profile, level, depth and chroma
+metadata accessors. The current symbol set is
+188 `ffkmp_` functions plus seven `kc_` identity functions, 195 total.
 
 ## Layout
 
 | Path | What it is |
 |---|---|
-| `include/kitecodec_helpers.h` | Four standard includes plus `kitecodec_handles.h`, the `KC_API` macro, then 179 opaque helper declarations. It includes no FFmpeg header; each implementation unit owns the libav headers it uses. Lifted from the def at B1.3, an ordinary maintained source since the interlude. |
+| `include/kitecodec_helpers.h` | Four standard includes plus `kitecodec_handles.h`, the `KC_API` macro, then 188 opaque helper declarations. It includes no FFmpeg header; each implementation unit owns the libav headers it uses. Lifted from the def at B1.3, an ordinary maintained source since the interlude. |
 | `include/kitecodec_handles.h` | Eleven forward-declared opaque aliases and no FFmpeg include. ABI 2.0 uses them throughout the public helper declarations and Kotlin cinterop surface. |
 | `src/helpers_*.c` | Nine units, one per subsystem. Lifted from the def body at B1.3, ordinary maintained sources since the interlude. |
 | `include/kitecodec_abi.h` | HAND WRITTEN. The FFmpeg identity gate's contract. Includes no FFmpeg header and names no FFmpeg type. |
 | `include/kitecodec_ffmpeg_versions.h` | HAND WRITTEN, private. The only place the gate reaches into FFmpeg, and the one file the identity test replaces. |
 | `src/kitecodec_abi.c` | HAND WRITTEN. The gate: the frozen header macros, the runtime comparison, the report, the diagnostic bypass. |
 | `scripts/build-host.sh` | Builds the host test binaries for one variant. |
-| `scripts/symbol-audit.sh` | Proves what the compiled archive needs, exports and keeps private, and checks all 201 normalized public C declaration records. |
+| `scripts/symbol-audit.sh` | Proves what the compiled archive needs, exports and keeps private, and checks all 210 normalized public C declaration records. |
 | `scripts/check-deleted-surface.sh` | Proves nothing in either repository refers to a helper whose status is deleted. |
 | `deleted-surface.txt` | The deleted helper surface: 15 names, one status each. The single copy of the list, and the file to edit when a plan item resurrects one. |
 | `scripts/run-c-tests.sh` | Runs the seven suites for one variant, or in the `interpose` mode: the plain binaries with allocation accounting REQUIRED, so a blinded interposer fails instead of recording partials. |
@@ -41,7 +42,7 @@ allocation/open. ABI 2.5 adds the bounded codec-parameter extradata copy. The cu
 | `scripts/replay-corpus.sh` | Replays every committed fuzz seed through the replay driver under ASan and UBSan. Added by B1.5. |
 | `scripts/run-fuzz.sh` | Runs the six libFuzzer targets. Refuses with one sentence on a host whose clang has no fuzzer runtime, which is every clang here. |
 | `klib-metadata-baseline.txt` | Its baseline: the filtered metadata dump of that klib. |
-| `signature-baseline.txt` | The 201-record C declaration baseline: 179 helper prototypes, eleven opaque aliases, seven ABI prototypes, three ABI enums and the complete report type. |
+| `signature-baseline.txt` | The 210-record C declaration baseline: 188 helper prototypes, eleven opaque aliases, seven ABI prototypes, three ABI enums and the complete report type. |
 | `fuzz/fuzz_*.c` | The six fuzz targets of plan section 15.2 B1.5, one per C entry point that parses a caller's string. |
 | `fuzz/kc_fuzz.h`, `fuzz/kc_fuzz.c` | The input contract and the three helpers every target shares, so the corpus and the split cannot drift apart. |
 | `fuzz/replay_main.c` | The `main()` that makes each target an ordinary sanitized regression test here. libFuzzer supplies its own in CI. |
@@ -117,10 +118,11 @@ governs the dynamic symbol table and not static linking: an unmarked helper stil
 the link that embeds the archive. So `KC_API` is not what makes the cinterop work. It is what makes
 the exported set a decision instead of an accident, and `symbol-audit.sh` is what checks the
 decision, by comparing the archive's external symbols with the header's `KC_API` declarations and
-finding them equal at 186: 179 `ffkmp_` helpers plus the seven `kc_` functions of the identity gate
+finding them equal at 195: 188 `ffkmp_` helpers plus the seven `kc_` functions of the identity gate
 below. ABI 2.0 left the then-existing names unchanged while respelling the 140 FFmpeg-typed
 declarations to the eleven opaque aliases; ABI 2.1 adds two compatible names and ABI 2.2 adds
-`ffkmp_codec_id`. ABI 2.5 adds the bounded codec-parameter extradata copy. Kotlin consumes the
+`ffkmp_codec_id`. ABI 2.6 adds codec-parameter colour, profile, level, depth and chroma metadata.
+Kotlin consumes the
 seven wrappers and five media-type accessors added at ABI 1.1. No raw libav function, constant or
 struct layout crosses the cinterop boundary;
 the eleven incomplete forward tags remain only as the private identities behind the aliases.
@@ -381,7 +383,7 @@ Add a suite by adding its source to `tests/` and its stem to the `TESTS` list in
 
 ## The seven suites, and what each one earns
 
-283 cases per variant, 849 case runs across plain, ASan and TSan. Before S1.a.7, the historical
+285 cases per variant, 855 case runs across plain, ASan and TSan. Before S1.a.7, the historical
 six-suite gate recorded 240 cases at B1.2 and B1.3, then 234 at B1.4, when six cases went with the
 helpers B1.4 deleted, four in `test_ownership.c` and two in `test_rescale.c`, then 250 at B1.6, when
 `test_identity.c` arrived with 16. I-12 added the NULL-key and out-of-range-stream guard cases to
@@ -389,12 +391,13 @@ helpers B1.4 deleted, four in `test_ownership.c` and two in `test_rescale.c`, th
 reach 274. B1.6 added the identity table row and left the prose at 234, so the table was right and
 the prose was wrong for two sub-phases. S1.c.1 adds three packet-clone ownership cases and two JVM
 attach identity cases, reaching 279. S1.c.2 adds the selected-codec-id control, reaching 280.
-ABI 2.5 adds three codec-parameter extradata copy and argument-bound cases, reaching 283.
+ABI 2.5 adds three codec-parameter extradata copy and argument-bound cases, reaching 283. ABI 2.6
+adds two codec-parameter colour/profile/depth/chroma cases, reaching 285.
 
 | Suite | Cases | What it establishes | Register item |
 |---|---|---|---|
 | `test_ownership.c` | 44 | Exact allocation pairing for all 40 ownership helpers under the interposer, including the parent-owned stream, the per call `SwsContext`, conditional `pb` close and packet clone's shared-payload/independent-close contract, plus I-12's NULL-key and out-of-range-stream guard cases. Every ownership case ends with `live=0`. | B1-14, I-12, S1.c.1 |
-| `test_buffers.c` | 35 | All 12 fixed buffer declaration sites, all 4 frame and sample copy helpers, and codec-parameter extradata at exact, partial, empty and invalid bounds under ASan and UBSan. | B1-10, ABI 2.5 |
+| `test_buffers.c` | 37 | All 12 fixed buffer declaration sites, all 4 frame and sample copy helpers, codec-parameter extradata bounds, and typed video metadata under ASan and UBSan. | B1-10, ABI 2.5, ABI 2.6 |
 | `test_rescale.c` | 114 | The 13 arithmetic helpers at the D9 overflow vectors, and `AV_CEIL_RSHIFT` plane heights over a 7 format by 6 height table. | D9 |
 | `test_strerror_thread.c` | 24 | Both halves of the thread affinity contract, over 4 threads and 256 rendezvous-synchronised rounds, clean under TSan. | B1-09 |
 | `test_convert.c` | 25 | Conversion correctness against an independently computed oracle, and the per call allocation cost as a number. | B1-23 |

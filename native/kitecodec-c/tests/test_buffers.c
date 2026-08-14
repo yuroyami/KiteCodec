@@ -253,6 +253,71 @@ static void case_codecpar_extradata_empty_and_invalid(void)
     KC_EQ_INT((int)destination, 0x5a);
 }
 
+static void case_codecpar_video_metadata(void)
+{
+    AVCodecParameters par = { 0 };
+
+    par.profile = 2;
+    par.level = 51;
+    par.format = AV_PIX_FMT_YUV420P10LE;
+    par.color_space = AVCOL_SPC_BT2020_NCL;
+    par.color_primaries = AVCOL_PRI_BT2020;
+    par.color_trc = AVCOL_TRC_SMPTE2084;
+    par.color_range = AVCOL_RANGE_MPEG;
+    par.chroma_location = AVCHROMA_LOC_TOPLEFT;
+
+    KC_EQ_INT(ffkmp_codecpar_profile(&par), 2);
+    KC_EQ_INT(ffkmp_codecpar_level(&par), 51);
+    KC_EQ_INT(ffkmp_codecpar_bit_depth(&par), 10);
+    KC_EQ_INT(ffkmp_codecpar_chroma_subsampling(&par), 420);
+    KC_EQ_INT(ffkmp_codecpar_color_space(&par), AVCOL_SPC_BT2020_NCL);
+    KC_EQ_INT(ffkmp_codecpar_color_primaries(&par), AVCOL_PRI_BT2020);
+    KC_EQ_INT(ffkmp_codecpar_color_transfer(&par), AVCOL_TRC_SMPTE2084);
+    KC_EQ_INT(ffkmp_codecpar_color_range(&par), AVCOL_RANGE_MPEG);
+    KC_EQ_INT(ffkmp_codecpar_chroma_location(&par), AVCHROMA_LOC_TOPLEFT);
+
+    par.format = AV_PIX_FMT_YUV422P;
+    KC_EQ_INT(ffkmp_codecpar_bit_depth(&par), 8);
+    KC_EQ_INT(ffkmp_codecpar_chroma_subsampling(&par), 422);
+    par.format = AV_PIX_FMT_YUV444P12LE;
+    KC_EQ_INT(ffkmp_codecpar_bit_depth(&par), 12);
+    KC_EQ_INT(ffkmp_codecpar_chroma_subsampling(&par), 444);
+    par.format = AV_PIX_FMT_GRAY8;
+    KC_EQ_INT(ffkmp_codecpar_chroma_subsampling(&par), 400);
+    par.format = AV_PIX_FMT_RGBA;
+    KC_EQ_INT(ffkmp_codecpar_chroma_subsampling(&par), 0);
+}
+
+static void case_codecpar_video_metadata_unknown(void)
+{
+    AVCodecParameters par = { 0 };
+
+    par.profile = -99;
+    par.level = -99;
+    par.format = AV_PIX_FMT_NONE;
+    par.bits_per_raw_sample = 9;
+
+    KC_EQ_INT(ffkmp_codecpar_profile(&par), -99);
+    KC_EQ_INT(ffkmp_codecpar_level(&par), -99);
+    KC_EQ_INT(ffkmp_codecpar_bit_depth(&par), 9);
+    KC_EQ_INT(ffkmp_codecpar_chroma_subsampling(&par), 0);
+    KC_EQ_INT(ffkmp_codecpar_color_space(&par), AVCOL_SPC_RGB);
+    KC_EQ_INT(ffkmp_codecpar_color_primaries(&par), AVCOL_PRI_RESERVED0);
+    KC_EQ_INT(ffkmp_codecpar_color_transfer(&par), AVCOL_TRC_RESERVED0);
+    KC_EQ_INT(ffkmp_codecpar_color_range(&par), AVCOL_RANGE_UNSPECIFIED);
+    KC_EQ_INT(ffkmp_codecpar_chroma_location(&par), AVCHROMA_LOC_UNSPECIFIED);
+
+    KC_EQ_INT(ffkmp_codecpar_profile(NULL), -99);
+    KC_EQ_INT(ffkmp_codecpar_level(NULL), -99);
+    KC_EQ_INT(ffkmp_codecpar_bit_depth(NULL), 0);
+    KC_EQ_INT(ffkmp_codecpar_chroma_subsampling(NULL), 0);
+    KC_EQ_INT(ffkmp_codecpar_color_space(NULL), AVCOL_SPC_UNSPECIFIED);
+    KC_EQ_INT(ffkmp_codecpar_color_primaries(NULL), AVCOL_PRI_UNSPECIFIED);
+    KC_EQ_INT(ffkmp_codecpar_color_transfer(NULL), AVCOL_TRC_UNSPECIFIED);
+    KC_EQ_INT(ffkmp_codecpar_color_range(NULL), AVCOL_RANGE_UNSPECIFIED);
+    KC_EQ_INT(ffkmp_codecpar_chroma_location(NULL), AVCHROMA_LOC_UNSPECIFIED);
+}
+
 /* ---- The four frame and sample size-taking copy helpers ---- */
 
 static void case_frame_copy_to_buffer_exact(void)
@@ -1099,6 +1164,8 @@ static const buffer_case cases[] = {
     { "codecpar extradata query and exact copy",           case_codecpar_extradata_query_and_exact_copy },
     { "codecpar extradata partial copy",                   case_codecpar_extradata_partial_copy },
     { "codecpar extradata empty and invalid arguments",    case_codecpar_extradata_empty_and_invalid },
+    { "codecpar video metadata preserves declarations",    case_codecpar_video_metadata },
+    { "codecpar video metadata preserves unknowns",        case_codecpar_video_metadata_unknown },
     { "frame_copy_to_buffer at exactly the needed size",   case_frame_copy_to_buffer_exact },
     { "frame_copy_to_buffer one byte short",               case_frame_copy_to_buffer_one_byte_short },
     { "frame_copy_to_buffer at degenerate sizes",          case_frame_copy_to_buffer_degenerate_sizes },

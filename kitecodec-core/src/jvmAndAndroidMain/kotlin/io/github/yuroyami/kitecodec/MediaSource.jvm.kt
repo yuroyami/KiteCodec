@@ -449,12 +449,13 @@ private fun buildStreams(format: Long): List<StreamInfo> = buildList {
             }
             val timeBase = Internals.streamTimeBase(stream)
             val codecId = Internals.codecParId(parameters)
+            val codecName = Internals.codecIdName(codecId)
             val sar = Internals.codecParSar(parameters).let { if (it.num == 0) Rational(1, 1) else it }
             add(
                 StreamInfo(
                     index = Internals.streamIndex(stream),
                     type = type,
-                    codec = CodecId(Internals.codecIdName(codecId)),
+                    codec = CodecId(codecName),
                     timeBase = timeBase,
                     durationMicros = Internals.streamDuration(stream).takeIf { it > 0L },
                     bitrateBps = Internals.codecParBitrate(parameters).takeIf { it > 0L },
@@ -464,6 +465,10 @@ private fun buildStreams(format: Long): List<StreamInfo> = buildList {
                         pixelFormat = pixelFormatFromAv(Internals.codecParFormat(parameters)),
                         frameRate = Internals.streamFrameRate(stream),
                         sampleAspectRatio = sar,
+                        color = readCodecParameterColor(parameters),
+                        vp9 = if (codecName == "vp9") {
+                            readVp9CodecInfo(parameters)
+                        } else null,
                     ) else null,
                     audio = if (type == MediaType.Audio) AudioStreamInfo(
                         sampleRate = Internals.codecParSampleRate(parameters),
@@ -487,6 +492,31 @@ private fun buildStreams(format: Long): List<StreamInfo> = buildList {
         }
     }
 }
+
+private fun readCodecParameterColor(parameters: Long): ColorInfo {
+    val range = Internals.codecParColorRange(parameters)
+    val declared = ColorInfo(
+        matrix = ColorMatrix.fromAv(Internals.codecParColorSpace(parameters)),
+        primaries = ColorPrimaries.fromAv(Internals.codecParColorPrimaries(parameters)),
+        transfer = ColorTransfer.fromAv(Internals.codecParColorTransfer(parameters)),
+        fullRange = range == 2,
+        chromaLocation = ChromaLocation.fromAv(Internals.codecParChromaLocation(parameters)),
+        rangeSpecified = range == 1 || range == 2,
+    )
+    val guessed = ColorInfo.guessFor(Internals.codecParHeight(parameters))
+    return declared.copy(
+        matrix = declared.matrix.takeUnless { it == ColorMatrix.Unspecified } ?: guessed.matrix,
+        primaries = declared.primaries.takeUnless { it == ColorPrimaries.Unspecified } ?: guessed.primaries,
+        transfer = declared.transfer.takeUnless { it == ColorTransfer.Unspecified } ?: guessed.transfer,
+    )
+}
+
+private fun readVp9CodecInfo(parameters: Long): Vp9CodecInfo = Vp9CodecInfo(
+    profile = Vp9Profile.fromNumber(Internals.codecParProfile(parameters)),
+    level = Vp9Level.fromCode(Internals.codecParLevel(parameters)),
+    bitDepth = Vp9BitDepth.fromBits(Internals.codecParBitDepth(parameters)),
+    chromaSubsampling = Vp9ChromaSubsampling.fromCode(Internals.codecParChromaSubsampling(parameters)),
+)
 
 private fun readDisposition(flags: Int): Disposition = Disposition(
     default = flags and Internals.dispositionDefault != 0,

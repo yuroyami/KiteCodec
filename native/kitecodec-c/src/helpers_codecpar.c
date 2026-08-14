@@ -11,6 +11,7 @@
 #include "kitecodec_helpers.h"
 
 #include <libavcodec/avcodec.h>
+#include <libavutil/pixdesc.h>
 
 #include <string.h>
 
@@ -27,6 +28,33 @@ KC_API int64_t ffkmp_codecpar_bit_rate(AVCodecParameters *p)   { return p ? p->b
 KC_API int     ffkmp_codecpar_width(AVCodecParameters *p)      { return p ? p->width : 0; }
 KC_API int     ffkmp_codecpar_height(AVCodecParameters *p)     { return p ? p->height : 0; }
 KC_API int     ffkmp_codecpar_format(AVCodecParameters *p)     { return p ? p->format : -1; }
+KC_API int     ffkmp_codecpar_profile(AVCodecParameters *p)    { return p ? p->profile : -99; }
+KC_API int     ffkmp_codecpar_level(AVCodecParameters *p)      { return p ? p->level : -99; }
+KC_API int     ffkmp_codecpar_color_space(AVCodecParameters *p){ return p ? (int)p->color_space : AVCOL_SPC_UNSPECIFIED; }
+KC_API int     ffkmp_codecpar_color_primaries(AVCodecParameters *p) { return p ? (int)p->color_primaries : AVCOL_PRI_UNSPECIFIED; }
+KC_API int     ffkmp_codecpar_color_transfer(AVCodecParameters *p) { return p ? (int)p->color_trc : AVCOL_TRC_UNSPECIFIED; }
+KC_API int     ffkmp_codecpar_color_range(AVCodecParameters *p){ return p ? (int)p->color_range : AVCOL_RANGE_UNSPECIFIED; }
+KC_API int     ffkmp_codecpar_chroma_location(AVCodecParameters *p) { return p ? (int)p->chroma_location : AVCHROMA_LOC_UNSPECIFIED; }
+KC_API int     ffkmp_codecpar_bit_depth(AVCodecParameters *p) {
+    const AVPixFmtDescriptor *descriptor;
+    if (!p) return 0;
+    descriptor = av_pix_fmt_desc_get((enum AVPixelFormat)p->format);
+    if (descriptor && descriptor->nb_components > 0) return descriptor->comp[0].depth;
+    return p->bits_per_raw_sample > 0 ? p->bits_per_raw_sample : 0;
+}
+KC_API int     ffkmp_codecpar_chroma_subsampling(AVCodecParameters *p) {
+    const AVPixFmtDescriptor *descriptor;
+    if (!p) return 0;
+    descriptor = av_pix_fmt_desc_get((enum AVPixelFormat)p->format);
+    if (!descriptor || descriptor->flags & (AV_PIX_FMT_FLAG_RGB | AV_PIX_FMT_FLAG_PAL | AV_PIX_FMT_FLAG_HWACCEL)) {
+        return 0;
+    }
+    if (descriptor->nb_components < 3) return 400;
+    if (descriptor->log2_chroma_w == 1 && descriptor->log2_chroma_h == 1) return 420;
+    if (descriptor->log2_chroma_w == 1 && descriptor->log2_chroma_h == 0) return 422;
+    if (descriptor->log2_chroma_w == 0 && descriptor->log2_chroma_h == 0) return 444;
+    return 0;
+}
 KC_API int     ffkmp_codecpar_sample_rate(AVCodecParameters *p){ return p ? p->sample_rate : 0; }
 KC_API int     ffkmp_codecpar_channels(AVCodecParameters *p)   { return p ? p->ch_layout.nb_channels : 0; }
 KC_API int     ffkmp_codecpar_extradata(AVCodecParameters *p, uint8_t *dst, int dst_size) {

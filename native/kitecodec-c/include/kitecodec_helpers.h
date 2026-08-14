@@ -173,6 +173,17 @@ KC_API int64_t ffkmp_codecpar_bit_rate(kc_codec_par *p);
 KC_API int     ffkmp_codecpar_width(kc_codec_par *p);
 KC_API int     ffkmp_codecpar_height(kc_codec_par *p);
 KC_API int     ffkmp_codecpar_format(kc_codec_par *p);
+KC_API int     ffkmp_codecpar_profile(kc_codec_par *p);
+KC_API int     ffkmp_codecpar_level(kc_codec_par *p);
+KC_API int     ffkmp_codecpar_color_space(kc_codec_par *p);
+KC_API int     ffkmp_codecpar_color_primaries(kc_codec_par *p);
+KC_API int     ffkmp_codecpar_color_transfer(kc_codec_par *p);
+KC_API int     ffkmp_codecpar_color_range(kc_codec_par *p);
+KC_API int     ffkmp_codecpar_chroma_location(kc_codec_par *p);
+/** Luma/component depth from the declared pixel format, or bits_per_raw_sample as a fallback. */
+KC_API int     ffkmp_codecpar_bit_depth(kc_codec_par *p);
+/** Returns 400, 420, 422 or 444 for a representable YUV layout; zero when unknown or not YUV. */
+KC_API int     ffkmp_codecpar_chroma_subsampling(kc_codec_par *p);
 KC_API int     ffkmp_codecpar_sample_rate(kc_codec_par *p);
 KC_API int     ffkmp_codecpar_channels(kc_codec_par *p);
 /* Copies the codec configuration record or other raw extradata. A NULL destination queries the

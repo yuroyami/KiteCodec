@@ -241,6 +241,91 @@ final enum class io.github.yuroyami.kitecodec/SeekDirection : kotlin/Enum<io.git
     final fun values(): kotlin/Array<io.github.yuroyami.kitecodec/SeekDirection> // io.github.yuroyami.kitecodec/SeekDirection.values|values#static(){}[0]
 }
 
+final enum class io.github.yuroyami.kitecodec/Vp9BitDepth : kotlin/Enum<io.github.yuroyami.kitecodec/Vp9BitDepth> { // io.github.yuroyami.kitecodec/Vp9BitDepth|null[0]
+    enum entry Eight // io.github.yuroyami.kitecodec/Vp9BitDepth.Eight|null[0]
+    enum entry Ten // io.github.yuroyami.kitecodec/Vp9BitDepth.Ten|null[0]
+    enum entry Twelve // io.github.yuroyami.kitecodec/Vp9BitDepth.Twelve|null[0]
+
+    final val bits // io.github.yuroyami.kitecodec/Vp9BitDepth.bits|{}bits[0]
+        final fun <get-bits>(): kotlin/Int // io.github.yuroyami.kitecodec/Vp9BitDepth.bits.<get-bits>|<get-bits>(){}[0]
+    final val entries // io.github.yuroyami.kitecodec/Vp9BitDepth.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<io.github.yuroyami.kitecodec/Vp9BitDepth> // io.github.yuroyami.kitecodec/Vp9BitDepth.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): io.github.yuroyami.kitecodec/Vp9BitDepth // io.github.yuroyami.kitecodec/Vp9BitDepth.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<io.github.yuroyami.kitecodec/Vp9BitDepth> // io.github.yuroyami.kitecodec/Vp9BitDepth.values|values#static(){}[0]
+
+    final object Companion { // io.github.yuroyami.kitecodec/Vp9BitDepth.Companion|null[0]
+        final fun fromBits(kotlin/Int): io.github.yuroyami.kitecodec/Vp9BitDepth? // io.github.yuroyami.kitecodec/Vp9BitDepth.Companion.fromBits|fromBits(kotlin.Int){}[0]
+    }
+}
+
+final enum class io.github.yuroyami.kitecodec/Vp9ChromaSubsampling : kotlin/Enum<io.github.yuroyami.kitecodec/Vp9ChromaSubsampling> { // io.github.yuroyami.kitecodec/Vp9ChromaSubsampling|null[0]
+    enum entry Monochrome // io.github.yuroyami.kitecodec/Vp9ChromaSubsampling.Monochrome|null[0]
+    enum entry Yuv420 // io.github.yuroyami.kitecodec/Vp9ChromaSubsampling.Yuv420|null[0]
+    enum entry Yuv422 // io.github.yuroyami.kitecodec/Vp9ChromaSubsampling.Yuv422|null[0]
+    enum entry Yuv444 // io.github.yuroyami.kitecodec/Vp9ChromaSubsampling.Yuv444|null[0]
+
+    final val code // io.github.yuroyami.kitecodec/Vp9ChromaSubsampling.code|{}code[0]
+        final fun <get-code>(): kotlin/Int // io.github.yuroyami.kitecodec/Vp9ChromaSubsampling.code.<get-code>|<get-code>(){}[0]
+    final val entries // io.github.yuroyami.kitecodec/Vp9ChromaSubsampling.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<io.github.yuroyami.kitecodec/Vp9ChromaSubsampling> // io.github.yuroyami.kitecodec/Vp9ChromaSubsampling.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): io.github.yuroyami.kitecodec/Vp9ChromaSubsampling // io.github.yuroyami.kitecodec/Vp9ChromaSubsampling.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<io.github.yuroyami.kitecodec/Vp9ChromaSubsampling> // io.github.yuroyami.kitecodec/Vp9ChromaSubsampling.values|values#static(){}[0]
+
+    final object Companion { // io.github.yuroyami.kitecodec/Vp9ChromaSubsampling.Companion|null[0]
+        final fun fromCode(kotlin/Int): io.github.yuroyami.kitecodec/Vp9ChromaSubsampling? // io.github.yuroyami.kitecodec/Vp9ChromaSubsampling.Companion.fromCode|fromCode(kotlin.Int){}[0]
+    }
+}
+
+final enum class io.github.yuroyami.kitecodec/Vp9Level : kotlin/Enum<io.github.yuroyami.kitecodec/Vp9Level> { // io.github.yuroyami.kitecodec/Vp9Level|null[0]
+    enum entry Level1 // io.github.yuroyami.kitecodec/Vp9Level.Level1|null[0]
+    enum entry Level1_1 // io.github.yuroyami.kitecodec/Vp9Level.Level1_1|null[0]
+    enum entry Level2 // io.github.yuroyami.kitecodec/Vp9Level.Level2|null[0]
+    enum entry Level2_1 // io.github.yuroyami.kitecodec/Vp9Level.Level2_1|null[0]
+    enum entry Level3 // io.github.yuroyami.kitecodec/Vp9Level.Level3|null[0]
+    enum entry Level3_1 // io.github.yuroyami.kitecodec/Vp9Level.Level3_1|null[0]
+    enum entry Level4 // io.github.yuroyami.kitecodec/Vp9Level.Level4|null[0]
+    enum entry Level4_1 // io.github.yuroyami.kitecodec/Vp9Level.Level4_1|null[0]
+    enum entry Level5 // io.github.yuroyami.kitecodec/Vp9Level.Level5|null[0]
+    enum entry Level5_1 // io.github.yuroyami.kitecodec/Vp9Level.Level5_1|null[0]
+    enum entry Level5_2 // io.github.yuroyami.kitecodec/Vp9Level.Level5_2|null[0]
+    enum entry Level6 // io.github.yuroyami.kitecodec/Vp9Level.Level6|null[0]
+    enum entry Level6_1 // io.github.yuroyami.kitecodec/Vp9Level.Level6_1|null[0]
+    enum entry Level6_2 // io.github.yuroyami.kitecodec/Vp9Level.Level6_2|null[0]
+
+    final val code // io.github.yuroyami.kitecodec/Vp9Level.code|{}code[0]
+        final fun <get-code>(): kotlin/Int // io.github.yuroyami.kitecodec/Vp9Level.code.<get-code>|<get-code>(){}[0]
+    final val entries // io.github.yuroyami.kitecodec/Vp9Level.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<io.github.yuroyami.kitecodec/Vp9Level> // io.github.yuroyami.kitecodec/Vp9Level.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): io.github.yuroyami.kitecodec/Vp9Level // io.github.yuroyami.kitecodec/Vp9Level.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<io.github.yuroyami.kitecodec/Vp9Level> // io.github.yuroyami.kitecodec/Vp9Level.values|values#static(){}[0]
+
+    final object Companion { // io.github.yuroyami.kitecodec/Vp9Level.Companion|null[0]
+        final fun fromCode(kotlin/Int): io.github.yuroyami.kitecodec/Vp9Level? // io.github.yuroyami.kitecodec/Vp9Level.Companion.fromCode|fromCode(kotlin.Int){}[0]
+    }
+}
+
+final enum class io.github.yuroyami.kitecodec/Vp9Profile : kotlin/Enum<io.github.yuroyami.kitecodec/Vp9Profile> { // io.github.yuroyami.kitecodec/Vp9Profile|null[0]
+    enum entry Profile0 // io.github.yuroyami.kitecodec/Vp9Profile.Profile0|null[0]
+    enum entry Profile1 // io.github.yuroyami.kitecodec/Vp9Profile.Profile1|null[0]
+    enum entry Profile2 // io.github.yuroyami.kitecodec/Vp9Profile.Profile2|null[0]
+    enum entry Profile3 // io.github.yuroyami.kitecodec/Vp9Profile.Profile3|null[0]
+
+    final val entries // io.github.yuroyami.kitecodec/Vp9Profile.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<io.github.yuroyami.kitecodec/Vp9Profile> // io.github.yuroyami.kitecodec/Vp9Profile.entries.<get-entries>|<get-entries>#static(){}[0]
+    final val number // io.github.yuroyami.kitecodec/Vp9Profile.number|{}number[0]
+        final fun <get-number>(): kotlin/Int // io.github.yuroyami.kitecodec/Vp9Profile.number.<get-number>|<get-number>(){}[0]
+
+    final fun valueOf(kotlin/String): io.github.yuroyami.kitecodec/Vp9Profile // io.github.yuroyami.kitecodec/Vp9Profile.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<io.github.yuroyami.kitecodec/Vp9Profile> // io.github.yuroyami.kitecodec/Vp9Profile.values|values#static(){}[0]
+
+    final object Companion { // io.github.yuroyami.kitecodec/Vp9Profile.Companion|null[0]
+        final fun fromNumber(kotlin/Int): io.github.yuroyami.kitecodec/Vp9Profile? // io.github.yuroyami.kitecodec/Vp9Profile.Companion.fromNumber|fromNumber(kotlin.Int){}[0]
+    }
+}
+
 sealed interface io.github.yuroyami.kitecodec.dsl/FilterStep { // io.github.yuroyami.kitecodec.dsl/FilterStep|null[0]
     abstract val filterName // io.github.yuroyami.kitecodec.dsl/FilterStep.filterName|{}filterName[0]
         abstract fun <get-filterName>(): kotlin/String? // io.github.yuroyami.kitecodec.dsl/FilterStep.filterName.<get-filterName>|<get-filterName>(){}[0]
@@ -830,7 +915,7 @@ final class io.github.yuroyami.kitecodec/Chapter { // io.github.yuroyami.kitecod
 }
 
 final class io.github.yuroyami.kitecodec/ColorInfo { // io.github.yuroyami.kitecodec/ColorInfo|null[0]
-    constructor <init>(io.github.yuroyami.kitecodec/ColorMatrix = ..., io.github.yuroyami.kitecodec/ColorPrimaries = ..., io.github.yuroyami.kitecodec/ColorTransfer = ..., kotlin/Boolean = ..., io.github.yuroyami.kitecodec/ChromaLocation = ...) // io.github.yuroyami.kitecodec/ColorInfo.<init>|<init>(io.github.yuroyami.kitecodec.ColorMatrix;io.github.yuroyami.kitecodec.ColorPrimaries;io.github.yuroyami.kitecodec.ColorTransfer;kotlin.Boolean;io.github.yuroyami.kitecodec.ChromaLocation){}[0]
+    constructor <init>(io.github.yuroyami.kitecodec/ColorMatrix = ..., io.github.yuroyami.kitecodec/ColorPrimaries = ..., io.github.yuroyami.kitecodec/ColorTransfer = ..., kotlin/Boolean = ..., io.github.yuroyami.kitecodec/ChromaLocation = ..., kotlin/Boolean = ...) // io.github.yuroyami.kitecodec/ColorInfo.<init>|<init>(io.github.yuroyami.kitecodec.ColorMatrix;io.github.yuroyami.kitecodec.ColorPrimaries;io.github.yuroyami.kitecodec.ColorTransfer;kotlin.Boolean;io.github.yuroyami.kitecodec.ChromaLocation;kotlin.Boolean){}[0]
 
     final val chromaLocation // io.github.yuroyami.kitecodec/ColorInfo.chromaLocation|{}chromaLocation[0]
         final fun <get-chromaLocation>(): io.github.yuroyami.kitecodec/ChromaLocation // io.github.yuroyami.kitecodec/ColorInfo.chromaLocation.<get-chromaLocation>|<get-chromaLocation>(){}[0]
@@ -844,6 +929,8 @@ final class io.github.yuroyami.kitecodec/ColorInfo { // io.github.yuroyami.kitec
         final fun <get-matrix>(): io.github.yuroyami.kitecodec/ColorMatrix // io.github.yuroyami.kitecodec/ColorInfo.matrix.<get-matrix>|<get-matrix>(){}[0]
     final val primaries // io.github.yuroyami.kitecodec/ColorInfo.primaries|{}primaries[0]
         final fun <get-primaries>(): io.github.yuroyami.kitecodec/ColorPrimaries // io.github.yuroyami.kitecodec/ColorInfo.primaries.<get-primaries>|<get-primaries>(){}[0]
+    final val rangeSpecified // io.github.yuroyami.kitecodec/ColorInfo.rangeSpecified|{}rangeSpecified[0]
+        final fun <get-rangeSpecified>(): kotlin/Boolean // io.github.yuroyami.kitecodec/ColorInfo.rangeSpecified.<get-rangeSpecified>|<get-rangeSpecified>(){}[0]
     final val transfer // io.github.yuroyami.kitecodec/ColorInfo.transfer|{}transfer[0]
         final fun <get-transfer>(): io.github.yuroyami.kitecodec/ColorTransfer // io.github.yuroyami.kitecodec/ColorInfo.transfer.<get-transfer>|<get-transfer>(){}[0]
 
@@ -852,7 +939,8 @@ final class io.github.yuroyami.kitecodec/ColorInfo { // io.github.yuroyami.kitec
     final fun component3(): io.github.yuroyami.kitecodec/ColorTransfer // io.github.yuroyami.kitecodec/ColorInfo.component3|component3(){}[0]
     final fun component4(): kotlin/Boolean // io.github.yuroyami.kitecodec/ColorInfo.component4|component4(){}[0]
     final fun component5(): io.github.yuroyami.kitecodec/ChromaLocation // io.github.yuroyami.kitecodec/ColorInfo.component5|component5(){}[0]
-    final fun copy(io.github.yuroyami.kitecodec/ColorMatrix = ..., io.github.yuroyami.kitecodec/ColorPrimaries = ..., io.github.yuroyami.kitecodec/ColorTransfer = ..., kotlin/Boolean = ..., io.github.yuroyami.kitecodec/ChromaLocation = ...): io.github.yuroyami.kitecodec/ColorInfo // io.github.yuroyami.kitecodec/ColorInfo.copy|copy(io.github.yuroyami.kitecodec.ColorMatrix;io.github.yuroyami.kitecodec.ColorPrimaries;io.github.yuroyami.kitecodec.ColorTransfer;kotlin.Boolean;io.github.yuroyami.kitecodec.ChromaLocation){}[0]
+    final fun component6(): kotlin/Boolean // io.github.yuroyami.kitecodec/ColorInfo.component6|component6(){}[0]
+    final fun copy(io.github.yuroyami.kitecodec/ColorMatrix = ..., io.github.yuroyami.kitecodec/ColorPrimaries = ..., io.github.yuroyami.kitecodec/ColorTransfer = ..., kotlin/Boolean = ..., io.github.yuroyami.kitecodec/ChromaLocation = ..., kotlin/Boolean = ...): io.github.yuroyami.kitecodec/ColorInfo // io.github.yuroyami.kitecodec/ColorInfo.copy|copy(io.github.yuroyami.kitecodec.ColorMatrix;io.github.yuroyami.kitecodec.ColorPrimaries;io.github.yuroyami.kitecodec.ColorTransfer;kotlin.Boolean;io.github.yuroyami.kitecodec.ChromaLocation;kotlin.Boolean){}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec/ColorInfo.equals|equals(kotlin.Any?){}[0]
     final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec/ColorInfo.hashCode|hashCode(){}[0]
     final fun toString(): kotlin/String // io.github.yuroyami.kitecodec/ColorInfo.toString|toString(){}[0]
@@ -1430,8 +1518,10 @@ final class io.github.yuroyami.kitecodec/VideoInput { // io.github.yuroyami.kite
 }
 
 final class io.github.yuroyami.kitecodec/VideoStreamInfo { // io.github.yuroyami.kitecodec/VideoStreamInfo|null[0]
-    constructor <init>(kotlin/Int, kotlin/Int, io.github.yuroyami.kitecodec/PixelFormat, io.github.yuroyami.kitecodec/Rational, io.github.yuroyami.kitecodec/Rational) // io.github.yuroyami.kitecodec/VideoStreamInfo.<init>|<init>(kotlin.Int;kotlin.Int;io.github.yuroyami.kitecodec.PixelFormat;io.github.yuroyami.kitecodec.Rational;io.github.yuroyami.kitecodec.Rational){}[0]
+    constructor <init>(kotlin/Int, kotlin/Int, io.github.yuroyami.kitecodec/PixelFormat, io.github.yuroyami.kitecodec/Rational, io.github.yuroyami.kitecodec/Rational, io.github.yuroyami.kitecodec/ColorInfo = ..., io.github.yuroyami.kitecodec/Vp9CodecInfo? = ...) // io.github.yuroyami.kitecodec/VideoStreamInfo.<init>|<init>(kotlin.Int;kotlin.Int;io.github.yuroyami.kitecodec.PixelFormat;io.github.yuroyami.kitecodec.Rational;io.github.yuroyami.kitecodec.Rational;io.github.yuroyami.kitecodec.ColorInfo;io.github.yuroyami.kitecodec.Vp9CodecInfo?){}[0]
 
+    final val color // io.github.yuroyami.kitecodec/VideoStreamInfo.color|{}color[0]
+        final fun <get-color>(): io.github.yuroyami.kitecodec/ColorInfo // io.github.yuroyami.kitecodec/VideoStreamInfo.color.<get-color>|<get-color>(){}[0]
     final val frameRate // io.github.yuroyami.kitecodec/VideoStreamInfo.frameRate|{}frameRate[0]
         final fun <get-frameRate>(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/VideoStreamInfo.frameRate.<get-frameRate>|<get-frameRate>(){}[0]
     final val height // io.github.yuroyami.kitecodec/VideoStreamInfo.height|{}height[0]
@@ -1440,6 +1530,8 @@ final class io.github.yuroyami.kitecodec/VideoStreamInfo { // io.github.yuroyami
         final fun <get-pixelFormat>(): io.github.yuroyami.kitecodec/PixelFormat // io.github.yuroyami.kitecodec/VideoStreamInfo.pixelFormat.<get-pixelFormat>|<get-pixelFormat>(){}[0]
     final val sampleAspectRatio // io.github.yuroyami.kitecodec/VideoStreamInfo.sampleAspectRatio|{}sampleAspectRatio[0]
         final fun <get-sampleAspectRatio>(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/VideoStreamInfo.sampleAspectRatio.<get-sampleAspectRatio>|<get-sampleAspectRatio>(){}[0]
+    final val vp9 // io.github.yuroyami.kitecodec/VideoStreamInfo.vp9|{}vp9[0]
+        final fun <get-vp9>(): io.github.yuroyami.kitecodec/Vp9CodecInfo? // io.github.yuroyami.kitecodec/VideoStreamInfo.vp9.<get-vp9>|<get-vp9>(){}[0]
     final val width // io.github.yuroyami.kitecodec/VideoStreamInfo.width|{}width[0]
         final fun <get-width>(): kotlin/Int // io.github.yuroyami.kitecodec/VideoStreamInfo.width.<get-width>|<get-width>(){}[0]
 
@@ -1448,10 +1540,34 @@ final class io.github.yuroyami.kitecodec/VideoStreamInfo { // io.github.yuroyami
     final fun component3(): io.github.yuroyami.kitecodec/PixelFormat // io.github.yuroyami.kitecodec/VideoStreamInfo.component3|component3(){}[0]
     final fun component4(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/VideoStreamInfo.component4|component4(){}[0]
     final fun component5(): io.github.yuroyami.kitecodec/Rational // io.github.yuroyami.kitecodec/VideoStreamInfo.component5|component5(){}[0]
-    final fun copy(kotlin/Int = ..., kotlin/Int = ..., io.github.yuroyami.kitecodec/PixelFormat = ..., io.github.yuroyami.kitecodec/Rational = ..., io.github.yuroyami.kitecodec/Rational = ...): io.github.yuroyami.kitecodec/VideoStreamInfo // io.github.yuroyami.kitecodec/VideoStreamInfo.copy|copy(kotlin.Int;kotlin.Int;io.github.yuroyami.kitecodec.PixelFormat;io.github.yuroyami.kitecodec.Rational;io.github.yuroyami.kitecodec.Rational){}[0]
+    final fun component6(): io.github.yuroyami.kitecodec/ColorInfo // io.github.yuroyami.kitecodec/VideoStreamInfo.component6|component6(){}[0]
+    final fun component7(): io.github.yuroyami.kitecodec/Vp9CodecInfo? // io.github.yuroyami.kitecodec/VideoStreamInfo.component7|component7(){}[0]
+    final fun copy(kotlin/Int = ..., kotlin/Int = ..., io.github.yuroyami.kitecodec/PixelFormat = ..., io.github.yuroyami.kitecodec/Rational = ..., io.github.yuroyami.kitecodec/Rational = ..., io.github.yuroyami.kitecodec/ColorInfo = ..., io.github.yuroyami.kitecodec/Vp9CodecInfo? = ...): io.github.yuroyami.kitecodec/VideoStreamInfo // io.github.yuroyami.kitecodec/VideoStreamInfo.copy|copy(kotlin.Int;kotlin.Int;io.github.yuroyami.kitecodec.PixelFormat;io.github.yuroyami.kitecodec.Rational;io.github.yuroyami.kitecodec.Rational;io.github.yuroyami.kitecodec.ColorInfo;io.github.yuroyami.kitecodec.Vp9CodecInfo?){}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec/VideoStreamInfo.equals|equals(kotlin.Any?){}[0]
     final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec/VideoStreamInfo.hashCode|hashCode(){}[0]
     final fun toString(): kotlin/String // io.github.yuroyami.kitecodec/VideoStreamInfo.toString|toString(){}[0]
+}
+
+final class io.github.yuroyami.kitecodec/Vp9CodecInfo { // io.github.yuroyami.kitecodec/Vp9CodecInfo|null[0]
+    constructor <init>(io.github.yuroyami.kitecodec/Vp9Profile?, io.github.yuroyami.kitecodec/Vp9Level?, io.github.yuroyami.kitecodec/Vp9BitDepth?, io.github.yuroyami.kitecodec/Vp9ChromaSubsampling?) // io.github.yuroyami.kitecodec/Vp9CodecInfo.<init>|<init>(io.github.yuroyami.kitecodec.Vp9Profile?;io.github.yuroyami.kitecodec.Vp9Level?;io.github.yuroyami.kitecodec.Vp9BitDepth?;io.github.yuroyami.kitecodec.Vp9ChromaSubsampling?){}[0]
+
+    final val bitDepth // io.github.yuroyami.kitecodec/Vp9CodecInfo.bitDepth|{}bitDepth[0]
+        final fun <get-bitDepth>(): io.github.yuroyami.kitecodec/Vp9BitDepth? // io.github.yuroyami.kitecodec/Vp9CodecInfo.bitDepth.<get-bitDepth>|<get-bitDepth>(){}[0]
+    final val chromaSubsampling // io.github.yuroyami.kitecodec/Vp9CodecInfo.chromaSubsampling|{}chromaSubsampling[0]
+        final fun <get-chromaSubsampling>(): io.github.yuroyami.kitecodec/Vp9ChromaSubsampling? // io.github.yuroyami.kitecodec/Vp9CodecInfo.chromaSubsampling.<get-chromaSubsampling>|<get-chromaSubsampling>(){}[0]
+    final val level // io.github.yuroyami.kitecodec/Vp9CodecInfo.level|{}level[0]
+        final fun <get-level>(): io.github.yuroyami.kitecodec/Vp9Level? // io.github.yuroyami.kitecodec/Vp9CodecInfo.level.<get-level>|<get-level>(){}[0]
+    final val profile // io.github.yuroyami.kitecodec/Vp9CodecInfo.profile|{}profile[0]
+        final fun <get-profile>(): io.github.yuroyami.kitecodec/Vp9Profile? // io.github.yuroyami.kitecodec/Vp9CodecInfo.profile.<get-profile>|<get-profile>(){}[0]
+
+    final fun component1(): io.github.yuroyami.kitecodec/Vp9Profile? // io.github.yuroyami.kitecodec/Vp9CodecInfo.component1|component1(){}[0]
+    final fun component2(): io.github.yuroyami.kitecodec/Vp9Level? // io.github.yuroyami.kitecodec/Vp9CodecInfo.component2|component2(){}[0]
+    final fun component3(): io.github.yuroyami.kitecodec/Vp9BitDepth? // io.github.yuroyami.kitecodec/Vp9CodecInfo.component3|component3(){}[0]
+    final fun component4(): io.github.yuroyami.kitecodec/Vp9ChromaSubsampling? // io.github.yuroyami.kitecodec/Vp9CodecInfo.component4|component4(){}[0]
+    final fun copy(io.github.yuroyami.kitecodec/Vp9Profile? = ..., io.github.yuroyami.kitecodec/Vp9Level? = ..., io.github.yuroyami.kitecodec/Vp9BitDepth? = ..., io.github.yuroyami.kitecodec/Vp9ChromaSubsampling? = ...): io.github.yuroyami.kitecodec/Vp9CodecInfo // io.github.yuroyami.kitecodec/Vp9CodecInfo.copy|copy(io.github.yuroyami.kitecodec.Vp9Profile?;io.github.yuroyami.kitecodec.Vp9Level?;io.github.yuroyami.kitecodec.Vp9BitDepth?;io.github.yuroyami.kitecodec.Vp9ChromaSubsampling?){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.yuroyami.kitecodec/Vp9CodecInfo.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.yuroyami.kitecodec/Vp9CodecInfo.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.yuroyami.kitecodec/Vp9CodecInfo.toString|toString(){}[0]
 }
 
 final value class io.github.yuroyami.kitecodec/CodecId { // io.github.yuroyami.kitecodec/CodecId|null[0]

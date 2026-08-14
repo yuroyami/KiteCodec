@@ -441,6 +441,42 @@ library {
       @kotlinx/cinterop/ExperimentalForeignApi
       public final external fun ffkmp_codecpar_format(p: kotlinx/cinterop/CValuesRef<cnames/structs/AVCodecParameters /* = ffmpeg/kc_codec_par^ */>?): kotlin/Int
 
+      @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_codecpar_profile")
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final external fun ffkmp_codecpar_profile(p: kotlinx/cinterop/CValuesRef<cnames/structs/AVCodecParameters /* = ffmpeg/kc_codec_par^ */>?): kotlin/Int
+
+      @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_codecpar_level")
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final external fun ffkmp_codecpar_level(p: kotlinx/cinterop/CValuesRef<cnames/structs/AVCodecParameters /* = ffmpeg/kc_codec_par^ */>?): kotlin/Int
+
+      @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_codecpar_color_space")
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final external fun ffkmp_codecpar_color_space(p: kotlinx/cinterop/CValuesRef<cnames/structs/AVCodecParameters /* = ffmpeg/kc_codec_par^ */>?): kotlin/Int
+
+      @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_codecpar_color_primaries")
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final external fun ffkmp_codecpar_color_primaries(p: kotlinx/cinterop/CValuesRef<cnames/structs/AVCodecParameters /* = ffmpeg/kc_codec_par^ */>?): kotlin/Int
+
+      @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_codecpar_color_transfer")
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final external fun ffkmp_codecpar_color_transfer(p: kotlinx/cinterop/CValuesRef<cnames/structs/AVCodecParameters /* = ffmpeg/kc_codec_par^ */>?): kotlin/Int
+
+      @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_codecpar_color_range")
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final external fun ffkmp_codecpar_color_range(p: kotlinx/cinterop/CValuesRef<cnames/structs/AVCodecParameters /* = ffmpeg/kc_codec_par^ */>?): kotlin/Int
+
+      @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_codecpar_chroma_location")
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final external fun ffkmp_codecpar_chroma_location(p: kotlinx/cinterop/CValuesRef<cnames/structs/AVCodecParameters /* = ffmpeg/kc_codec_par^ */>?): kotlin/Int
+
+      @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_codecpar_bit_depth")
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final external fun ffkmp_codecpar_bit_depth(p: kotlinx/cinterop/CValuesRef<cnames/structs/AVCodecParameters /* = ffmpeg/kc_codec_par^ */>?): kotlin/Int
+
+      @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_codecpar_chroma_subsampling")
+      @kotlinx/cinterop/ExperimentalForeignApi
+      public final external fun ffkmp_codecpar_chroma_subsampling(p: kotlinx/cinterop/CValuesRef<cnames/structs/AVCodecParameters /* = ffmpeg/kc_codec_par^ */>?): kotlin/Int
+
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_codecpar_sample_rate")
       @kotlinx/cinterop/ExperimentalForeignApi
       public final external fun ffkmp_codecpar_sample_rate(p: kotlinx/cinterop/CValuesRef<cnames/structs/AVCodecParameters /* = ffmpeg/kc_codec_par^ */>?): kotlin/Int
@@ -652,6 +688,13 @@ library {
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_fmt_free_output")
       @kotlinx/cinterop/ExperimentalForeignApi
       public final external fun ffkmp_fmt_free_output(ctx: kotlinx/cinterop/CValuesRef<kotlinx/cinterop/CPointerVarOf<kotlinx/cinterop/CPointer<cnames/structs/AVFormatContext /* = ffmpeg/kc_fmt_ctx^ */>> /* = kotlinx/cinterop/CPointerVar^<cnames/structs/AVFormatContext /* = ffmpeg/kc_fmt_ctx^ */> */>?): kotlin/Unit
+    }
+  }
+
+  library fragment {
+    // package name: ffmpeg
+
+    package {
 
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_fmt_new_stream")
       @kotlinx/cinterop/ExperimentalForeignApi
@@ -688,13 +731,6 @@ library {
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_stream_index")
       @kotlinx/cinterop/ExperimentalForeignApi
       public final external fun ffkmp_stream_index(s: kotlinx/cinterop/CValuesRef<cnames/structs/AVStream /* = ffmpeg/kc_stream^ */>?): kotlin/Int
-    }
-  }
-
-  library fragment {
-    // package name: ffmpeg
-
-    package {
 
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_stream_codecpar")
       @kotlinx/cinterop/ExperimentalForeignApi
@@ -933,7 +969,7 @@ library {
         public final get
 
       @kotlinx/cinterop/ExperimentalForeignApi
-      public final const val KITECODEC_C_ABI_MINOR: kotlin/Int /* = 5 */
+      public final const val KITECODEC_C_ABI_MINOR: kotlin/Int /* = 6 */
         public final get
 
       @kotlinx/cinterop/ExperimentalForeignApi

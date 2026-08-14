@@ -106,6 +106,15 @@ internal object Internals {
     private external fun nativeCodecParWidth(token: Long): Int
     private external fun nativeCodecParHeight(token: Long): Int
     private external fun nativeCodecParFormat(token: Long): Int
+    private external fun nativeCodecParProfile(token: Long): Int
+    private external fun nativeCodecParLevel(token: Long): Int
+    private external fun nativeCodecParColorSpace(token: Long): Int
+    private external fun nativeCodecParColorPrimaries(token: Long): Int
+    private external fun nativeCodecParColorTransfer(token: Long): Int
+    private external fun nativeCodecParColorRange(token: Long): Int
+    private external fun nativeCodecParChromaLocation(token: Long): Int
+    private external fun nativeCodecParBitDepth(token: Long): Int
+    private external fun nativeCodecParChromaSubsampling(token: Long): Int
     private external fun nativeCodecParSampleRate(token: Long): Int
     private external fun nativeCodecParChannels(token: Long): Int
     private external fun nativeCodecParExtradata(token: Long): ByteArray?
@@ -353,6 +362,15 @@ internal object Internals {
     internal fun codecParWidth(token: Long) = checked { nativeCodecParWidth(token) }
     internal fun codecParHeight(token: Long) = checked { nativeCodecParHeight(token) }
     internal fun codecParFormat(token: Long) = checked { nativeCodecParFormat(token) }
+    internal fun codecParProfile(token: Long) = checked { nativeCodecParProfile(token) }
+    internal fun codecParLevel(token: Long) = checked { nativeCodecParLevel(token) }
+    internal fun codecParColorSpace(token: Long) = checked { nativeCodecParColorSpace(token) }
+    internal fun codecParColorPrimaries(token: Long) = checked { nativeCodecParColorPrimaries(token) }
+    internal fun codecParColorTransfer(token: Long) = checked { nativeCodecParColorTransfer(token) }
+    internal fun codecParColorRange(token: Long) = checked { nativeCodecParColorRange(token) }
+    internal fun codecParChromaLocation(token: Long) = checked { nativeCodecParChromaLocation(token) }
+    internal fun codecParBitDepth(token: Long) = checked { nativeCodecParBitDepth(token) }
+    internal fun codecParChromaSubsampling(token: Long) = checked { nativeCodecParChromaSubsampling(token) }
     internal fun codecParSampleRate(token: Long) = checked { nativeCodecParSampleRate(token) }
     internal fun codecParChannels(token: Long) = checked { nativeCodecParChannels(token) }
     internal fun codecParExtradata(token: Long) = checked { nativeCodecParExtradata(token) }

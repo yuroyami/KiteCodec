@@ -386,6 +386,24 @@ JNIEXPORT jint JNICALL kj_codecpar_height(JNIEnv *env,jclass cls,jlong token)
 {kc_codec_par*p=(kc_codec_par*)kj_handle_get(env,token,KJ_KIND_CODEC_PAR);(void)cls;return p?ffkmp_codecpar_height(p):0;}
 JNIEXPORT jint JNICALL kj_codecpar_format(JNIEnv *env,jclass cls,jlong token)
 {kc_codec_par*p=(kc_codec_par*)kj_handle_get(env,token,KJ_KIND_CODEC_PAR);(void)cls;return p?ffkmp_codecpar_format(p):-1;}
+JNIEXPORT jint JNICALL kj_codecpar_profile(JNIEnv *env,jclass cls,jlong token)
+{kc_codec_par*p=(kc_codec_par*)kj_handle_get(env,token,KJ_KIND_CODEC_PAR);(void)cls;return p?ffkmp_codecpar_profile(p):-99;}
+JNIEXPORT jint JNICALL kj_codecpar_level(JNIEnv *env,jclass cls,jlong token)
+{kc_codec_par*p=(kc_codec_par*)kj_handle_get(env,token,KJ_KIND_CODEC_PAR);(void)cls;return p?ffkmp_codecpar_level(p):-99;}
+JNIEXPORT jint JNICALL kj_codecpar_color_space(JNIEnv *env,jclass cls,jlong token)
+{kc_codec_par*p=(kc_codec_par*)kj_handle_get(env,token,KJ_KIND_CODEC_PAR);(void)cls;return p?ffkmp_codecpar_color_space(p):2;}
+JNIEXPORT jint JNICALL kj_codecpar_color_primaries(JNIEnv *env,jclass cls,jlong token)
+{kc_codec_par*p=(kc_codec_par*)kj_handle_get(env,token,KJ_KIND_CODEC_PAR);(void)cls;return p?ffkmp_codecpar_color_primaries(p):2;}
+JNIEXPORT jint JNICALL kj_codecpar_color_transfer(JNIEnv *env,jclass cls,jlong token)
+{kc_codec_par*p=(kc_codec_par*)kj_handle_get(env,token,KJ_KIND_CODEC_PAR);(void)cls;return p?ffkmp_codecpar_color_transfer(p):2;}
+JNIEXPORT jint JNICALL kj_codecpar_color_range(JNIEnv *env,jclass cls,jlong token)
+{kc_codec_par*p=(kc_codec_par*)kj_handle_get(env,token,KJ_KIND_CODEC_PAR);(void)cls;return p?ffkmp_codecpar_color_range(p):0;}
+JNIEXPORT jint JNICALL kj_codecpar_chroma_location(JNIEnv *env,jclass cls,jlong token)
+{kc_codec_par*p=(kc_codec_par*)kj_handle_get(env,token,KJ_KIND_CODEC_PAR);(void)cls;return p?ffkmp_codecpar_chroma_location(p):0;}
+JNIEXPORT jint JNICALL kj_codecpar_bit_depth(JNIEnv *env,jclass cls,jlong token)
+{kc_codec_par*p=(kc_codec_par*)kj_handle_get(env,token,KJ_KIND_CODEC_PAR);(void)cls;return p?ffkmp_codecpar_bit_depth(p):0;}
+JNIEXPORT jint JNICALL kj_codecpar_chroma_subsampling(JNIEnv *env,jclass cls,jlong token)
+{kc_codec_par*p=(kc_codec_par*)kj_handle_get(env,token,KJ_KIND_CODEC_PAR);(void)cls;return p?ffkmp_codecpar_chroma_subsampling(p):0;}
 JNIEXPORT jint JNICALL kj_codecpar_sample_rate(JNIEnv *env,jclass cls,jlong token)
 {kc_codec_par*p=(kc_codec_par*)kj_handle_get(env,token,KJ_KIND_CODEC_PAR);(void)cls;return p?ffkmp_codecpar_sample_rate(p):0;}
 JNIEXPORT jint JNICALL kj_codecpar_channels(JNIEnv *env,jclass cls,jlong token)

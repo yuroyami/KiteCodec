@@ -148,20 +148,22 @@ public final class io/github/yuroyami/kitecodec/CodecId$Companion {
 public final class io/github/yuroyami/kitecodec/ColorInfo {
 	public static final field Companion Lio/github/yuroyami/kitecodec/ColorInfo$Companion;
 	public fun <init> ()V
-	public fun <init> (Lio/github/yuroyami/kitecodec/ColorMatrix;Lio/github/yuroyami/kitecodec/ColorPrimaries;Lio/github/yuroyami/kitecodec/ColorTransfer;ZLio/github/yuroyami/kitecodec/ChromaLocation;)V
-	public synthetic fun <init> (Lio/github/yuroyami/kitecodec/ColorMatrix;Lio/github/yuroyami/kitecodec/ColorPrimaries;Lio/github/yuroyami/kitecodec/ColorTransfer;ZLio/github/yuroyami/kitecodec/ChromaLocation;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Lio/github/yuroyami/kitecodec/ColorMatrix;Lio/github/yuroyami/kitecodec/ColorPrimaries;Lio/github/yuroyami/kitecodec/ColorTransfer;ZLio/github/yuroyami/kitecodec/ChromaLocation;Z)V
+	public synthetic fun <init> (Lio/github/yuroyami/kitecodec/ColorMatrix;Lio/github/yuroyami/kitecodec/ColorPrimaries;Lio/github/yuroyami/kitecodec/ColorTransfer;ZLio/github/yuroyami/kitecodec/ChromaLocation;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Lio/github/yuroyami/kitecodec/ColorMatrix;
 	public final fun component2 ()Lio/github/yuroyami/kitecodec/ColorPrimaries;
 	public final fun component3 ()Lio/github/yuroyami/kitecodec/ColorTransfer;
 	public final fun component4 ()Z
 	public final fun component5 ()Lio/github/yuroyami/kitecodec/ChromaLocation;
-	public final fun copy (Lio/github/yuroyami/kitecodec/ColorMatrix;Lio/github/yuroyami/kitecodec/ColorPrimaries;Lio/github/yuroyami/kitecodec/ColorTransfer;ZLio/github/yuroyami/kitecodec/ChromaLocation;)Lio/github/yuroyami/kitecodec/ColorInfo;
-	public static synthetic fun copy$default (Lio/github/yuroyami/kitecodec/ColorInfo;Lio/github/yuroyami/kitecodec/ColorMatrix;Lio/github/yuroyami/kitecodec/ColorPrimaries;Lio/github/yuroyami/kitecodec/ColorTransfer;ZLio/github/yuroyami/kitecodec/ChromaLocation;ILjava/lang/Object;)Lio/github/yuroyami/kitecodec/ColorInfo;
+	public final fun component6 ()Z
+	public final fun copy (Lio/github/yuroyami/kitecodec/ColorMatrix;Lio/github/yuroyami/kitecodec/ColorPrimaries;Lio/github/yuroyami/kitecodec/ColorTransfer;ZLio/github/yuroyami/kitecodec/ChromaLocation;Z)Lio/github/yuroyami/kitecodec/ColorInfo;
+	public static synthetic fun copy$default (Lio/github/yuroyami/kitecodec/ColorInfo;Lio/github/yuroyami/kitecodec/ColorMatrix;Lio/github/yuroyami/kitecodec/ColorPrimaries;Lio/github/yuroyami/kitecodec/ColorTransfer;ZLio/github/yuroyami/kitecodec/ChromaLocation;ZILjava/lang/Object;)Lio/github/yuroyami/kitecodec/ColorInfo;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getChromaLocation ()Lio/github/yuroyami/kitecodec/ChromaLocation;
 	public final fun getFullRange ()Z
 	public final fun getMatrix ()Lio/github/yuroyami/kitecodec/ColorMatrix;
 	public final fun getPrimaries ()Lio/github/yuroyami/kitecodec/ColorPrimaries;
+	public final fun getRangeSpecified ()Z
 	public final fun getTransfer ()Lio/github/yuroyami/kitecodec/ColorTransfer;
 	public fun hashCode ()I
 	public final fun isHdr ()Z
@@ -888,22 +890,117 @@ public final class io/github/yuroyami/kitecodec/VideoInput {
 }
 
 public final class io/github/yuroyami/kitecodec/VideoStreamInfo {
-	public synthetic fun <init> (IILjava/lang/String;Lio/github/yuroyami/kitecodec/Rational;Lio/github/yuroyami/kitecodec/Rational;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (IILjava/lang/String;Lio/github/yuroyami/kitecodec/Rational;Lio/github/yuroyami/kitecodec/Rational;Lio/github/yuroyami/kitecodec/ColorInfo;Lio/github/yuroyami/kitecodec/Vp9CodecInfo;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (IILjava/lang/String;Lio/github/yuroyami/kitecodec/Rational;Lio/github/yuroyami/kitecodec/Rational;Lio/github/yuroyami/kitecodec/ColorInfo;Lio/github/yuroyami/kitecodec/Vp9CodecInfo;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()I
 	public final fun component2 ()I
 	public final fun component3-i2AC7LY ()Ljava/lang/String;
 	public final fun component4 ()Lio/github/yuroyami/kitecodec/Rational;
 	public final fun component5 ()Lio/github/yuroyami/kitecodec/Rational;
-	public final fun copy-_xXIbOM (IILjava/lang/String;Lio/github/yuroyami/kitecodec/Rational;Lio/github/yuroyami/kitecodec/Rational;)Lio/github/yuroyami/kitecodec/VideoStreamInfo;
-	public static synthetic fun copy-_xXIbOM$default (Lio/github/yuroyami/kitecodec/VideoStreamInfo;IILjava/lang/String;Lio/github/yuroyami/kitecodec/Rational;Lio/github/yuroyami/kitecodec/Rational;ILjava/lang/Object;)Lio/github/yuroyami/kitecodec/VideoStreamInfo;
+	public final fun component6 ()Lio/github/yuroyami/kitecodec/ColorInfo;
+	public final fun component7 ()Lio/github/yuroyami/kitecodec/Vp9CodecInfo;
+	public final fun copy-MRx_7ZI (IILjava/lang/String;Lio/github/yuroyami/kitecodec/Rational;Lio/github/yuroyami/kitecodec/Rational;Lio/github/yuroyami/kitecodec/ColorInfo;Lio/github/yuroyami/kitecodec/Vp9CodecInfo;)Lio/github/yuroyami/kitecodec/VideoStreamInfo;
+	public static synthetic fun copy-MRx_7ZI$default (Lio/github/yuroyami/kitecodec/VideoStreamInfo;IILjava/lang/String;Lio/github/yuroyami/kitecodec/Rational;Lio/github/yuroyami/kitecodec/Rational;Lio/github/yuroyami/kitecodec/ColorInfo;Lio/github/yuroyami/kitecodec/Vp9CodecInfo;ILjava/lang/Object;)Lio/github/yuroyami/kitecodec/VideoStreamInfo;
 	public fun equals (Ljava/lang/Object;)Z
+	public final fun getColor ()Lio/github/yuroyami/kitecodec/ColorInfo;
 	public final fun getFrameRate ()Lio/github/yuroyami/kitecodec/Rational;
 	public final fun getHeight ()I
 	public final fun getPixelFormat-i2AC7LY ()Ljava/lang/String;
 	public final fun getSampleAspectRatio ()Lio/github/yuroyami/kitecodec/Rational;
+	public final fun getVp9 ()Lio/github/yuroyami/kitecodec/Vp9CodecInfo;
 	public final fun getWidth ()I
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/yuroyami/kitecodec/Vp9BitDepth : java/lang/Enum {
+	public static final field Companion Lio/github/yuroyami/kitecodec/Vp9BitDepth$Companion;
+	public static final field Eight Lio/github/yuroyami/kitecodec/Vp9BitDepth;
+	public static final field Ten Lio/github/yuroyami/kitecodec/Vp9BitDepth;
+	public static final field Twelve Lio/github/yuroyami/kitecodec/Vp9BitDepth;
+	public final fun getBits ()I
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lio/github/yuroyami/kitecodec/Vp9BitDepth;
+	public static fun values ()[Lio/github/yuroyami/kitecodec/Vp9BitDepth;
+}
+
+public final class io/github/yuroyami/kitecodec/Vp9BitDepth$Companion {
+	public final fun fromBits (I)Lio/github/yuroyami/kitecodec/Vp9BitDepth;
+}
+
+public final class io/github/yuroyami/kitecodec/Vp9ChromaSubsampling : java/lang/Enum {
+	public static final field Companion Lio/github/yuroyami/kitecodec/Vp9ChromaSubsampling$Companion;
+	public static final field Monochrome Lio/github/yuroyami/kitecodec/Vp9ChromaSubsampling;
+	public static final field Yuv420 Lio/github/yuroyami/kitecodec/Vp9ChromaSubsampling;
+	public static final field Yuv422 Lio/github/yuroyami/kitecodec/Vp9ChromaSubsampling;
+	public static final field Yuv444 Lio/github/yuroyami/kitecodec/Vp9ChromaSubsampling;
+	public final fun getCode ()I
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lio/github/yuroyami/kitecodec/Vp9ChromaSubsampling;
+	public static fun values ()[Lio/github/yuroyami/kitecodec/Vp9ChromaSubsampling;
+}
+
+public final class io/github/yuroyami/kitecodec/Vp9ChromaSubsampling$Companion {
+	public final fun fromCode (I)Lio/github/yuroyami/kitecodec/Vp9ChromaSubsampling;
+}
+
+public final class io/github/yuroyami/kitecodec/Vp9CodecInfo {
+	public fun <init> (Lio/github/yuroyami/kitecodec/Vp9Profile;Lio/github/yuroyami/kitecodec/Vp9Level;Lio/github/yuroyami/kitecodec/Vp9BitDepth;Lio/github/yuroyami/kitecodec/Vp9ChromaSubsampling;)V
+	public final fun component1 ()Lio/github/yuroyami/kitecodec/Vp9Profile;
+	public final fun component2 ()Lio/github/yuroyami/kitecodec/Vp9Level;
+	public final fun component3 ()Lio/github/yuroyami/kitecodec/Vp9BitDepth;
+	public final fun component4 ()Lio/github/yuroyami/kitecodec/Vp9ChromaSubsampling;
+	public final fun copy (Lio/github/yuroyami/kitecodec/Vp9Profile;Lio/github/yuroyami/kitecodec/Vp9Level;Lio/github/yuroyami/kitecodec/Vp9BitDepth;Lio/github/yuroyami/kitecodec/Vp9ChromaSubsampling;)Lio/github/yuroyami/kitecodec/Vp9CodecInfo;
+	public static synthetic fun copy$default (Lio/github/yuroyami/kitecodec/Vp9CodecInfo;Lio/github/yuroyami/kitecodec/Vp9Profile;Lio/github/yuroyami/kitecodec/Vp9Level;Lio/github/yuroyami/kitecodec/Vp9BitDepth;Lio/github/yuroyami/kitecodec/Vp9ChromaSubsampling;ILjava/lang/Object;)Lio/github/yuroyami/kitecodec/Vp9CodecInfo;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBitDepth ()Lio/github/yuroyami/kitecodec/Vp9BitDepth;
+	public final fun getChromaSubsampling ()Lio/github/yuroyami/kitecodec/Vp9ChromaSubsampling;
+	public final fun getLevel ()Lio/github/yuroyami/kitecodec/Vp9Level;
+	public final fun getProfile ()Lio/github/yuroyami/kitecodec/Vp9Profile;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/yuroyami/kitecodec/Vp9Level : java/lang/Enum {
+	public static final field Companion Lio/github/yuroyami/kitecodec/Vp9Level$Companion;
+	public static final field Level1 Lio/github/yuroyami/kitecodec/Vp9Level;
+	public static final field Level1_1 Lio/github/yuroyami/kitecodec/Vp9Level;
+	public static final field Level2 Lio/github/yuroyami/kitecodec/Vp9Level;
+	public static final field Level2_1 Lio/github/yuroyami/kitecodec/Vp9Level;
+	public static final field Level3 Lio/github/yuroyami/kitecodec/Vp9Level;
+	public static final field Level3_1 Lio/github/yuroyami/kitecodec/Vp9Level;
+	public static final field Level4 Lio/github/yuroyami/kitecodec/Vp9Level;
+	public static final field Level4_1 Lio/github/yuroyami/kitecodec/Vp9Level;
+	public static final field Level5 Lio/github/yuroyami/kitecodec/Vp9Level;
+	public static final field Level5_1 Lio/github/yuroyami/kitecodec/Vp9Level;
+	public static final field Level5_2 Lio/github/yuroyami/kitecodec/Vp9Level;
+	public static final field Level6 Lio/github/yuroyami/kitecodec/Vp9Level;
+	public static final field Level6_1 Lio/github/yuroyami/kitecodec/Vp9Level;
+	public static final field Level6_2 Lio/github/yuroyami/kitecodec/Vp9Level;
+	public final fun getCode ()I
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lio/github/yuroyami/kitecodec/Vp9Level;
+	public static fun values ()[Lio/github/yuroyami/kitecodec/Vp9Level;
+}
+
+public final class io/github/yuroyami/kitecodec/Vp9Level$Companion {
+	public final fun fromCode (I)Lio/github/yuroyami/kitecodec/Vp9Level;
+}
+
+public final class io/github/yuroyami/kitecodec/Vp9Profile : java/lang/Enum {
+	public static final field Companion Lio/github/yuroyami/kitecodec/Vp9Profile$Companion;
+	public static final field Profile0 Lio/github/yuroyami/kitecodec/Vp9Profile;
+	public static final field Profile1 Lio/github/yuroyami/kitecodec/Vp9Profile;
+	public static final field Profile2 Lio/github/yuroyami/kitecodec/Vp9Profile;
+	public static final field Profile3 Lio/github/yuroyami/kitecodec/Vp9Profile;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getNumber ()I
+	public static fun valueOf (Ljava/lang/String;)Lio/github/yuroyami/kitecodec/Vp9Profile;
+	public static fun values ()[Lio/github/yuroyami/kitecodec/Vp9Profile;
+}
+
+public final class io/github/yuroyami/kitecodec/Vp9Profile$Companion {
+	public final fun fromNumber (I)Lio/github/yuroyami/kitecodec/Vp9Profile;
 }
 
 public final class io/github/yuroyami/kitecodec/dsl/Aresample : io/github/yuroyami/kitecodec/dsl/FilterStep {

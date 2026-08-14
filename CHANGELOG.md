@@ -11,6 +11,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 The library is source-only for now. Nothing has been published, not `kitecodec-core`, not the Gradle plugin, and not the FFmpeg Release assets the plugin's `FFmpegSource.Prebuilt` default downloads. Release state and the per-target table live in the [README](https://github.com/yuroyami/KiteCodec#release-status) rather than being restated here.
 
 ### Added
+- **Owned stream colour and typed VP9 metadata.** Video stream snapshots now carry container/probe
+  colour declarations plus typed VP9 profile, level, bit depth and chroma subsampling across both
+  native and JNI builders. Nine compatible C accessors advance the C ABI from 2.5 to 2.6, the
+  export set from 186 to 195 names, and the signature baseline from 201 to 210 records.
 - **Owned codec-configuration snapshots for hardware decoders.** `StreamInfo.codecExtradata`
   carries a copy of records such as avcC and hvcC across both the native and JNI boundaries,
   without exposing an FFmpeg pointer. The bounded C copy helper rejects invalid sizes and advances

@@ -18,7 +18,7 @@
 #      S4.b window (KD-4/KD-5) with their owned-dictionary release, plus the seven kc_ functions
 #      of the identity gate, the two hardware-decode funnels added at the S2.a window
 #      (ffkmp_codecctx_use_videotoolbox, ffkmp_frame_hw_download), and nothing else:
-#      185 names.
+#      195 names.
 #      That set is a compatibility promise, which is the whole reason B1.4 deleted the 15 helpers
 #      no Kotlin file imported (register item B1-08).
 #   3. What does it keep to itself? The four trailing-underscore helpers, which are `static` and
@@ -385,14 +385,14 @@ fi
 # silently retargeted to another C tag. This check records declaration SHAPES from all three public
 # headers. Selection is per header and deliberate:
 #
-#   kitecodec_helpers.h  every KC_API prototype (179)
+#   kitecodec_helpers.h  every KC_API prototype (188)
 #   kitecodec_handles.h  every opaque typedef (11)
 #   kitecodec_abi.h      KC_API prototypes (7), enum definitions (3), report typedef (1)
 #
 # Comments and preprocessor lines are discarded. Declarations may span lines, and a semicolon ends
 # a record only at brace depth zero, so enum fields and the report fields remain inside their one
 # complete record. Whitespace is normalized, records are C-locale sorted WITHOUT deduplication, and
-# the exact installed scope is 201 records.
+# the exact installed scope is 210 records.
 #
 # THE MOVE (also in KPKMP.md section 9's ratchet move table): change a public declaration
 # deliberately, run
@@ -517,16 +517,16 @@ ACTUAL_SIGNATURE_COUNT="$(wc -l < "$WORK/actual_signatures.txt" | tr -d ' ')"
 
 if [ "$WRITE_SIGNATURE_BASELINE" = 1 ]; then
     echo "7. normalized public declaration baseline"
-    if [ "$ACTUAL_SIGNATURE_COUNT" -ne 201 ]; then
-        fail "refusing to rewrite $SIGNATURE_BASELINE_FILE: expected 201 records, found $ACTUAL_SIGNATURE_COUNT"
+    if [ "$ACTUAL_SIGNATURE_COUNT" -ne 210 ]; then
+        fail "refusing to rewrite $SIGNATURE_BASELINE_FILE: expected 210 records, found $ACTUAL_SIGNATURE_COUNT"
     else
         {
             echo "# The normalized public C declaration baseline of KiteCodec (S1.a.8)."
             echo "#"
-            echo "# Exact scope: 179 helper KC_API prototypes, eleven opaque handle typedefs, seven"
+            echo "# Exact scope: 188 helper KC_API prototypes, eleven opaque handle typedefs, seven"
             echo "# ABI KC_API prototypes, three ABI enum definitions and the full kc_ffmpeg_report"
             echo "# typedef. Comments and preprocessor lines are absent; whitespace is normalized;"
-            echo "# records are sorted without deduplication. There must be exactly 201 records."
+            echo "# records are sorted without deduplication. There must be exactly 210 records."
             echo "#"
             echo "# THE MOVE (also in KPKMP.md section 9's ratchet move table): change the public"
             echo "# declaration deliberately, run ./scripts/symbol-audit.sh"
@@ -534,15 +534,15 @@ if [ "$WRITE_SIGNATURE_BASELINE" = 1 ]; then
             echo "# the Execution log entry. --write-baseline is separate and changes export names."
             cat "$WORK/actual_signatures.txt"
         } > "$SIGNATURE_BASELINE_FILE"
-        echo "  baseline REWRITTEN at $SIGNATURE_BASELINE_FILE (201 records)"
+        echo "  baseline REWRITTEN at $SIGNATURE_BASELINE_FILE (210 records)"
         echo "  commit it with the declaration change it records and log every changed record"
     fi
     echo
 else
     echo "7. public declaration shapes equal the committed signature baseline"
-    echo "  selected $ACTUAL_SIGNATURE_COUNT normalized record(s); expected 201"
-    if [ "$ACTUAL_SIGNATURE_COUNT" -ne 201 ]; then
-        fail "public declaration selection changed scope: expected 201 records, found $ACTUAL_SIGNATURE_COUNT"
+    echo "  selected $ACTUAL_SIGNATURE_COUNT normalized record(s); expected 210"
+    if [ "$ACTUAL_SIGNATURE_COUNT" -ne 210 ]; then
+        fail "public declaration selection changed scope: expected 210 records, found $ACTUAL_SIGNATURE_COUNT"
     fi
     if [ ! -f "$SIGNATURE_BASELINE_FILE" ]; then
         fail "$SIGNATURE_BASELINE_FILE does not exist; create it with: $0 --write-signature-baseline"
@@ -556,8 +556,8 @@ else
         comm -13 "$WORK/baseline_signatures.txt" "$WORK/actual_signatures.txt" \
             > "$WORK/signatures_extra.txt"
         echo "  baseline lists $BASELINE_SIGNATURE_COUNT record(s)"
-        if [ "$BASELINE_SIGNATURE_COUNT" -ne 201 ]; then
-            fail "signature baseline scope is not 201 records"
+        if [ "$BASELINE_SIGNATURE_COUNT" -ne 210 ]; then
+            fail "signature baseline scope is not 210 records"
         fi
         if [ -s "$WORK/signatures_missing.txt" ]; then
             fail "in the signature baseline but not in the headers (removed or changed):"
@@ -569,7 +569,7 @@ else
             echo "        Deliberate? Rerun with --write-signature-baseline in the same commit."
         fi
         [ -s "$WORK/signatures_missing.txt" ] || [ -s "$WORK/signatures_extra.txt" ] || \
-            echo "  ok: all 201 records are equal"
+            echo "  ok: all 210 records are equal"
     fi
     echo
 fi
