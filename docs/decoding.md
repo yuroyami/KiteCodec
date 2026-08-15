@@ -257,11 +257,13 @@ try {
 
 ## Status and platforms
 
-The decoding contracts have Kotlin/Native and JVM/Android actuals. Native uses cinterop; JVM and
-Android use opaque, generation-tagged JNI handles. The JVM proof loads a test-only macOS dylib,
-while Android currently has source/link/AAR-packaging evidence only; no playback or physical-device
-qualification. Nothing is publicly published. See [Platform support](platforms.md) for the exact
-matrix and [Getting started](getting-started.md) for the repository-local path.
+The decoding contracts have Kotlin/Native and JVM/Android actuals. Native uses cinterop; the local
+Android proof uses opaque, generation-tagged JNI handles, tested by an unpublished JVM harness
+that loads a test-only macOS dylib. Public JVM always reports no capabilities and throws typed
+`FFmpegError.Unsupported`. Android currently has source/link/AAR-packaging evidence only; no
+playback or physical-device qualification. Nothing is publicly published. See
+[Platform support](platforms.md) for the exact matrix and [Getting started](getting-started.md) for
+the repository-local path.
 
 The low-level decoder API also accepts an exact FFmpeg decoder name. On an Android FFmpeg build,
 `source.openDecoder(stream, decoder = CodecId("h264_mediacodec"))` selects FFmpeg's named

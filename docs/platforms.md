@@ -2,9 +2,10 @@
 
 Decode, encode, transcode, remux, and filter video and audio from shared Kotlin code. Transcode
 means decode and then re-encode. Remux means copy the existing streams into a different container.
-The API lives in `commonMain`: Kotlin/Native actuals use cinterop, while JVM and Android actuals
-use a dynamically registered JNI bridge over the same opaque FFmpeg helper boundary. No target
-artifact is publicly available yet.
+The API lives in `commonMain`: Kotlin/Native actuals use cinterop, while the local Android proof
+uses a dynamically registered JNI bridge over the same opaque FFmpeg helper boundary. A separate
+unpublished JVM compilation tests that bridge. Public JVM, JS and WasmJs expose an invariant
+unsupported placeholder, not an FFmpeg-backed runtime. No target artifact is publicly available yet.
 
 ## Target matrix
 
@@ -12,11 +13,14 @@ There is one target table for the project and it lives in the [README](https://g
 
 Two points decide whether KiteCodec is usable for you:
 
-- Kotlin/Native implementations live in `nativeMain`; the JVM and regular Android implementations
-  share `jvmAndAndroidMain`. The JVM proof loads a test-only macOS arm64 dylib. The Android model
+- Kotlin/Native implementations live in `nativeMain`; the regular Android implementation and an
+  unpublished JVM harness compile the JNI sources from `jvmAndAndroidMain`. That harness loads a
+  test-only macOS arm64 dylib. Public `jvmMain` uses `unsupportedMain` in every scope, so diagnostics
+  remain readable without trying to load an absent native library. The Android model
   is `minSdk 24` and packages `arm64-v8a` plus `x86_64` JNI inputs with 16 KiB alignment/packaging
-  checks. There is no public JVM jar or Android AAR, no Android playback claim, and no `js` or
-  `wasmJs` target.
+  checks. There is no functional public JVM jar or Android AAR and no Android playback claim.
+  Public JVM, `js` and `wasmJs` compile and publish the common API, but intentionally report
+  no capabilities and reject every media operation with typed `FFmpegError.Unsupported`.
 - Nothing is published. The native target rows, the local mobile-Apple path, and the JVM/Android
   source-and-host gates are evidence tiers, not a public artifact set. `mingwX64` builds and tests
   in CI but has no prebuilt asset; `iosX64`, `macosX64` and `linuxArm64` remain unqualified.
@@ -183,8 +187,10 @@ It is deliberately different from the desktop one:
 
 !!! note "Two Android target models"
     The `compileKotlinAndroidNative*` flow above produces Kotlin/Native `.klib` files. Separately,
-    `-Pkitecodec.phoneTargetsOnly=true` registers JVM, a regular Android KMP target and the three
-    local Apple targets. Its AAR model packages exactly `arm64-v8a` and `x86_64` JNI libraries at
+    `-Pkitecodec.phoneTargetsOnly=true` registers a regular Android KMP target and the three local
+    Apple targets. JVM, JS and WasmJs are registered in every scope and remain placeholders; the
+    phone scope adds an unpublished JNI JVM harness without changing their artifacts. The AAR model packages exactly
+    `arm64-v8a` and `x86_64` JNI libraries at
     `minSdk 24`. Both arms are link- and package-checked with 16 KiB constraints; x86_64 has no
     runtime qualification. No AAR is public, and the selector is a Maven-local proof scope refused
     by remote publication.

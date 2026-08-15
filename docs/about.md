@@ -1,9 +1,10 @@
 # About KiteCodec
 
 **One coroutine-first Kotlin API for video and audio.** KiteCodec binds to FFmpeg's libav\*
-libraries through Kotlin/Native cinterop or, on JVM and Android, a dynamically registered JNI
-adapter over the same opaque C helpers. There is no `ffmpeg` subprocess, and memory stays constant
-regardless of input length.
+libraries through Kotlin/Native cinterop or, in the local Android proof, a dynamically registered
+JNI adapter over the same opaque C helpers. An unpublished JVM harness tests that adapter. Public
+JVM, JS and WasmJs use an invariant unsupported placeholder implementation. There is no `ffmpeg`
+subprocess, and memory stays constant regardless of input length.
 
 This page covers the project's current status, its roadmap, the binding architecture, and the license. For the API itself, start with [Getting started](getting-started.md) or the [API reference](https://yuroyami.github.io/KiteCodec/api/).
 
@@ -19,17 +20,20 @@ Everything routes through a single demux pass. When you decode several streams, 
 
 KiteCodec is pre-1.0 and actively developed. The full **demux -> decode -> filter -> encode -> mux**
 API is implemented for both video and audio, in a single pass. Kotlin/Native has the standing
-runtime evidence; JVM/Android actuals now share the common contracts, with host JNI tests and
-Android link/packaging checks. No target artifact has been publicly released.
+runtime evidence; Android actuals and an unpublished JVM harness share the JNI contracts, with host
+tests and Android link/packaging checks. Public JVM and Web use the tested unavailable contract.
+No target artifact has been publicly released.
 
 There is one status table for the whole project, and it lives in the [README](https://github.com/yuroyami/KiteCodec#targets). It records, per target, whether a public artifact exists, what build/test evidence exists, and where FFmpeg comes from.
 
 The two things a reader most often needs from it:
 
 - **KiteCodec cannot be consumed from Maven Central today.** Neither `kitecodec-core` nor the Gradle plugin has been published, and the FFmpeg Release assets the plugin's default `FFmpegSource.Prebuilt` downloads do not exist. See [Release status](https://github.com/yuroyami/KiteCodec#release-status) for the blocker.
-- **JVM and Android actuals exist in source.** The JVM lane loads a test-only macOS arm64 dylib;
+- **JVM, Android and Web actuals exist in source.** The phone proof's unpublished JVM harness loads
+  a test-only macOS arm64 dylib; public JVM uses the unavailable placeholder in every scope.
   Android is `minSdk 24` with `arm64-v8a` and `x86_64` JNI inputs and 16 KiB ELF/app packaging.
-  There is no public runtime jar or AAR, no Android playback claim, and no web target.
+  There is no public runtime jar or AAR and no Android playback claim. JS and WasmJs are tested
+  placeholders whose media operations always fail with typed `FFmpegError.Unsupported`.
 
 !!! note "Frame ownership"
     Frames emitted by the public `Flow` APIs (`MediaSource.decodedFrames`, `MediaSource.decodeStreams`, `FilterGraph.process`) are **owned by the collector**. Each stays valid until you close it, so buffering operators such as `buffer()` and `toList()` are safe. Every collected frame must be closed, or its native buffers leak. Frames passed to a callback (`FilterGraph.feedInput`'s `onOutput`) are valid only for the duration of that call. `Frame.copy()` takes an O(1) owned snapshot. The native `AVFrame*` is deliberately not exposed in `commonMain`.
@@ -115,13 +119,15 @@ kitecodec-core/src/
     ├── MediaSink.native.kt          ← muxer + shared encode core
     ├── Transcoder.native.kt         ← interleaved A/V orchestration
 │   └── Internals.kt                 ← error mapping, format mapping
-└── jvmAndAndroidMain/kotlin/io/github/yuroyami/kitecodec/
+├── jvmAndAndroidMain/kotlin/io/github/yuroyami/kitecodec/
     ├── *.jvm.kt                     ← JVM/Android actuals for the common API
     └── Internals.jvm.kt             ← checked JNI handles, identity and error mapping
+└── unsupportedMain/kotlin/io/github/yuroyami/kitecodec/
+    └── *.unsupported.kt             ← public JVM + JS/WasmJs; no media runtime
 ```
 
-Every common contract has Kotlin/Native and JVM/Android actuals. All public types live flat under
-`io.github.yuroyami.kitecodec`, with no internal subpackages.
+Every common contract has Kotlin/Native, JVM/Android and Web actuals. All public types live flat
+under `io.github.yuroyami.kitecodec`, with no internal subpackages.
 
 ### Timestamp handling
 

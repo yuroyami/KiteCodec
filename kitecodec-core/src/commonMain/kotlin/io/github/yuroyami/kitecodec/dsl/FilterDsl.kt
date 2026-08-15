@@ -27,6 +27,12 @@ public sealed interface FilterStep {
     public fun compile(): String
 }
 
+/** Kotlin/JS renders an integral Double without `.0`; keep generated FFmpeg text target-stable. */
+private fun Double.ffmpegText(): String {
+    val rendered = toString()
+    return if (isFinite() && '.' !in rendered && 'e' !in rendered && 'E' !in rendered) "$rendered.0" else rendered
+}
+
 // --- Video steps ------------------------------------------------------------------------------
 
 public data class Scale(val width: Int, val height: Int) : FilterStep {
@@ -100,10 +106,10 @@ public data class Eq(
     override val filterName: String get() = "eq"
     override fun compile(): String {
         val args = buildList {
-            brightness?.let { add("brightness=$it") }
-            contrast?.let { add("contrast=$it") }
-            saturation?.let { add("saturation=$it") }
-            gamma?.let { add("gamma=$it") }
+            brightness?.let { add("brightness=${it.ffmpegText()}") }
+            contrast?.let { add("contrast=${it.ffmpegText()}") }
+            saturation?.let { add("saturation=${it.ffmpegText()}") }
+            gamma?.let { add("gamma=${it.ffmpegText()}") }
         }
         require(args.isNotEmpty()) { "eq with every knob absent does nothing; drop the step instead" }
         return "eq=${args.joinToString(":")}"
@@ -135,7 +141,7 @@ public data class DrawBox(
 /** Linear gain: 1.0 is unity, 0.5 is half amplitude. */
 public data class Volume(val gain: Double) : FilterStep {
     override val filterName: String get() = "volume"
-    override fun compile(): String = "volume=$gain"
+    override fun compile(): String = "volume=${gain.ffmpegText()}"
 }
 
 public data class Atempo(val tempo: Double) : FilterStep {
@@ -144,7 +150,7 @@ public data class Atempo(val tempo: Double) : FilterStep {
     }
 
     override val filterName: String get() = "atempo"
-    override fun compile(): String = "atempo=$tempo"
+    override fun compile(): String = "atempo=${tempo.ffmpegText()}"
 }
 
 public data class Aresample(val sampleRate: Int) : FilterStep {
@@ -193,7 +199,8 @@ public data class Loudnorm(
     val range: Double = 7.0,
 ) : FilterStep {
     override val filterName: String get() = "loudnorm"
-    override fun compile(): String = "loudnorm=I=$integrated:TP=$truePeak:LRA=$range"
+    override fun compile(): String =
+        "loudnorm=I=${integrated.ffmpegText()}:TP=${truePeak.ffmpegText()}:LRA=${range.ffmpegText()}"
 }
 
 /**

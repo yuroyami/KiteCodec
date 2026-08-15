@@ -7,11 +7,15 @@ FFmpeg's libav* libraries.
 !!! warning "Before you start"
 
     Kotlin/Native, JVM and Android actuals exist in source, but nothing is publicly published. The
-    JVM gate uses a test-only macOS arm64 dylib; the Android `minSdk 24` model packages
+    local phone proof's unpublished JVM harness uses a test-only macOS arm64 dylib; public JVM uses
+    the typed unavailable placeholder in every scope. The Android `minSdk 24` model packages
     `arm64-v8a` and `x86_64` JNI inputs with 16 KiB checks but has no public AAR or Android playback
     qualification. This guide therefore uses the established in-repository Kotlin/Native path or
-    a private `publishToMavenLocal` proof. There is no web target. The consumer script, release
-    status and per-target evidence are in the [README](https://github.com/yuroyami/KiteCodec#targets).
+    a private `publishToMavenLocal` proof. Public JVM, JS and WasmJs variants exist only as
+    explicit unsupported placeholders: they make common dependency resolution predictable but
+    perform no media work.
+    The consumer script, release status and per-target evidence are in the
+    [README](https://github.com/yuroyami/KiteCodec#targets).
 
 ## Step 1: Get FFmpeg
 
@@ -77,7 +81,8 @@ KiteCodec links against FFmpeg's libav* libraries. You need them present before 
 ## Step 2: Wire the module
 
 Nothing is published, so the runnable instructions below cover repository-local Kotlin/Native.
-The JVM/Android actuals are compile/test inputs here, not public consumer coordinates.
+The JVM/Android actuals and Web placeholders are compile/test inputs here, not public consumer
+coordinates.
 
 **Inside the KiteCodec repository.** The `:kitecodec-sample` module already depends on `:kitecodec-core` and is the fastest way to run the API against real arguments. Everything below works from a plain clone.
 

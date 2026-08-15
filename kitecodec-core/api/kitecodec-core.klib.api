@@ -1,5 +1,5 @@
 // Klib ABI Dump
-// Targets: [iosArm64, iosSimulatorArm64, macosArm64]
+// Targets: [js, macosArm64, wasmJs]
 // Rendering settings:
 // - Signature version: 2
 // - Show manifest properties: true
@@ -1821,14 +1821,18 @@ final object io.github.yuroyami.kitecodec/Transcoder { // io.github.yuroyami.kit
 
 final val io.github.yuroyami.kitecodec/durationMicros // io.github.yuroyami.kitecodec/durationMicros|@io.github.yuroyami.kitecodec.Frame{}durationMicros[0]
     final fun (io.github.yuroyami.kitecodec/Frame).<get-durationMicros>(): kotlin/Long? // io.github.yuroyami.kitecodec/durationMicros.<get-durationMicros>|<get-durationMicros>@io.github.yuroyami.kitecodec.Frame(){}[0]
-final val io.github.yuroyami.kitecodec/hardwareSurface // io.github.yuroyami.kitecodec/hardwareSurface|@io.github.yuroyami.kitecodec.Frame{}hardwareSurface[0]
-    final fun (io.github.yuroyami.kitecodec/Frame).<get-hardwareSurface>(): kotlinx.cinterop/CPointer<out kotlinx.cinterop/CPointed>? // io.github.yuroyami.kitecodec/hardwareSurface.<get-hardwareSurface>|<get-hardwareSurface>@io.github.yuroyami.kitecodec.Frame(){}[0]
 final val io.github.yuroyami.kitecodec/mediaInfo // io.github.yuroyami.kitecodec/mediaInfo|@io.github.yuroyami.kitecodec.MediaSource{}mediaInfo[0]
     final fun (io.github.yuroyami.kitecodec/MediaSource).<get-mediaInfo>(): io.github.yuroyami.kitecodec/MediaInfo // io.github.yuroyami.kitecodec/mediaInfo.<get-mediaInfo>|<get-mediaInfo>@io.github.yuroyami.kitecodec.MediaSource(){}[0]
 final val io.github.yuroyami.kitecodec/ptsMicros // io.github.yuroyami.kitecodec/ptsMicros|@io.github.yuroyami.kitecodec.Frame{}ptsMicros[0]
     final fun (io.github.yuroyami.kitecodec/Frame).<get-ptsMicros>(): kotlin/Long? // io.github.yuroyami.kitecodec/ptsMicros.<get-ptsMicros>|<get-ptsMicros>@io.github.yuroyami.kitecodec.Frame(){}[0]
 
-final fun <#A: kotlin/Any?> (io.github.yuroyami.kitecodec/Frame).io.github.yuroyami.kitecodec/withPlanes(kotlin/Function3<kotlin.collections/List<kotlinx.cinterop/CPointer<kotlinx.cinterop/UByteVarOf<kotlin/UByte>>>, kotlin.collections/List<kotlin/Int>, kotlin.collections/List<kotlin/Int>, #A>): #A // io.github.yuroyami.kitecodec/withPlanes|withPlanes@io.github.yuroyami.kitecodec.Frame(kotlin.Function3<kotlin.collections.List<kotlinx.cinterop.CPointer<kotlinx.cinterop.UByteVarOf<kotlin.UByte>>>,kotlin.collections.List<kotlin.Int>,kotlin.collections.List<kotlin.Int>,0:0>){0§<kotlin.Any?>}[0]
 final fun io.github.yuroyami.kitecodec.dsl/audioFilters(kotlin/Function1<io.github.yuroyami.kitecodec.dsl/AudioFilterBuilder, kotlin/Unit>): io.github.yuroyami.kitecodec.dsl/FilterChain // io.github.yuroyami.kitecodec.dsl/audioFilters|audioFilters(kotlin.Function1<io.github.yuroyami.kitecodec.dsl.AudioFilterBuilder,kotlin.Unit>){}[0]
 final fun io.github.yuroyami.kitecodec.dsl/escapeFilterValue(kotlin/String): kotlin/String // io.github.yuroyami.kitecodec.dsl/escapeFilterValue|escapeFilterValue(kotlin.String){}[0]
 final fun io.github.yuroyami.kitecodec.dsl/videoFilters(kotlin/Function1<io.github.yuroyami.kitecodec.dsl/VideoFilterBuilder, kotlin/Unit>): io.github.yuroyami.kitecodec.dsl/FilterChain // io.github.yuroyami.kitecodec.dsl/videoFilters|videoFilters(kotlin.Function1<io.github.yuroyami.kitecodec.dsl.VideoFilterBuilder,kotlin.Unit>){}[0]
+
+// Targets: [macosArm64]
+final val io.github.yuroyami.kitecodec/hardwareSurface // io.github.yuroyami.kitecodec/hardwareSurface|@io.github.yuroyami.kitecodec.Frame{}hardwareSurface[0]
+    final fun (io.github.yuroyami.kitecodec/Frame).<get-hardwareSurface>(): kotlinx.cinterop/CPointer<out kotlinx.cinterop/CPointed>? // io.github.yuroyami.kitecodec/hardwareSurface.<get-hardwareSurface>|<get-hardwareSurface>@io.github.yuroyami.kitecodec.Frame(){}[0]
+
+// Targets: [macosArm64]
+final fun <#A: kotlin/Any?> (io.github.yuroyami.kitecodec/Frame).io.github.yuroyami.kitecodec/withPlanes(kotlin/Function3<kotlin.collections/List<kotlinx.cinterop/CPointer<kotlinx.cinterop/UByteVarOf<kotlin/UByte>>>, kotlin.collections/List<kotlin/Int>, kotlin.collections/List<kotlin/Int>, #A>): #A // io.github.yuroyami.kitecodec/withPlanes|withPlanes@io.github.yuroyami.kitecodec.Frame(kotlin.Function3<kotlin.collections.List<kotlinx.cinterop.CPointer<kotlinx.cinterop.UByteVarOf<kotlin.UByte>>>,kotlin.collections.List<kotlin.Int>,kotlin.collections.List<kotlin.Int>,0:0>){0§<kotlin.Any?>}[0]

@@ -1,5 +1,6 @@
 import com.vanniktech.maven.publish.JavadocJar
 import com.vanniktech.maven.publish.KotlinMultiplatform
+import com.android.build.api.dsl.KotlinMultiplatformAndroidLibraryTarget
 import com.android.build.api.variant.KotlinMultiplatformAndroidComponentsExtension
 import io.github.yuroyami.kitecodec.buildtools.BuildFFmpegTask
 import io.github.yuroyami.kitecodec.buildtools.CompareCodecContractTask
@@ -14,6 +15,9 @@ import io.github.yuroyami.kitecodec.buildtools.LinkKiteCodecJniTask
 import io.github.yuroyami.kitecodec.buildtools.PrepareKiteCodecJniHarnessTask
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.testing.Test
+import org.gradle.api.plugins.ExtensionAware
+import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
+import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 // Named explicitly because inside a Gradle Kotlin script `java` resolves to the java extension,
 // so `java.io.File(...)` does not compile.
@@ -21,9 +25,18 @@ import java.io.File
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
-    alias(libs.plugins.android.kmp.library)
+    alias(libs.plugins.android.kmp.library).apply(false)
     alias(libs.plugins.dokka)
     alias(libs.plugins.maven.publish)
+}
+
+// The AGP KMP library plugin always creates an Android target and requires compileSdk, even when
+// no Android DSL block is present. Apply it only for the local phone/AAR proof scope; portable
+// JVM/JS/Wasm and host-native publications must remain configurable without an Android SDK.
+val phoneTargetsOnly = providers.gradleProperty("kitecodec.phoneTargetsOnly")
+    .map { it.toBoolean() }.getOrElse(false)
+if (phoneTargetsOnly) {
+    apply(plugin = "com.android.kotlin.multiplatform.library")
 }
 
 // BCV 0.18.1 emits a second trailing LF for JVM dumps. Canonicalize the declared build output so
@@ -61,17 +74,20 @@ kotlin {
     /*
      * v0.1 target tiers.
      *
-     * STABLE: the targets with prebuilt FFmpeg Release assets and CI coverage; the ONLY targets
-     * published in v0.1: macosArm64, linuxX64, androidNativeArm64/Arm32/X64.
+     * STABLE: the targets with prebuilt FFmpeg Release assets and CI coverage:
+     * macosArm64, linuxX64, androidNativeArm64/Arm32/X64. JVM, JS and Wasm are always registered;
+     * they are portable API variants and do not alter which FFmpeg-backed native targets ship.
      * EXPERIMENTAL: builds locally (given an FFmpeg tree) but is NOT part of the published set:
      * ios*, macosX64, linuxArm64, mingwX64.
      *
-     *   -Pkitecodec.stableTargetsOnly=true  Register only the stable targets, so publications
-     *                                        contain exactly the v0.1 support set. Default false:
+     *   -Pkitecodec.stableTargetsOnly=true  Register only the stable native targets. Publications
+     *                                        also contain the always-present JVM/JS/Wasm variants.
+     *                                        Default false:
      *                                        local dev and the CI matrix (incl. the Windows/mingw
      *                                        job) see every target.
-     *   -Pkitecodec.hostTargetsOnly=true    Register only THIS host's own desktop target
-     *                                        (macosArm64 on an arm64 Mac, linuxX64 on x64 Linux).
+     *   -Pkitecodec.hostTargetsOnly=true    Register only THIS host's own native desktop target
+     *                                        (macosArm64 on an arm64 Mac, linuxX64 on x64 Linux),
+     *                                        plus the always-present JVM/JS/Wasm variants.
      *                                        Used exclusively by the CI consumer-e2e smoke job to
      *                                        publishToMavenLocal with just a system FFmpeg present.
      *                                        Mutually exclusive with every other target scope.
@@ -81,17 +97,15 @@ kotlin {
      *                                        only; remote publication always refuses this scope.
      *   -Pkitecodec.phoneTargetsOnly=true
      *                                        Register macosArm64, iosArm64, iosSimulatorArm64,
-     *                                        JVM and the ordinary Android JVM library target on an
+     *                                        and the ordinary Android JVM library target on an
      *                                        arm64 Mac. Local publication only; remote publication
-     *                                        always refuses this scope.
+     *                                        always refuses this scope. JVM/JS/Wasm are always registered.
      */
     val stableTargetsOnly = providers.gradleProperty("kitecodec.stableTargetsOnly")
         .map { it.toBoolean() }.getOrElse(false)
     val hostTargetsOnly = providers.gradleProperty("kitecodec.hostTargetsOnly")
         .map { it.toBoolean() }.getOrElse(false)
     val applePhoneTargetsOnly = providers.gradleProperty("kitecodec.applePhoneTargetsOnly")
-        .map { it.toBoolean() }.getOrElse(false)
-    val phoneTargetsOnly = providers.gradleProperty("kitecodec.phoneTargetsOnly")
         .map { it.toBoolean() }.getOrElse(false)
     val selectedTargetScopes = listOf(
         "kitecodec.stableTargetsOnly" to stableTargetsOnly,
@@ -154,9 +168,10 @@ kotlin {
             |
             |Publishing kitecodec-core requires BOTH:
             |  1. -Pkitecodec.stableTargetsOnly=true
-            |     v0.1 publishes exactly the stable target set (macosArm64, linuxX64,
-            |     androidNativeArm64/Arm32/X64). Experimental targets (ios*, macosX64, linuxArm64,
-            |     mingwX64) must not leak into publications.
+            |     v0.1 publishes the stable native target set (macosArm64, linuxX64,
+            |     androidNativeArm64/Arm32/X64) plus the always-present JVM/JS/Wasm variants.
+            |     Experimental native targets (ios*, macosX64, linuxArm64, mingwX64) must not leak
+            |     into publications.
             |  2. an FFmpeg tree present for EVERY configured target.
             |     While publishing, a missing FFmpeg build is a hard failure instead of the usual
             |     skip-with-warning (kitecodec.requireAllTargets is implied true), so a publication
@@ -170,7 +185,8 @@ kotlin {
             |On an arm64 Mac, -Pkitecodec.applePhoneTargetsOnly=true is accepted only for a local
             |macOS/iPhone/simulator proof and only with publishToMavenLocal.
             |-Pkitecodec.phoneTargetsOnly=true is accepted only for the one local
-            |macOS/iPhone/simulator/JVM/Android phone-superset publication.
+            |macOS/iPhone/simulator/Android phone-superset publication; JVM/JS/Wasm are included
+            |in every scope.
             """.trimMargin(),
         )
     }
@@ -183,10 +199,41 @@ kotlin {
         }
     }
 
+    // Portable variants are part of every publication. Public JVM and Web always use the explicit
+    // Kotlin placeholder from unsupportedMain. The phone proof adds an unpublished custom JVM
+    // compilation for its JNI boundary tests; it never changes the consumer JVM artifact.
+    val jvmTarget = jvm()
+    val jniJvmCompilation = if (phoneTargetsOnly) {
+        jvmTarget.compilations.create("jniHarness")
+    } else {
+        null
+    }
+    val jniJvmTestCompilation = if (phoneTargetsOnly) {
+        jvmTarget.compilations.create("jniHarnessTest").apply {
+            associateWith(checkNotNull(jniJvmCompilation))
+        }
+    } else {
+        null
+    }
+
+    @OptIn(ExperimentalKotlinGradlePluginApi::class)
+    js {
+        browser()
+        nodejs()
+        binaries.library()
+    }
+
+    @OptIn(ExperimentalWasmDsl::class)
+    wasmJs {
+        browser()
+        nodejs()
+    }
+
     if (phoneTargetsOnly) {
         requireArm64Mac("kitecodec.phoneTargetsOnly")
-        jvm()
-        android {
+        val androidTarget = (this as ExtensionAware).extensions.getByName("android")
+            as KotlinMultiplatformAndroidLibraryTarget
+        androidTarget.apply {
             namespace = "io.github.yuroyami.kitecodec"
             compileSdk = 36
             minSdk = 26
@@ -215,7 +262,8 @@ kotlin {
             iosSimulatorArm64() to TargetTriple.IosSimulatorArm64,
         )
     } else if (hostTargetsOnly) {
-        // Consumer-e2e smoke scope: just the host's own desktop target.
+        // Consumer-e2e smoke scope: just the host's own native desktop target. Portable
+        // JVM/JS/Wasm variants are registered above in every scope.
         val osName = System.getProperty("os.name").lowercase()
         val osArch = System.getProperty("os.arch").lowercase()
         when {
@@ -460,20 +508,63 @@ kotlin {
         commonTest.dependencies {
             implementation(kotlin("test"))
         }
+        val commonMain = getByName("commonMain")
+        val unsupportedMain = maybeCreate("unsupportedMain").apply {
+            dependsOn(commonMain)
+        }
+        getByName("webMain").dependsOn(unsupportedMain)
+
+        val commonTest = getByName("commonTest")
+        val unsupportedTest = maybeCreate("unsupportedTest").apply {
+            dependsOn(commonTest)
+        }
+        getByName("webTest").dependsOn(unsupportedTest)
+        getByName("jvmMain").dependsOn(unsupportedMain)
+        getByName("jvmTest").dependsOn(unsupportedTest)
+
         if (phoneTargetsOnly) {
-            val commonMain = getByName("commonMain")
-            val commonTest = getByName("commonTest")
             val jvmAndAndroidMain = maybeCreate("jvmAndAndroidMain").apply {
                 dependsOn(commonMain)
             }
-            getByName("jvmMain").dependsOn(jvmAndAndroidMain)
+            // A custom JVM compilation belongs to its own source-set tree, so it cannot legally
+            // depend on the published main/test trees. Mirror their source directories into an
+            // isolated harness tree instead; no source is copied and no harness variant is published.
+            val jniHarnessCommonMain = maybeCreate("jniHarnessCommonMain").apply {
+                kotlin.srcDir("src/commonMain/kotlin")
+                dependencies {
+                    implementation(libs.kotlinx.coroutines.core)
+                    implementation(libs.kotlinx.atomicfu)
+                }
+            }
+            val jniHarnessPlatformMain = maybeCreate("jniHarnessPlatformMain").apply {
+                kotlin.srcDir("src/jvmAndAndroidMain/kotlin")
+                dependsOn(jniHarnessCommonMain)
+            }
+            val jniJvmMain = maybeCreate("jniJvmMain").apply {
+                dependsOn(jniHarnessPlatformMain)
+            }
+            checkNotNull(jniJvmCompilation).defaultSourceSet.dependsOn(jniJvmMain)
             getByName("androidMain").dependsOn(jvmAndAndroidMain)
 
             val codecContractTest = maybeCreate("codecContractTest").apply {
                 dependsOn(commonTest)
             }
             getByName("macosArm64Test").dependsOn(codecContractTest)
-            getByName("jvmTest").dependsOn(codecContractTest)
+            val jniHarnessCommonTest = maybeCreate("jniHarnessCommonTest").apply {
+                kotlin.srcDir("src/commonTest/kotlin")
+                dependencies {
+                    implementation(kotlin("test"))
+                    implementation(kotlin("test-junit"))
+                }
+            }
+            val jniHarnessContractTest = maybeCreate("jniHarnessContractTest").apply {
+                kotlin.srcDir("src/codecContractTest/kotlin")
+                dependsOn(jniHarnessCommonTest)
+            }
+            val jniJvmTest = maybeCreate("jniJvmTest").apply {
+                dependsOn(jniHarnessContractTest)
+            }
+            checkNotNull(jniJvmTestCompilation).defaultSourceSet.dependsOn(jniJvmTest)
             getByName("androidDeviceTest").apply {
                 dependsOn(codecContractTest)
                 dependencies {
@@ -483,6 +574,23 @@ kotlin {
                     implementation(libs.androidx.test.ext.junit)
                 }
             }
+        }
+    }
+
+    if (phoneTargetsOnly) {
+        val jniTestCompilation = checkNotNull(jniJvmTestCompilation)
+        tasks.register<Test>("jniJvmTest") {
+            group = "verification"
+            description = "Runs the unpublished JVM/JNI boundary and shared codec-contract harness."
+            testClassesDirs = jniTestCompilation.output.classesDirs
+            classpath = files(
+                jniTestCompilation.output.allOutputs,
+                jniTestCompilation.runtimeDependencyFiles,
+            )
+            shouldRunAfter("jvmTest")
+        }
+        tasks.named("allTests") {
+            dependsOn("jniJvmTest")
         }
     }
 }
@@ -704,8 +812,6 @@ run {
         }
     }
 
-    val phoneTargetsOnly = providers.gradleProperty("kitecodec.phoneTargetsOnly")
-        .map { it.toBoolean() }.getOrElse(false)
     if (phoneTargetsOnly) {
         val prepareMajorMismatchHeaders = tasks.register<PrepareKiteCodecJniHarnessTask>(
             "prepareKiteCodecJniMajorMismatchHeaders",
@@ -817,7 +923,7 @@ run {
         val jvmTranscriptFile = layout.buildDirectory.file("contract-transcripts/jvm.txt")
         val macosTranscriptFile = layout.buildDirectory.file("contract-transcripts/macosArm64.txt")
 
-        tasks.named<Test>("jvmTest") {
+        tasks.named<Test>("jniJvmTest") {
             dependsOn(macosJniLink, mismatchJniLink, corruptJniLink)
             val testRuntimeClasspath = classpath
             jvmArgumentProviders.add(
@@ -846,8 +952,8 @@ run {
         }
         tasks.register<CompareCodecContractTask>("compareJvmNativeContract") {
             group = "verification"
-            description = "Compares JVM and macOS codec-contract transcripts byte for byte."
-            dependsOn("jvmTest", "macosArm64Test")
+            description = "Compares the unpublished JVM/JNI and macOS codec-contract transcripts byte for byte."
+            dependsOn("jniJvmTest", "macosArm64Test")
             jvmTranscript.set(jvmTranscriptFile)
             macosArm64Transcript.set(macosTranscriptFile)
         }

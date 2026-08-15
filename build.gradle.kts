@@ -66,8 +66,9 @@ apiValidation {
     // Only :kitecodec-core is a published library with a guarded API surface.
     ignoredProjects += listOf("kitecodec-sample", "kitecodec-gradle-plugin")
 
-    // Native declarations remain guarded in klibs. S1.c.2 also installs the JVM dump once the
-    // phone-superset target is registered; the validator discovers that JVM surface normally.
+    // Native declarations remain guarded in klibs. Every scope has one public JVM target using
+    // the unavailable placeholder, so its dump lives directly under kitecodec-core/api/. The
+    // phone proof adds an unpublished custom JNI compilation without changing that artifact.
     @OptIn(kotlinx.validation.ExperimentalBCVApi::class)
     klib {
         enabled = true

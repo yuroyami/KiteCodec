@@ -8,9 +8,10 @@ contains **no FFmpeg bytes**. The plugin supplies them at build time and keeps t
 !!! warning "Not published, and `Prebuilt` has nothing to fetch"
     The plugin lives in the KiteCodec repository (`kitecodec-gradle-plugin/`) and is not on the Gradle Plugin Portal yet. Neither are the FFmpeg Release assets that `FFmpegSource.Prebuilt` downloads. The [README's release status](https://github.com/yuroyami/KiteCodec#release-status) is the single place that tracks what exists. Use `FFmpegSource.System` on a desktop host or a complete `FFmpegSource.Local` tree after local publication. The DSL below is the supported surface.
 
-The JVM and regular Android actuals are a separate JNI/AAR path in this repository. Their source,
-host tests and local Android packaging model exist, but there is no public JVM jar or Android AAR.
-This plugin does not turn that local proof into a JVM/Android distribution.
+The local phone proof's regular Android actuals and unpublished JVM test harness are a separate
+JNI/AAR path in this repository. Their source, host tests and local Android packaging model exist,
+but there is no functional public JVM jar or Android AAR. Public JVM is a typed unavailable
+placeholder in every scope. This plugin does not turn the local JNI proof into a JVM distribution.
 
 ## Apply and configure
 

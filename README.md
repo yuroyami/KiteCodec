@@ -1,9 +1,12 @@
 # KiteCodec
 
 Video and audio processing for Kotlin Multiplatform: read a media file, change it,
-and write it back. Native targets reach FFmpeg's libav\* libraries through cinterop;
-JVM and Android actuals use a dynamically registered JNI adapter over the same opaque
-C helpers. There is no `ffmpeg` process to launch and no log output to parse.
+and write it back. Native targets reach FFmpeg's libav\* libraries through cinterop. The local
+Android proof uses a dynamically registered JNI adapter over the same opaque C helpers, exercised
+on the host by a separate unpublished JVM harness. Public JVM, JS and WasmJs variants always use
+an explicit unsupported placeholder:
+diagnostics and capability probes work, while every media operation fails immediately with the
+typed `FFmpegError.Unsupported`. There is no `ffmpeg` process to launch and no log output to parse.
 
 [![CI](https://img.shields.io/github/actions/workflow/status/yuroyami/KiteCodec/ci.yml?label=CI)](https://github.com/yuroyami/KiteCodec/actions/workflows/ci.yml)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.4.10-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org)
@@ -74,7 +77,7 @@ decode, no encode, timestamp rescale only.
 ## Install
 
 **KiteCodec cannot be consumed from Maven Central today.** The Kotlin/Native,
-JVM and Android implementations live in this source tree, but their public binary
+JVM, Android, JS and WasmJs variants live in this source tree, but their public binary
 distribution does not. `kitecodec-core` and the Gradle plugin have never been
 published, and the FFmpeg release assets the plugin downloads do not exist. See
 [Release status](#release-status) for the blocker.
@@ -267,7 +270,8 @@ container and filter list is in [Platform support](docs/platforms.md).
 
 The public API lives in `commonMain`. Kotlin/Native actuals use cinterop; the JVM
 and Android actuals use generation-tagged JNI handles and copied arrays, never raw
-native pointers. What differs by target is how the same FFmpeg helper surface is linked.
+native pointers. JS and WasmJs use an unsupported placeholder implementation so a common
+dependency resolves cleanly without pretending a Web codec backend exists.
 
 Every target claim in the Kite family means one of these tiers and nothing more.
 
@@ -282,20 +286,25 @@ machine by the native and shared-contract suites, seven C suites under three
 sanitizer variants, and the e2e script. `linuxX64` and
 `mingwX64` are T2 on CI evidence only, never on a machine you can inspect here.
 The `androidNative*` klibs are T1: they compile per ABI and nothing runs them.
-The new Android/JVM actual layer is also source- and host-verified only: its macOS
-JNI dylib is a test fixture, not a desktop runtime distribution, and no Android
-playback or physical-device qualification is claimed.
+The Android/JNI layer is source- and host-verified only. The phone proof creates a separate custom
+JVM test compilation whose macOS JNI dylib is a fixture, never a publication. Every scope publishes
+the same dependency-compatible JVM placeholder, so no consumer jar tries to load a missing native
+library. No Android playback or physical-device qualification is claimed.
 `iosArm64` and `iosSimulatorArm64` now have a local/private build and consumer
 path on this arm64 Mac, but no public or CI tier is inferred from it here.
 `iosX64`, `macosX64` and `linuxArm64` remain unqualified.
+JS and WasmJs are deliberately T1 placeholders: their API and failure contract are tested, but
+they do not decode, encode, filter, remux or transcode media.
 
 | Target | Public artifact | Current evidence | FFmpeg comes from |
 |---|---|---|---|
 | `macosArm64` | no | unit tests, native tests and an e2e transcode, run twice: against Homebrew, and against the vendored LGPL build compiled from source | Homebrew, vendored, or a future prebuilt asset |
 | `linuxX64` | no | unit tests, native tests and an e2e transcode, against whatever 6.x FFmpeg Ubuntu 24.04 ships. This is what exercises the lavc-6 compatibility path. | apt, vendored, or a future prebuilt asset |
 | `androidNativeArm64` / `Arm32` / `X64` | no | the klib compiles, per ABI. No tests run on Android. | NDK cross-compile of the LGPL MediaCodec profile |
-| JVM host actual | no | common/JVM contract tests load a test-only macOS arm64 JNI dylib; there is no desktop runtime jar or cross-desktop packaging claim | vendored macOS LGPL tree for the test fixture |
+| JVM | no | every scope runs and publishes the same typed unavailable placeholder as Web; the local phone scope adds a separate unpublished JNI test compilation loading a test-only macOS arm64 dylib | none for the public placeholder; vendored macOS LGPL tree for the unpublished test fixture |
 | Android `minSdk 24` actual | no | local AAR model packages JNI for `arm64-v8a` and `x86_64`; both ELF link arms and 16 KiB ELF/app packaging rules are checked. No Android playback or physical-device qualification is claimed. | NDK cross-compile of the LGPL Android profile |
+| `js` | no | Node tests verify readable unavailable diagnostics, empty capabilities and typed unsupported failures; no media runtime exists | none; unsupported placeholder |
+| `wasmJs` | no | Node/Wasm tests verify the same placeholder contract; no media runtime exists | none; unsupported placeholder |
 | `mingwX64` | no | native tests and an e2e transcode | a pinned BtbN `win64-gpl-shared` zip. The CI job unpacks it by hand into `native-libs/gpl/mingw-x64`. No discovery, no prebuilt asset. |
 | `iosArm64`, `iosSimulatorArm64` | no | no CI claim; local arm64-Mac proof only | LGPL STANDARD playback build from source, with SDK zlib and VideoToolbox DECODE (encode stays desktop-only), no desktop third-party stack or GPL; consumable through `FFmpegSource.Local` |
 | `iosX64` | no | not qualified | the same mobile profile is coded for the simulator SDK, but this stage does not build or consume it |
@@ -305,10 +314,12 @@ path on this arm64 Mac, but no public or CI tier is inferred from it here.
 Six triples have no prebuilt asset. For those the Gradle plugin fails
 configuration and prints the alternatives, rather than letting the download
 return 404 mid-build. A remote publication of `kitecodec-core` requires
-`-Pkitecodec.stableTargetsOnly=true` and a real FFmpeg tree for every configured
-target, so it cannot silently drop one. `publishToMavenLocal` also accepts
-`-Pkitecodec.hostTargetsOnly=true`, which publishes the host's own desktop target
-alone. On an arm64 Mac it accepts the mutually exclusive
+`-Pkitecodec.stableTargetsOnly=true` and a real FFmpeg tree for every configured native
+target, so it cannot silently drop one. JVM, JS and WasmJs are portable variants included in
+every publication scope and are invariant unsupported placeholders.
+`publishToMavenLocal` also
+accepts `-Pkitecodec.hostTargetsOnly=true`, which publishes the host's own desktop native target
+plus those three portable variants. On an arm64 Mac it accepts the mutually exclusive
 `-Pkitecodec.applePhoneTargetsOnly=true` for exactly macosArm64, iosArm64 and
 iosSimulatorArm64. Every remote publish explicitly refuses the phone selector.
 Both exceptions are local smoke paths, not release paths.
@@ -316,8 +327,9 @@ Both exceptions are local smoke paths, not release paths.
 The repository now also contains an `androidTarget`/AAR implementation behind the
 local `-Pkitecodec.phoneTargetsOnly=true` proof scope. It targets API 24+, packages
 `arm64-v8a` and `x86_64` JNI libraries, and uses 16 KiB ELF and app-packaging rules.
-The selector also registers the three local Apple targets and JVM, is accepted only
-for Maven-local proof, and is refused by every remote publish. Nothing is published,
+The selector also registers the three local Apple targets and the regular Android target; JVM,
+JS and WasmJs are already always registered. It is accepted only for Maven-local proof and is
+refused by every remote publish. Nothing is published,
 and those packaging/link proofs are not a device playback result.
 MediaCodec is reached only by asking FFmpeg for a named decoder such as
 `h264_mediacodec`; KiteCodec does not call the platform codec API directly.
@@ -326,8 +338,8 @@ MediaCodec is reached only by asking FFmpeg for a named decoder such as
 
 | Not available | What it means for you |
 |---|---|
-| A public JVM/Android distribution | JVM and Android actuals exist in source, but there is no published runtime jar or AAR. The macOS JNI dylib is test-only. |
-| Any web target | No `js`, no `wasmJs`, no source set. |
+| A functional published JVM/Android distribution | Public JVM is an invariant placeholder. JNI-backed Android actuals and an unpublished JVM test harness exist in the local phone proof scope; its macOS dylib is test-only and no Android AAR is public. |
+| A functional Web codec backend | `js` and `wasmJs` are dependency-compatible placeholders only. Capability probes return false and media operations throw typed `FFmpegError.Unsupported`. |
 | A working binary distribution | `FFmpegSource.Prebuilt` cannot work against KiteCodec's own repository. The five triples that should have assets return 404, and the six that never had one fail configuration by design. |
 | `kitecodec-gpl` | It is a README and nothing else: no `build.gradle.kts`, and it is commented out of `settings.gradle.kts`. Reach the GPL flavor through `buildFFmpegFor<Target>Gpl` plus `-Pkitecodec.ffmpeg.license=gpl`, or through `license = FFmpegLicense.GPL`. |
 | A bitstream filter API | Nothing binds `av_bsf_*`, so you cannot give a stream copy one explicitly. The vendored profile does compile the common ones in (`h264_mp4toannexb`, `hevc_mp4toannexb`, `aac_adtstoasc`, `extract_extradata`, `vp9_superframe`), so libavformat can insert them automatically during a copy. |

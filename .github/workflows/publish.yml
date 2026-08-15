@@ -17,9 +17,11 @@
 # (or the workflow_dispatch input) and fails on mismatch, so a stale gradle.properties can never
 # publish under the wrong tag.
 #
-# kitecodec-core publishes ONLY the v0.1 stable target set (-Pkitecodec.stableTargetsOnly=true);
-# the publish guard in kitecodec-core/build.gradle.kts also hard-fails if any configured target
-# is missing its FFmpeg tree, which is why the fetch step below must cover all five triples.
+# kitecodec-core publishes the v0.1 stable native target set plus the always-present JVM, JS and
+# WasmJs variants (-Pkitecodec.stableTargetsOnly=true). JVM/JS/WasmJs are invariant unsupported
+# placeholders; the JNI JVM harness in the local phone proof is a custom test compilation only.
+# The publish guard in kitecodec-core/build.gradle.kts hard-fails if any configured native target
+# is missing its FFmpeg tree, which is why the fetch step below must cover all five native triples.
 name: Publish release
 
 on:
