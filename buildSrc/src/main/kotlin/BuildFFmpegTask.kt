@@ -171,7 +171,15 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
                 )
             }
 
-            val dav1dRoot = dav1dRootOrNull(target)
+            // The deps tree rides to the scratch exactly like the FFmpeg source does: this
+            // repo lives under '#Kite', and pkg-config shell-escapes the '#' in emitted -I/-L
+            // flags while configure hands them to the compiler unevaluated, which no compiler
+            // survives. Inside the scratch there is no '#' to escape.
+            val dav1dRoot = dav1dRootOrNull(target)?.let { real ->
+                val copied = scratch.resolve("deps").toFile()
+                real.copyRecursively(copied, overwrite = true)
+                copied
+            }
             val configureArgs = configureArguments(
                 target = target,
                 license = license,

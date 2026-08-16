@@ -78,6 +78,17 @@ abstract class BuildDav1dTask : DefaultTask() {
             output.mkdirs()
             install.resolve("include").copyRecursively(output.resolve("include"), overwrite = true)
             install.resolve("lib").copyRecursively(output.resolve("lib"), overwrite = true)
+            // meson bakes the SCRATCH prefix into the installed .pc; without this rewrite,
+            // pkg-config resolves the package to a directory that no longer exists and FFmpeg's
+            // configure compile-probe dies on the missing dav1d headers. pcfiledir rather
+            // than the absolute path, because this repo lives under '#Kite' and pkg-config
+            // treats '#' as a comment start with no escape (the same character that banned
+            // make from build-host.sh, register item B1-15).
+            val pc = output.resolve("lib/pkgconfig/dav1d.pc")
+            check(pc.isFile) { "meson install produced no dav1d.pc under $output" }
+            pc.writeText(
+                pc.readText().replace(Regex("^prefix=.*$", RegexOption.MULTILINE)) { "prefix=\${pcfiledir}/../.." },
+            )
             logger.lifecycle("[KiteCodec] dav1d ${sourceRef.get()} (${target.dirName}) installed into $output")
         } finally {
             scratch.deleteRecursively()
