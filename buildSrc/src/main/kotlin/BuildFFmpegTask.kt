@@ -561,7 +561,12 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
             "--enable-mediacodec", "--enable-jni",
             // Adds to the dependency-free encoder set in sharedCoreArgs.
             "--enable-encoder=aac,h264_mediacodec,hevc_mediacodec",
-            "--enable-decoder=h264_mediacodec,hevc_mediacodec",  // adds to the shared sw set
+            // Adds to the shared sw set. av1/vp9/vp8 ride along because FFmpeg has NO native
+            // software AV1 decoder (av1dec.c is a hwaccel shell): on Android the MediaCodec
+            // wrappers are the only AV1 route this profile can offer, and most devices carry
+            // an AV1 MediaCodec from Android 10 on. Software AV1 needs vendored dav1d, which
+            // is recorded in KPKMP 17.11 rather than pretended here.
+            "--enable-decoder=h264_mediacodec,hevc_mediacodec,av1_mediacodec,vp9_mediacodec,vp8_mediacodec",
             "--enable-zlib",
         ) +
             (cpu?.let { listOf("--cpu=$it") } ?: emptyList()) +
