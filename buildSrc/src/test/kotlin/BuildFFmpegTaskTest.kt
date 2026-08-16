@@ -123,6 +123,71 @@ class BuildFFmpegTaskTest {
     }
 
     @Test
+    fun theDav1dSwitchAddsExactlyItsThreeArgumentsAndOffIsByteIdentical() {
+        val task = ProjectBuilder.builder().build().tasks.create("ffmpeg", BuildFFmpegTask::class.java)
+        val root = Files.createTempDirectory("kitecodec-av1sw-args-test")
+        try {
+            val toolchainBin = root.resolve("toolchains/llvm/prebuilt/test-host/bin").createDirectories()
+            toolchainBin.resolve("aarch64-linux-android24-clang").createFile()
+            val deps = root.resolve("deps").toFile()
+
+            val off = task.configureArguments(
+                target = TargetTriple.AndroidArm64,
+                license = FFmpegLicense.LGPL,
+                installPrefix = "/scratch/install",
+                ndkToolchainBin = { toolchainBin.toFile() },
+            )
+            val on = task.configureArguments(
+                target = TargetTriple.AndroidArm64,
+                license = FFmpegLicense.LGPL,
+                installPrefix = "/scratch/install",
+                ndkToolchainBin = { toolchainBin.toFile() },
+                dav1dRoot = deps,
+            )
+            // Off carries not one dav1d trace: D-7's not-one-extra-byte promise starts at
+            // configure. (The exact-list helpers in this file are stale since the 17.4.9 wide
+            // profile, a recorded drift; this test deliberately compares off against on.)
+            assertTrue(off.none { it.contains("dav1d") }, "dav1d leaked into off: " + off.filter { it.contains("dav1d") })
+            assertTrue(off.none { it == "--pkg-config=pkg-config" }, "pkg-config flag leaked into off")
+            assertEquals(
+                off.dropLast(1) +
+                    listOf("--enable-libdav1d", "--enable-decoder=libdav1d", "--pkg-config=pkg-config") +
+                    listOf("--prefix=/scratch/install"),
+                on,
+            )
+        } finally {
+            root.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun theDav1dArchiveAndLinkFlagRideEveryProfileOnlyWhenAsked() {
+        // Android and iOS bundle nothing by default; the switch adds exactly libdav1d.a.
+        assertEquals(emptyList(), StaticLinkFlags.thirdPartyArchives(TargetTriple.AndroidArm64, FFmpegLicense.LGPL))
+        assertEquals(
+            listOf("libdav1d.a"),
+            StaticLinkFlags.thirdPartyArchives(TargetTriple.AndroidArm64, FFmpegLicense.LGPL, dav1d = true),
+        )
+        assertEquals(
+            listOf("libdav1d.a"),
+            StaticLinkFlags.thirdPartyArchives(TargetTriple.IosArm64, FFmpegLicense.LGPL, dav1d = true),
+        )
+        // The link flag leads the list where a static stack exists, and stands alone where not.
+        assertEquals(
+            emptyList(),
+            StaticLinkFlags.forTarget(TargetTriple.AndroidArm64, FFmpegLicense.LGPL, isStaticVendored = true),
+        )
+        assertEquals(
+            listOf("-ldav1d"),
+            StaticLinkFlags.forTarget(TargetTriple.AndroidArm64, FFmpegLicense.LGPL, isStaticVendored = true, dav1d = true),
+        )
+        assertEquals(
+            "-ldav1d",
+            StaticLinkFlags.forTarget(TargetTriple.MacosArm64, FFmpegLicense.LGPL, isStaticVendored = true, dav1d = true).first(),
+        )
+    }
+
+    @Test
     fun iosStaticLinkSetsAreExactlyZlib() {
         listOf(TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64).forEach { target ->
             assertEquals(emptyList(), StaticLinkFlags.thirdPartyArchives(target, FFmpegLicense.LGPL))

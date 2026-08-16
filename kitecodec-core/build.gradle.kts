@@ -477,7 +477,10 @@ kotlin {
             // FFmpeg, whose dylibs resolve their own dependencies, but a STATIC libavcodec.a
             // resolves nothing, so every third-party archive it draws symbols from must be named
             // here too or the final link fails on svt_av1_*, vpx_*, ass_* and friends.
-            linkerOpts(StaticLinkFlags.forTarget(triple, license, paths.isStaticVendored))
+            // The dav1d switch (D-7) is tree-presence truth: the flag appears exactly when the
+            // vendored tree carries the archive BuildFFmpegTask bundled into it.
+            val hasDav1d = file("${paths.libDir}/libdav1d.a").exists()
+            linkerOpts(StaticLinkFlags.forTarget(triple, license, paths.isStaticVendored, dav1d = hasDav1d))
             // Searched AFTER the vendored lib/, so a bundled archive always wins; this only
             // catches dependencies the host package manager ships shared-only (see StaticLinkFlags).
             linkerOpts(StaticLinkFlags.hostFallbackSearchFlags(triple, homebrewPrefix, paths.isStaticVendored))
@@ -614,9 +617,29 @@ fun registerBuildFFmpeg(triple: TargetTriple, flavour: FFmpegLicense) =
         requireSelfContained.set(
             providers.gradleProperty("kitecodec.ffmpeg.selfContained").map { it.toBoolean() }.orElse(false),
         )
+        // The optional dav1d switch (D-7): -Pkitecodec.ffmpeg.dav1d=true after buildDav1dFor<Target>.
+        enableDav1d.set(
+            providers.gradleProperty("kitecodec.ffmpeg.dav1d").map { it.toBoolean() }.orElse(false),
+        )
         sourceDir.set(rootDir.resolve("vendor/ffmpeg"))
         outputDir.set(rootDir.resolve("native-libs/${flavour.dirName}/${triple.dirName}"))
     }
+
+// Register the :buildDav1dFor<Target> tasks (D-7, KC-AV1SW): cross-compile dav1d into
+// native-libs/deps/<target>, which is where a dav1d-enabled buildFFmpegFor<Target> looks.
+fun registerBuildDav1d(triple: TargetTriple) =
+    tasks.register<io.github.yuroyami.kitecodec.buildtools.BuildDav1dTask>("buildDav1dFor${triple.gradleSuffix}") {
+        target = triple
+        sourceRef = io.github.yuroyami.kitecodec.buildtools.BuildDav1dTask.DEFAULT_SOURCE_REF
+        sourceDir.set(rootDir.resolve("vendor/dav1d"))
+        outputDir.set(rootDir.resolve("native-libs/deps/${triple.dirName}"))
+    }
+
+setOf(
+    TargetTriple.MacosArm64,
+    TargetTriple.AndroidArm64, TargetTriple.AndroidX64,
+    TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64,
+).forEach { registerBuildDav1d(it) }
 
 TargetTriple.entries.forEach { triple ->
     // LGPL flavour for every target (the default).

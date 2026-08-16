@@ -67,15 +67,19 @@ object StaticLinkFlags {
      * OS/SDK-provided libraries (zlib, bz2, iconv, the C++ runtime) are deliberately excluded. They
      * must come from the platform, not from a copy.
      */
-    fun thirdPartyArchives(target: TargetTriple, license: FFmpegLicense): List<String> {
-        if (!needsStaticStack(target, isStaticVendored = true)) return emptyList()
+    fun thirdPartyArchives(target: TargetTriple, license: FFmpegLicense, dav1d: Boolean = false): List<String> {
         val names = buildList {
-            addAll(DESKTOP_LGPL)
-            if (license == FFmpegLicense.GPL) {
-                addAll(DESKTOP_GPL_EXTRA)
-                // x265's Linux builds link libnuma; bundle it so the tree stays self-contained.
-                if (target == TargetTriple.LinuxX64 || target == TargetTriple.LinuxArm64) add("numa")
+            if (needsStaticStack(target, isStaticVendored = true)) {
+                addAll(DESKTOP_LGPL)
+                if (license == FFmpegLicense.GPL) {
+                    addAll(DESKTOP_GPL_EXTRA)
+                    // x265's Linux builds link libnuma; bundle it so the tree stays self-contained.
+                    if (target == TargetTriple.LinuxX64 || target == TargetTriple.LinuxArm64) add("numa")
+                }
             }
+            // The optional dav1d switch (D-7) rides EVERY profile that asked for it, mobile
+            // included: the deps cross-build is what makes the tree self-contained there.
+            if (dav1d) add("dav1d")
         }
         return names.map { "lib$it.a" }
     }
@@ -108,7 +112,11 @@ object StaticLinkFlags {
         target: TargetTriple,
         license: FFmpegLicense,
         isStaticVendored: Boolean,
+        dav1d: Boolean = false,
     ): List<String> {
+        // dav1d first when the tree carries it: libavcodec draws from it, and GNU ld resolves
+        // static archives left to right.
+        val dav1dFlags = if (dav1d && isStaticVendored) listOf("-ldav1d") else emptyList()
         if (
             isStaticVendored &&
             target in setOf(TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64, TargetTriple.IosX64)
@@ -116,7 +124,7 @@ object StaticLinkFlags {
             // The mobile profile gained VideoToolbox DECODE at the S2.a window, so the static
             // FFmpeg archives now carry undefined references into the media frameworks on iOS
             // too, exactly as the desktop encoder note below explains for macOS.
-            return listOf(
+            return dav1dFlags + listOf(
                 "-lz",
                 "-framework", "CoreFoundation",
                 "-framework", "CoreMedia",
@@ -124,10 +132,11 @@ object StaticLinkFlags {
                 "-framework", "VideoToolbox",
             )
         }
-        if (!needsStaticStack(target, isStaticVendored)) return emptyList()
+        if (!needsStaticStack(target, isStaticVendored)) return dav1dFlags
 
         val isApple = target == TargetTriple.MacosArm64 || target == TargetTriple.MacosX64
         return buildList {
+            addAll(dav1dFlags)
             addAll(DESKTOP_LGPL.map { "-l$it" })
             if (license == FFmpegLicense.GPL) addAll(DESKTOP_GPL_EXTRA.map { "-l$it" })
             // Platform basics, from the OS/SDK rather than the vendored tree.

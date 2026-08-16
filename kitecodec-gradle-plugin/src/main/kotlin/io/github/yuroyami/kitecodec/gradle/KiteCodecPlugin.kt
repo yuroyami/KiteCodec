@@ -42,6 +42,7 @@ class KiteCodecPlugin : Plugin<Project> {
         val ext = project.extensions.create("kitecodec", KiteCodecExtension::class.java)
         ext.ffmpeg.version.convention(DEFAULT_FFMPEG_VERSION)
         ext.ffmpeg.source.convention(FFmpegSource.Prebuilt)
+        ext.ffmpeg.dav1d.convention(false)
         // license has NO convention on purpose: the flavor decides the consumer's legal obligations,
         // so they must pick one themselves. Validated in validateLicenseChoice() after evaluation.
         ext.ffmpeg.repo.convention(DEFAULT_RELEASE_REPO)
@@ -386,6 +387,30 @@ class KiteCodecPlugin : Plugin<Project> {
                     link.dependsOn(fetch)
                 }
                 binary.linkerOpts("-L${libDir.get().absolutePath}")
+                // The dav1d toggle (owner decision D-7). Presence in the tree is the linking
+                // truth; the toggle is the CONTRACT, so asking for dav1d against a tree that
+                // does not carry it fails here instead of at the final link's symbol soup.
+                val dav1dArchive = File(libDir.get(), "libdav1d.a")
+                if (ext.ffmpeg.dav1d.get()) {
+                    when (source.get()) {
+                        FFmpegSource.System -> project.logger.warn(
+                            "kitecodec: ffmpeg.dav1d = true is ignored with FFmpegSource.System; " +
+                                "a system FFmpeg decides its own decoders.",
+                        )
+                        FFmpegSource.Prebuilt -> check(dav1dArchive.exists()) {
+                            "kitecodec: ffmpeg.dav1d = true, but no prebuilt dav1d flavour is " +
+                                "published yet. Use FFmpegSource.Local with a tree produced by " +
+                                "KiteCodec's :kitecodec-core:buildFFmpegFor<Target> under " +
+                                "-Pkitecodec.ffmpeg.dav1d=true (after buildDav1dFor<Target>)."
+                        }
+                        else -> check(dav1dArchive.exists()) {
+                            "kitecodec: ffmpeg.dav1d = true, but ${dav1dArchive} does not exist. " +
+                                "Rebuild the local tree with -Pkitecodec.ffmpeg.dav1d=true " +
+                                "(after buildDav1dFor<Target>), or turn the toggle off."
+                        }
+                    }
+                }
+                if (dav1dArchive.exists()) binary.linkerOpts("-ldav1d")
                 if (source.get() == FFmpegSource.Local) {
                     if (triple == KiteCodecTarget.MacosArm64 || triple == KiteCodecTarget.MacosX64) {
                         val defaultPrefix = if (triple == KiteCodecTarget.MacosArm64) "/opt/homebrew" else "/usr/local"

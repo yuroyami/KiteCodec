@@ -116,6 +116,17 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
     @get:Optional
     abstract val requireSelfContained: Property<Boolean>
 
+    /**
+     * Compile FFmpeg's libdav1d AV1 software decoder in (KPKMP 17.12 D-7, register row
+     * KC-AV1SW). Off by default: dav1d is an OPTIONAL dependency, and a build that never asked
+     * for it must stay byte-identical to one from before this switch existed. When true, the
+     * cross-built static dav1d from [BuildDav1dTask] must already sit in
+     * `native-libs/deps/<target>/`; the build fails with the task to run otherwise.
+     */
+    @get:Input
+    @get:Optional
+    abstract val enableDav1d: Property<Boolean>
+
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
 
@@ -160,12 +171,14 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
                 )
             }
 
+            val dav1dRoot = dav1dRootOrNull(target)
             val configureArgs = configureArguments(
                 target = target,
                 license = license,
                 installPrefix = scratchInstall.toAbsolutePath().toString(),
+                dav1dRoot = dav1dRoot,
             )
-            val env = configureEnv(target)
+            val env = configureEnv(target, dav1dRoot)
             runIn(
                 scratchBuild.toFile(),
                 listOf(scratchSource.resolve("configure").toAbsolutePath().toString()) + configureArgs,
@@ -211,6 +224,7 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
         installPrefix: String,
         sdkPath: (String) -> String = ::xcrunSdkPath,
         ndkToolchainBin: () -> File = ::ndkToolchainBin,
+        dav1dRoot: File? = null,
     ): List<String> {
         require(!(target.isAndroid && license == FFmpegLicense.GPL))
         require(!(target.isIos && license == FFmpegLicense.GPL)) { IOS_GPL_REFUSAL }
@@ -221,7 +235,27 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
                 (if (license == FFmpegLicense.GPL) desktopGplArgs() else emptyList()) +
                 desktopTargetArgs(target)
         }
-        return sharedCoreArgs() + profileArgs + listOf("--prefix=$installPrefix")
+        // The optional dav1d switch (D-7). configure discovers dav1d ONLY through pkg-config,
+        // so the host pkg-config is forced even on cross builds; configureEnv points it at the
+        // deps tree and nothing else. The decoder pin makes the intent survive class policy
+        // changes exactly like the hwaccel pins do.
+        val dav1dArgs = if (dav1dRoot != null) {
+            listOf("--enable-libdav1d", "--enable-decoder=libdav1d", "--pkg-config=pkg-config")
+        } else {
+            emptyList()
+        }
+        return sharedCoreArgs() + profileArgs + dav1dArgs + listOf("--prefix=$installPrefix")
+    }
+
+    /** The cross-built dav1d install for [target], or null when the switch is off. */
+    private fun dav1dRootOrNull(target: TargetTriple): File? {
+        if (!enableDav1d.getOrElse(false)) return null
+        val root = outputDir.get().asFile.parentFile.parentFile.resolve("deps/${target.dirName}")
+        require(root.resolve("lib/libdav1d.a").isFile) {
+            "dav1d was requested but native-libs/deps/${target.dirName}/lib/libdav1d.a does not " +
+                "exist. Run :kitecodec-core:buildDav1dFor${target.gradleSuffix} first."
+        }
+        return root
     }
 
     /**
@@ -236,7 +270,7 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
      * avoid exactly that.
      */
     private fun bundleThirdPartyArchives(target: TargetTriple, license: FFmpegLicense, outputDir: File) {
-        val wanted = StaticLinkFlags.thirdPartyArchives(target, license)
+        val wanted = StaticLinkFlags.thirdPartyArchives(target, license, dav1d = enableDav1d.getOrElse(false))
         if (wanted.isEmpty()) return
 
         val libDir = outputDir.resolve("lib").also { it.mkdirs() }
@@ -278,7 +312,11 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
     }
 
     /** Where the host package manager keeps the static archives, most specific first. */
-    private fun thirdPartySearchDirs(target: TargetTriple): List<File> = when (target) {
+    private fun thirdPartySearchDirs(target: TargetTriple): List<File> = listOfNotNull(
+        // The cross-built deps tree first: a bundled dav1d must win over any host copy.
+        outputDir.get().asFile.parentFile.parentFile.resolve("deps/${target.dirName}/lib")
+            .takeIf { enableDav1d.getOrElse(false) },
+    ) + when (target) {
         TargetTriple.MacosArm64, TargetTriple.MacosX64 -> {
             val prefix = File(hostPrefix.getOrElse(DEFAULT_HOMEBREW_PREFIX))
             // Homebrew symlinks into <prefix>/lib, but keg-only formulas stay under opt/<name>/lib.
@@ -301,16 +339,19 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
      * that has no way to learn the prefix. Exporting PKG_CONFIG_PATH covers the first group and
      * [macosPrefixArgs] the second.
      */
-    private fun configureEnv(target: TargetTriple): Map<String, String> =
+    private fun configureEnv(target: TargetTriple, dav1dRoot: File? = null): Map<String, String> {
+        val dav1dPkg = dav1dRoot?.resolve("lib/pkgconfig")?.absolutePath
         if (target == TargetTriple.MacosArm64 || target == TargetTriple.MacosX64) {
             val prefix = hostPrefix.getOrElse(DEFAULT_HOMEBREW_PREFIX)
             val existing = System.getenv("PKG_CONFIG_PATH").orEmpty()
-            val paths = listOf("$prefix/lib/pkgconfig", "$prefix/share/pkgconfig")
+            val paths = listOfNotNull(dav1dPkg) + listOf("$prefix/lib/pkgconfig", "$prefix/share/pkgconfig")
                 .plus(if (existing.isNotEmpty()) listOf(existing) else emptyList())
-            mapOf("PKG_CONFIG_PATH" to paths.joinToString(":"))
-        } else {
-            emptyMap()
+            return mapOf("PKG_CONFIG_PATH" to paths.joinToString(":"))
         }
+        // Cross targets: PKG_CONFIG_LIBDIR (not PATH) so the host's own .pc files can never
+        // leak into an Android or iOS link. The deps tree is the whole pkg-config universe.
+        return if (dav1dPkg != null) mapOf("PKG_CONFIG_LIBDIR" to dav1dPkg) else emptyMap()
+    }
 
     /**
      * `--extra-cflags` / `--extra-ldflags` pointing at the Homebrew prefix. Without these the

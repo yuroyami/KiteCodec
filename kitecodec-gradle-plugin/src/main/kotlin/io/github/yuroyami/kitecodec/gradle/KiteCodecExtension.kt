@@ -16,6 +16,7 @@ import javax.inject.Inject
  *         version = "n8.0"
  *         source  = FFmpegSource.Prebuilt
  *         license = FFmpegLicense.LGPL // mandatory: the build fails without an explicit choice
+ *         dav1d   = true               // optional: link the dav1d AV1 software decoder
  *     }
  * }
  * ```
@@ -56,6 +57,18 @@ abstract class FFmpegSpec {
 
     /** GitHub `owner/repo` whose Releases host the prebuilt binaries. Defaults to KiteCodec's. */
     abstract val repo: Property<String>
+
+    /**
+     * Opt into FFmpeg's libdav1d AV1 software decoder (default false). dav1d is an OPTIONAL
+     * native library by owner decision D-7: a build that never asks for it ships not one extra
+     * byte. Asking for it requires an FFmpeg tree that was built with it, today meaning
+     * [FFmpegSource.Local] pointed at a tree produced by KiteCodec's own
+     * `:kitecodec-core:buildFFmpegFor<Target>` with `-Pkitecodec.ffmpeg.dav1d=true` (which
+     * itself wants `buildDav1dFor<Target>` first). [FFmpegSource.Prebuilt] has no dav1d
+     * flavour published yet and fails with exactly that message; [FFmpegSource.System] ignores
+     * the toggle, because a system FFmpeg decides its own decoders.
+     */
+    abstract val dav1d: Property<Boolean>
 
     /**
      * Pinned SHA-256 checksums, keyed by Release asset name (for example
