@@ -40,6 +40,8 @@ import ffmpeg.ffkmp_packet_stream_index
 import ffmpeg.ffkmp_packet_unref
 import ffmpeg.ffkmp_rescale_q
 import ffmpeg.ffkmp_fmt_close_input
+import ffmpeg.ffkmp_fmt_close_input_io
+import ffmpeg.ffkmp_fmt_open_input_io
 import ffmpeg.ffkmp_fmt_duration
 import ffmpeg.ffkmp_fmt_find_stream_info
 import ffmpeg.ffkmp_fmt_iformat_name
@@ -102,6 +104,13 @@ import kotlinx.cinterop.toKString
 import kotlinx.cinterop.usePinned
 import kotlinx.cinterop.set
 import kotlinx.cinterop.value
+import kotlinx.cinterop.COpaquePointer
+import kotlinx.cinterop.StableRef
+import kotlinx.cinterop.UByteVar
+import kotlinx.cinterop.asStableRef
+import kotlinx.cinterop.convert
+import kotlinx.cinterop.staticCFunction
+import platform.posix.memcpy
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
@@ -123,6 +132,11 @@ public actual class MediaSource internal constructor(
     public actual val startTimeMicros: Long,
     public actual val chapters: List<Chapter> = emptyList(),
     public actual val unusedOpenOptions: List<String> = emptyList(),
+    /**
+     * Non-null exactly for custom-io opens (M1): close then uses ffkmp_fmt_close_input_io,
+     * and this runs AFTER it to dispose the StableRef and close the caller's byte source.
+     */
+    private val ioCleanup: (() -> Unit)? = null,
 ) : AutoCloseable {
 
     /** Absolute timestamp [ts] (in [timeBase]) → media-relative microseconds. */
@@ -518,8 +532,9 @@ public actual class MediaSource internal constructor(
         memScoped {
             val pp = alloc<CPointerVar<kc_fmt_ctx>>()
             pp.value = ctx
-            ffkmp_fmt_close_input(pp.ptr)
+            if (ioCleanup != null) ffkmp_fmt_close_input_io(pp.ptr) else ffkmp_fmt_close_input(pp.ptr)
         }
+        ioCleanup?.invoke()
     }
 
     public actual companion object {
@@ -536,6 +551,12 @@ public actual class MediaSource internal constructor(
         public actual fun open(path: String, options: Map<String, String>): MediaSource {
             requireCompatibleFFmpeg()
             return openMediaSource(path, options)
+        }
+
+        @Throws(FFmpegException::class)
+        public actual fun open(io: MediaByteSource, options: Map<String, String>): MediaSource {
+            requireCompatibleFFmpeg()
+            return openMediaSourceIo(io, options)
         }
 
         /**
@@ -623,12 +644,23 @@ internal fun openMediaSource(path: String, options: Map<String, String> = emptyM
         ?: run { arena.clear(); throw FFmpegException(FFmpegError.Internal("open_input returned NULL")) }
     arena.clear()  // ctxVar was just used to read out the ctx; the ctx pointer is now standalone.
 
+    return assembleMediaSource(ctx, unusedKeys, ioCleanup = null)
+}
+
+/** Everything between a successfully opened ctx and a constructed MediaSource, shared by the
+ *  path open and the custom-io open. On failure the ctx is closed with the RIGHT close. */
+private fun assembleMediaSource(
+    ctx: CPointer<kc_fmt_ctx>,
+    unusedKeys: List<String>,
+    ioCleanup: (() -> Unit)?,
+): MediaSource {
     val infoRc = ffkmp_fmt_find_stream_info(ctx)
     if (infoRc < 0) {
         memScoped {
             val pp = alloc<CPointerVar<kc_fmt_ctx>>().also { it.value = ctx }
-            ffkmp_fmt_close_input(pp.ptr)
+            if (ioCleanup != null) ffkmp_fmt_close_input_io(pp.ptr) else ffkmp_fmt_close_input(pp.ptr)
         }
+        ioCleanup?.invoke()
         throw FFmpegException(avError(infoRc))
     }
 
@@ -641,7 +673,111 @@ internal fun openMediaSource(path: String, options: Map<String, String> = emptyM
         ctx, streams, durationFromHeader, formatName, metadata, ffkmp_fmt_start_time(ctx),
         chapters = readChapters(ctx),
         unusedOpenOptions = unusedKeys,
+        ioCleanup = ioCleanup,
     )
+}
+
+/** The per-open state the AVIO trampolines reach through the C bridge's opaque. */
+private class ByteSourceState(val io: MediaByteSource) {
+    var position: Long = 0
+    val scratch = ByteArray(64 * 1024)
+    var failure: Throwable? = null
+}
+
+/* The C-callable trampolines. Non-capturing by staticCFunction's rule: all state arrives
+ * through the opaque StableRef. Contract with the C side (kitecodec_helpers.h): read returns
+ * bytes read > 0, KC_IO_EOF (-1) at end, KC_IO_ERR (-2) on failure; seek returns the new
+ * absolute position or KC_IO_ERR. Exceptions must NEVER unwind into C. */
+private val byteSourceRead = staticCFunction { opaque: COpaquePointer?, buf: CPointer<UByteVar>?, len: Int ->
+    val state = opaque!!.asStableRef<ByteSourceState>().get()
+    try {
+        val want = minOf(len, state.scratch.size)
+        val r = state.io.read(state.scratch, 0, want)
+        when {
+            r > 0 -> {
+                state.scratch.usePinned { pinned ->
+                    memcpy(buf, pinned.addressOf(0), r.convert())
+                }
+                state.position += r
+                r
+            }
+            r < 0 -> -1
+            else -> -2  // 0 breaks the documented block-or-end contract
+        }
+    } catch (failure: Throwable) {
+        state.failure = failure
+        -2
+    }
+}
+
+private val byteSourceSeek = staticCFunction { opaque: COpaquePointer?, offset: Long, whence: Int ->
+    val state = opaque!!.asStableRef<ByteSourceState>().get()
+    try {
+        val target = when (whence) {
+            0 -> offset                                       // SEEK_SET
+            1 -> state.position + offset                      // SEEK_CUR
+            2 -> (state.io.size ?: -1L).let { if (it < 0) return@staticCFunction -2L else it + offset }
+            else -> return@staticCFunction -2L
+        }
+        if (target < 0) return@staticCFunction -2L
+        state.io.seek(target)
+        state.position = target
+        target
+    } catch (failure: Throwable) {
+        state.failure = failure
+        -2L
+    }
+}
+
+internal fun openMediaSourceIo(io: MediaByteSource, options: Map<String, String> = emptyMap()): MediaSource {
+    val state = ByteSourceState(io)
+    val stableRef = StableRef.create(state)
+    val cleanup: () -> Unit = {
+        stableRef.dispose()
+        io.close()
+    }
+    var unusedKeys: List<String> = emptyList()
+    val ctx: CPointer<kc_fmt_ctx> = memScoped {
+        val ctxVar = allocPointerTo<kc_fmt_ctx>()
+        val n = options.size
+        val keys = allocArray<CPointerVar<ByteVar>>(n)
+        val values = allocArray<CPointerVar<ByteVar>>(n)
+        options.entries.forEachIndexed { index, (key, value) ->
+            keys[index] = key.cstr.ptr
+            values[index] = value.cstr.ptr
+        }
+        val unusedVar = allocPointerTo<ffmpeg.kc_dict>()
+        val rc = ffkmp_fmt_open_input_io(
+            ctxVar.ptr,
+            stableRef.asCPointer(),
+            byteSourceRead,
+            if (io.seekable) byteSourceSeek else null,
+            io.size ?: -1L,
+            keys, values, n, unusedVar.ptr,
+        )
+        if (rc < 0) {
+            stableRef.dispose()
+            // The byte source's own exception is the truer diagnosis than FFmpeg's EIO shell.
+            state.failure?.let { throw FFmpegException(FFmpegError.Internal("custom io failed: ${it.message}")) }
+            throw FFmpegException(avError(rc))
+        }
+        val dict = unusedVar.value
+        if (dict != null) {
+            unusedKeys = buildList {
+                var entry = ffkmp_dict_get(dict, null)
+                while (entry != null) {
+                    ffkmp_dict_entry_key(entry)?.toKString()?.let(::add)
+                    entry = ffkmp_dict_get(dict, entry)
+                }
+            }
+            ffkmp_dict_free(unusedVar.ptr)
+        }
+        ctxVar.value ?: run {
+            stableRef.dispose()
+            throw FFmpegException(FFmpegError.Internal("open_input_io returned NULL"))
+        }
+    }
+    return assembleMediaSource(ctx, unusedKeys, ioCleanup = cleanup)
 }
 
 /** KD-5: the chapter table, bounds already in microseconds from the C side. */

@@ -329,6 +329,52 @@ KC_API int  ffkmp_fmt_open_input2(kc_fmt_ctx **out, const char *path,
  */
 KC_API void ffkmp_dict_free(kc_dict **dict);
 
+/* M1, the custom AVIO bridge (KitePlayer KPKMP 17.12): demuxing whose BYTES come from the
+ * caller instead of a path. This is the door KiteTorrent, HTTP clients with their own auth,
+ * encrypted stores and caches walk through.
+ *
+ * read_fn contract: fill buf with at most len bytes and return how many (> 0). It must BLOCK
+ * until at least one byte exists. At end of stream return KC_IO_EOF; on any failure return
+ * KC_IO_ERR. It is called from whatever thread drives the demuxer, one call at a time.
+ *
+ * seek_fn contract: move the cursor to offset (whence is SEEK_SET/SEEK_CUR/SEEK_END) and
+ * return the NEW absolute position, or KC_IO_ERR. A NULL seek_fn declares the stream
+ * unseekable; AVSEEK_SIZE never reaches it because size below answers that probe.
+ */
+#define KC_IO_EOF (-1)
+#define KC_IO_ERR (-2)
+typedef int     (*kc_io_read_fn)(void *opaque, unsigned char *buf, int len);
+typedef int64_t (*kc_io_seek_fn)(void *opaque, int64_t offset, int whence);
+
+/* Ownership. On success *out is a new kc_fmt_ctx the caller owns and must release with
+ * ffkmp_fmt_close_input_io and NOTHING ELSE: this open installs a custom AVIOContext whose
+ * buffer and bridge state only that close knows how to free. opaque must stay valid until
+ * that close returns. size is the total byte length, or a negative value when unknown (a
+ * live stream). Option pairs behave exactly like ffkmp_fmt_open_input2, unused included.
+ * NULL out or read_fn, negative n, or a NULL entry inside the arrays is refused with
+ * AVERROR(EINVAL).
+ */
+KC_API int  ffkmp_fmt_open_input_io(kc_fmt_ctx **out,
+                                    void *opaque, kc_io_read_fn read_fn, kc_io_seek_fn seek_fn,
+                                    int64_t size,
+                                    const char *const *keys, const char *const *values,
+                                    int n, kc_dict **unused);
+
+/* Ownership. The one close for ffkmp_fmt_open_input_io contexts: closes the demuxer, then
+ * frees the custom AVIOContext, its buffer and the bridge state, and writes NULL through
+ * ctx. Safe on NULL and on an already-NULL pointer. Using ffkmp_fmt_close_input on a
+ * custom-io context leaks the AVIO state; using this on a path-opened context is refused
+ * by the absence of the bridge marker and falls back to the plain close.
+ */
+KC_API void ffkmp_fmt_close_input_io(kc_fmt_ctx **ctx);
+
+/* The opaque the caller gave ffkmp_fmt_open_input_io, or NULL when ctx is NULL, was not
+ * opened by that call, or the bridge marker is absent. Callers that park per-open state
+ * behind opaque (the JNI adapter's callback refs) recover it here BEFORE the close frees
+ * the bridge. Borrowed; never freed by the caller through this.
+ */
+KC_API void *ffkmp_fmt_io_opaque(kc_fmt_ctx *ctx);
+
 /* KD-5. The chapter table. count answers AVERROR(EINVAL) on NULL; get writes the chapter's id
  * and its bounds rescaled to microseconds, refusing NULL outputs and out-of-range indices.
  * The metadata accessor returns a borrowed dictionary owned by the context (NULL on any bad

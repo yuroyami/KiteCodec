@@ -133,6 +133,9 @@ object StaticLinkFlags {
             // Platform basics, from the OS/SDK rather than the vendored tree.
             add("-lz")
             add("-lbz2")
+            // The wide read profile compiled the tiff decoder, whose LZMA strips resolve from
+            // the SDK's liblzma rather than the vendored tree (drift caught 2026-08-16).
+            add("-llzma")
             if (isApple) {
                 add("-liconv")
                 // harfbuzz's CoreText shaping backend and libass' CoreGraphics rasterisation are

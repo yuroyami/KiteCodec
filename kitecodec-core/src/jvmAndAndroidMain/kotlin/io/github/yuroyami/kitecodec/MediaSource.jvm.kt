@@ -14,6 +14,8 @@ public actual class MediaSource internal constructor(
     public actual val startTimeMicros: Long,
     public actual val chapters: List<Chapter> = emptyList(),
     public actual val unusedOpenOptions: List<String> = emptyList(),
+    /** Non-null exactly for custom-io opens (M1): close then routes through the io close. */
+    private val jniIo: JniByteIo? = null,
 ) : AutoCloseable {
     private val stateLock = Any()
     private var demuxing = false
@@ -325,7 +327,12 @@ public actual class MediaSource internal constructor(
             }
             formatToken.also { formatToken = 0L }
         }
-        Internals.fmtCloseInput(context)
+        if (jniIo != null) {
+            Internals.fmtCloseInputIo(context)
+            jniIo.closeSource()
+        } else {
+            Internals.fmtCloseInput(context)
+        }
     }
 
     public actual companion object {
@@ -339,6 +346,12 @@ public actual class MediaSource internal constructor(
         public actual fun open(path: String, options: Map<String, String>): MediaSource {
             Internals.requireCompatible()
             return openMediaSource(path, options)
+        }
+
+        @Throws(FFmpegException::class)
+        public actual fun open(io: MediaByteSource, options: Map<String, String>): MediaSource {
+            Internals.requireCompatible()
+            return openMediaSourceIo(io, options)
         }
 
         private const val DECODE_SEEK_BACKOFF_MICROS = 5_000_000L
@@ -415,6 +428,41 @@ private fun openMediaSource(path: String, options: Map<String, String> = emptyMa
         )
     } catch (error: Throwable) {
         Internals.fmtCloseInput(context)
+        throw error
+    }
+}
+
+/** M1: the custom AVIO open. The JNI bridge holds global refs to [JniByteIo] until the paired
+ *  close, so the adapter object outlives any Kotlin-side reference by construction. */
+private fun openMediaSourceIo(io: MediaByteSource, options: Map<String, String>): MediaSource {
+    val adapter = JniByteIo(io)
+    var unusedKeys: List<String> = emptyList()
+    val unusedSlot = arrayOfNulls<String>(1)
+    val context = Internals.fmtOpenInputIo(
+        adapter,
+        io.seekable,
+        io.size ?: -1L,
+        options.keys.toTypedArray().takeIf { it.isNotEmpty() },
+        options.values.toTypedArray().takeIf { it.isNotEmpty() },
+        unusedSlot,
+    )
+    unusedKeys = unusedSlot[0]?.takeIf { it.isNotEmpty() }?.split('\u001f') ?: emptyList()
+    try {
+        check0(Internals.fmtFindStreamInfo(context), "avformat_find_stream_info")
+        return MediaSource(
+            formatToken = context,
+            streams = buildStreams(context),
+            durationMicros = Internals.fmtDuration(context).takeIf { it > 0L },
+            formatName = Internals.fmtInputName(context).ifEmpty { "unknown" },
+            metadata = readMetadata(Internals.fmtMetadata(context)),
+            startTimeMicros = Internals.fmtStartTime(context),
+            chapters = readChapters(context),
+            unusedOpenOptions = unusedKeys,
+            jniIo = adapter,
+        )
+    } catch (error: Throwable) {
+        Internals.fmtCloseInputIo(context)
+        adapter.closeSource()
         throw error
     }
 }

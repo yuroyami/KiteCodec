@@ -446,3 +446,204 @@ JNIEXPORT jint JNICALL kj_codecpar_from_context(JNIEnv *env,jclass cls,jlong par
 {kc_codec_par*p=(kc_codec_par*)kj_handle_get(env,par_token,KJ_KIND_CODEC_PAR);kc_codec_ctx*c;(void)cls;if(!p)return-1;c=(kc_codec_ctx*)kj_handle_get(env,ctx_token,KJ_KIND_CODEC_CTX);return c?ffkmp_codecpar_from_context(p,c):-1;}
 JNIEXPORT jint JNICALL kj_codecpar_copy(JNIEnv *env,jclass cls,jlong dst_token,jlong src_token)
 {kc_codec_par*d=(kc_codec_par*)kj_handle_get(env,dst_token,KJ_KIND_CODEC_PAR);kc_codec_par*s;(void)cls;if(!d)return-1;s=(kc_codec_par*)kj_handle_get(env,src_token,KJ_KIND_CODEC_PAR);return s?ffkmp_codecpar_copy_for_mux(d,s):-1;}
+
+/* ── M1: the custom AVIO bridge ──────────────────────────────────────────────────────────────
+ * The bytes come from a Kotlin JniByteIo instead of a path. This unit parks the VM pointer,
+ * the callback's global refs and the reusable transfer array behind the C bridge's opaque, and
+ * recovers them at close through ffkmp_fmt_io_opaque. Method names and signatures here are the
+ * other half of JniByteIo.kt's pinned contract. */
+
+#define KJ_IO_BUFFER_SIZE (64 * 1024)
+
+typedef struct kj_io_state {
+    JavaVM   *vm;
+    jobject   cb;      /* global ref: the JniByteIo */
+    jobject   buffer;  /* global ref: the reusable jbyteArray */
+    jmethodID read;    /* ([BI)I */
+    jmethodID seek;    /* (JI)J */
+} kj_io_state;
+
+static JNIEnv *kj_io_env(kj_io_state *st)
+{
+    JNIEnv *env = NULL;
+    if ((*st->vm)->GetEnv(st->vm, (void **)&env, JNI_VERSION_1_6) == JNI_OK && env != NULL) return env;
+#ifdef __ANDROID__
+    if ((*st->vm)->AttachCurrentThread(st->vm, &env, NULL) == JNI_OK) return env;
+#else
+    if ((*st->vm)->AttachCurrentThread(st->vm, (void **)&env, NULL) == JNI_OK) return env;
+#endif
+    return NULL;
+}
+
+static int kj_io_read(void *opaque, unsigned char *buf, int len)
+{
+    kj_io_state *st = (kj_io_state *)opaque;
+    JNIEnv *env = kj_io_env(st);
+    jint want, r;
+    if (env == NULL || len <= 0) return KC_IO_ERR;
+    want = len < KJ_IO_BUFFER_SIZE ? (jint)len : (jint)KJ_IO_BUFFER_SIZE;
+    r = (*env)->CallIntMethod(env, st->cb, st->read, st->buffer, want);
+    if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); return KC_IO_ERR; }
+    if (r > 0) {
+        if (r > want) return KC_IO_ERR;
+        (*env)->GetByteArrayRegion(env, (jbyteArray)st->buffer, 0, r, (jbyte *)buf);
+        if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); return KC_IO_ERR; }
+        return (int)r;
+    }
+    return r == -1 ? KC_IO_EOF : KC_IO_ERR;
+}
+
+static int64_t kj_io_seek_cb(void *opaque, int64_t offset, int whence)
+{
+    kj_io_state *st = (kj_io_state *)opaque;
+    JNIEnv *env = kj_io_env(st);
+    jlong r;
+    if (env == NULL) return KC_IO_ERR;
+    r = (*env)->CallLongMethod(env, st->cb, st->seek, (jlong)offset, (jint)whence);
+    if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); return KC_IO_ERR; }
+    return r < 0 ? KC_IO_ERR : (int64_t)r;
+}
+
+static void kj_io_state_free(JNIEnv *env, kj_io_state *st)
+{
+    if (st == NULL) return;
+    if (st->cb != NULL) (*env)->DeleteGlobalRef(env, st->cb);
+    if (st->buffer != NULL) (*env)->DeleteGlobalRef(env, st->buffer);
+    free(st);
+}
+
+JNIEXPORT jlong JNICALL kj_fmt_open_input_io(JNIEnv *env, jclass cls, jobject cb,
+                                             jboolean seekable, jlong size,
+                                             jobjectArray keys, jobjectArray values,
+                                             jobjectArray unused_keys_out)
+{
+    kj_io_state *st = NULL;
+    kc_fmt_ctx *ctx = NULL;
+    char **ckeys = NULL;
+    char **cvalues = NULL;
+    jsize n = 0;
+    jlong token = 0;
+    kc_dict *unused = NULL;
+    jclass cb_class;
+    jbyteArray local_buffer;
+    int rc;
+    jsize i;
+    (void)cls;
+    if (cb == NULL) { kj_throw_handle(env, "custom io open refused: NULL callback"); return 0; }
+    if ((keys == NULL) != (values == NULL)) {
+        kj_throw_handle(env, "custom io open refused: keys and values must both exist or both be absent");
+        return 0;
+    }
+    if (keys != NULL) {
+        n = (*env)->GetArrayLength(env, keys);
+        if ((*env)->GetArrayLength(env, values) != n) {
+            kj_throw_handle(env, "custom io open refused: keys and values differ in length");
+            return 0;
+        }
+    }
+
+    st = (kj_io_state *)calloc(1, sizeof(kj_io_state));
+    if (st == NULL) { kj_throw_handle(env, "custom io open: out of memory"); return 0; }
+    if ((*env)->GetJavaVM(env, &st->vm) != 0) {
+        free(st);
+        kj_throw_handle(env, "custom io open: GetJavaVM failed");
+        return 0;
+    }
+    cb_class = (*env)->GetObjectClass(env, cb);
+    st->read = (*env)->GetMethodID(env, cb_class, "read", "([BI)I");
+    st->seek = (*env)->GetMethodID(env, cb_class, "seek", "(JI)J");
+    (*env)->DeleteLocalRef(env, cb_class);
+    if (st->read == NULL || st->seek == NULL) {
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        free(st);
+        kj_throw_handle(env, "custom io open: JniByteIo methods not found (keep rules?)");
+        return 0;
+    }
+    st->cb = (*env)->NewGlobalRef(env, cb);
+    local_buffer = (*env)->NewByteArray(env, KJ_IO_BUFFER_SIZE);
+    st->buffer = local_buffer != NULL ? (*env)->NewGlobalRef(env, local_buffer) : NULL;
+    if (local_buffer != NULL) (*env)->DeleteLocalRef(env, local_buffer);
+    if (st->cb == NULL || st->buffer == NULL) {
+        kj_io_state_free(env, st);
+        kj_throw_handle(env, "custom io open: global ref allocation failed");
+        return 0;
+    }
+
+    if (n > 0) {
+        ckeys = (char **)calloc((size_t)n, sizeof(char *));
+        cvalues = (char **)calloc((size_t)n, sizeof(char *));
+        if (ckeys == NULL || cvalues == NULL) goto oom;
+        for (i = 0; i < n; i++) {
+            jstring jk = (jstring)(*env)->GetObjectArrayElement(env, keys, i);
+            jstring jv = (jstring)(*env)->GetObjectArrayElement(env, values, i);
+            ckeys[i] = kj_string_dup(env, jk);
+            cvalues[i] = kj_string_dup(env, jv);
+            if (jk != NULL) (*env)->DeleteLocalRef(env, jk);
+            if (jv != NULL) (*env)->DeleteLocalRef(env, jv);
+            if (ckeys[i] == NULL || cvalues[i] == NULL) goto oom;
+        }
+    }
+
+    rc = ffkmp_fmt_open_input_io(&ctx, st, kj_io_read,
+                                 seekable == JNI_TRUE ? kj_io_seek_cb : NULL,
+                                 (int64_t)size,
+                                 (const char *const *)ckeys, (const char *const *)cvalues,
+                                 (int)n, &unused);
+    goto done;
+oom:
+    rc = -12;
+done:
+    if (ckeys != NULL) { for (i = 0; i < n; i++) free(ckeys[i]); free(ckeys); }
+    if (cvalues != NULL) { for (i = 0; i < n; i++) free(cvalues[i]); free(cvalues); }
+    if (rc < 0 || ctx == NULL) {
+        ffkmp_dict_free(&unused);
+        kj_io_state_free(env, st);
+        kj_throw_ffmpeg(env, rc, "fmt_open_input_io");
+        return 0;
+    }
+    /* The unused remainder crosses exactly like fmt_open_input2's. */
+    if (unused_keys_out != NULL && (*env)->GetArrayLength(env, unused_keys_out) >= 1) {
+        size_t total = 1;
+        kc_dict_entry *e = NULL;
+        while ((e = ffkmp_dict_get(unused, e)) != NULL) {
+            total += strlen(ffkmp_dict_entry_key(e)) + 1;
+        }
+        char *joined = (char *)malloc(total);
+        if (joined != NULL) {
+            size_t at = 0;
+            e = NULL;
+            while ((e = ffkmp_dict_get(unused, e)) != NULL) {
+                const char *key = ffkmp_dict_entry_key(e);
+                size_t len = strlen(key);
+                if (at > 0) joined[at++] = '\x1f';
+                memcpy(joined + at, key, len);
+                at += len;
+            }
+            joined[at] = '\0';
+            jstring js = (*env)->NewStringUTF(env, joined);
+            free(joined);
+            if (js != NULL) {
+                (*env)->SetObjectArrayElement(env, unused_keys_out, 0, js);
+                (*env)->DeleteLocalRef(env, js);
+            }
+        }
+    }
+    ffkmp_dict_free(&unused);
+    token = kj_handle_put_checked(env, KJ_KIND_FMT_CTX, ctx);
+    if (token == 0) {
+        ffkmp_fmt_close_input_io(&ctx);
+        kj_io_state_free(env, st);
+    }
+    return token;
+}
+
+JNIEXPORT void JNICALL kj_fmt_close_input_io(JNIEnv *env, jclass cls, jlong token)
+{
+    kc_fmt_ctx *ctx = (kc_fmt_ctx *)kj_handle_close(token, KJ_KIND_FMT_CTX);
+    kj_io_state *st;
+    (void)cls;
+    if (ctx == NULL) return;
+    st = (kj_io_state *)ffkmp_fmt_io_opaque(ctx);
+    ffkmp_fmt_close_input_io(&ctx);
+    kj_io_state_free(env, st);
+}

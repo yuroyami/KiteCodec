@@ -59,6 +59,15 @@ internal object Internals {
         values: Array<String>?,
         unusedKeysOut: Array<String?>?,
     ): Long
+    private external fun nativeFmtOpenInputIo(
+        io: JniByteIo,
+        seekable: Boolean,
+        size: Long,
+        keys: Array<String>?,
+        values: Array<String>?,
+        unusedKeysOut: Array<String?>?,
+    ): Long
+    private external fun nativeFmtCloseInputIo(token: Long)
     private external fun nativeFmtChapterCount(token: Long): Int
     private external fun nativeFmtChapterGet(token: Long, index: Int, outFields: LongArray): Int
     private external fun nativeFmtChapterMetadata(token: Long, index: Int): Long
@@ -299,6 +308,15 @@ internal object Internals {
     internal fun fmtOpenInput(path: String) = token("input open") { nativeFmtOpenInput(path) }
     internal fun fmtOpenInput2(path: String, keys: Array<String>?, values: Array<String>?, unusedKeysOut: Array<String?>?) =
         token("input open with options") { nativeFmtOpenInput2(path, keys, values, unusedKeysOut) }
+    internal fun fmtOpenInputIo(
+        io: JniByteIo,
+        seekable: Boolean,
+        size: Long,
+        keys: Array<String>?,
+        values: Array<String>?,
+        unusedKeysOut: Array<String?>?,
+    ) = token("custom io open") { nativeFmtOpenInputIo(io, seekable, size, keys, values, unusedKeysOut) }
+    internal fun fmtCloseInputIo(token: Long) = checked { nativeFmtCloseInputIo(token) }
     internal fun fmtChapterCount(token: Long) = checked { nativeFmtChapterCount(token) }
     internal fun fmtChapterGet(token: Long, index: Int, outFields: LongArray) = checked { nativeFmtChapterGet(token, index, outFields) }
     internal fun fmtChapterMetadata(token: Long, index: Int) = nativeFmtChapterMetadata(token, index)

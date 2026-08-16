@@ -12,3 +12,11 @@
 -keep class io.github.yuroyami.kitecodec.JniNativeException {
     <init>(java.lang.String);
 }
+
+# kj_format.c resolves these two by GetMethodID on the object's class at custom-io open time
+# (M1, the AVIO bridge). Renamed or stripped members break the bridge at open, so both method
+# shapes are part of the JNI ABI exactly like the exception constructors above.
+-keep class io.github.yuroyami.kitecodec.JniByteIo {
+    int read(byte[], int);
+    long seek(long, int);
+}

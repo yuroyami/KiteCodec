@@ -176,3 +176,138 @@ KC_API int ffkmp_fmt_set_metadata(AVFormatContext *c, const char *key, const cha
     if (!c || !key) return AVERROR(EINVAL);
     return av_dict_set(&c->metadata, key, value, 0);
 }
+
+/* ════════════ Custom AVIO (M1, KitePlayer KPKMP 17.12) ════════════ */
+
+/* The bridge the AVIOContext's opaque points at. The magic pins provenance so the paired
+   close can refuse to free state it did not create. */
+#define KC_IO_BRIDGE_MAGIC 0x4B43494Fu /* "KCIO" */
+typedef struct kc_io_bridge {
+    uint32_t      magic;
+    void         *opaque;
+    kc_io_read_fn read_fn;
+    kc_io_seek_fn seek_fn;
+    int64_t       size;
+} kc_io_bridge;
+
+/* FFmpeg's read_packet: >0 bytes, AVERROR_EOF at end, never 0 since n7. The caller contract
+   (KC_IO_EOF / KC_IO_ERR) maps here so the Kotlin side never needs an FFmpeg constant. */
+static int kc_io_read_packet(void *opaque, uint8_t *buf, int len) {
+    kc_io_bridge *b = (kc_io_bridge *)opaque;
+    int r = b->read_fn(b->opaque, buf, len);
+    if (r > 0) return r;
+    if (r == KC_IO_EOF) return AVERROR_EOF;
+    return AVERROR(EIO);
+}
+
+static int64_t kc_io_seek(void *opaque, int64_t offset, int whence) {
+    kc_io_bridge *b = (kc_io_bridge *)opaque;
+    if (whence & AVSEEK_SIZE) return b->size >= 0 ? b->size : AVERROR(ENOSYS);
+    whence &= ~AVSEEK_FORCE;
+    if (!b->seek_fn) return AVERROR(ENOSYS);
+    int64_t r = b->seek_fn(b->opaque, offset, whence);
+    return r < 0 ? AVERROR(EIO) : r;
+}
+
+/* 64 KiB: avio's own default probe/read granularity; large enough that a network-backed
+   read_fn is not called per demuxer nibble. */
+#define KC_IO_BUFFER_SIZE (64 * 1024)
+
+KC_API int ffkmp_fmt_open_input_io(AVFormatContext **out,
+                                   void *opaque, kc_io_read_fn read_fn, kc_io_seek_fn seek_fn,
+                                   int64_t size,
+                                   const char *const *keys, const char *const *values,
+                                   int n, AVDictionary **unused) {
+    if (!out) return AVERROR(EINVAL);
+    *out = NULL;
+    if (unused) *unused = NULL;
+    if (!read_fn) return AVERROR(EINVAL);
+    if (n < 0) return AVERROR(EINVAL);
+    if (n > 0 && (!keys || !values)) return AVERROR(EINVAL);
+
+    kc_io_bridge *bridge = av_mallocz(sizeof(kc_io_bridge));
+    if (!bridge) return AVERROR(ENOMEM);
+    bridge->magic = KC_IO_BRIDGE_MAGIC;
+    bridge->opaque = opaque;
+    bridge->read_fn = read_fn;
+    bridge->seek_fn = seek_fn;
+    bridge->size = size;
+
+    unsigned char *buffer = av_malloc(KC_IO_BUFFER_SIZE);
+    if (!buffer) { av_freep(&bridge); return AVERROR(ENOMEM); }
+
+    AVIOContext *pb = avio_alloc_context(buffer, KC_IO_BUFFER_SIZE, 0, bridge,
+                                         kc_io_read_packet, NULL,
+                                         seek_fn ? kc_io_seek : NULL);
+    if (!pb) { av_freep(&buffer); av_freep(&bridge); return AVERROR(ENOMEM); }
+    /* Seekability truth for demuxers that ask the pb instead of probing a seek. */
+    pb->seekable = seek_fn ? AVIO_SEEKABLE_NORMAL : 0;
+
+    AVFormatContext *c = avformat_alloc_context();
+    if (!c) {
+        av_freep(&pb->buffer);
+        avio_context_free(&pb);
+        av_freep(&bridge);
+        return AVERROR(ENOMEM);
+    }
+    c->pb = pb;
+    c->flags |= AVFMT_FLAG_CUSTOM_IO;
+
+    AVDictionary *options = NULL;
+    for (int i = 0; i < n; i++) {
+        if (!keys[i] || !values[i]) {
+            av_dict_free(&options);
+            avformat_free_context(c);
+            av_freep(&pb->buffer);
+            avio_context_free(&pb);
+            av_freep(&bridge);
+            return AVERROR(EINVAL);
+        }
+        int rc = av_dict_set(&options, keys[i], values[i], 0);
+        if (rc < 0) {
+            av_dict_free(&options);
+            avformat_free_context(c);
+            av_freep(&pb->buffer);
+            avio_context_free(&pb);
+            av_freep(&bridge);
+            return rc;
+        }
+    }
+
+    /* On failure avformat_open_input frees the context but, per AVFMT_FLAG_CUSTOM_IO, never
+       the caller's pb; the bridge and the AVIO state are this function's to unwind. */
+    int rc = avformat_open_input(&c, NULL, NULL, &options);
+    if (rc < 0) {
+        av_dict_free(&options);
+        av_freep(&pb->buffer);
+        avio_context_free(&pb);
+        av_freep(&bridge);
+        return rc;
+    }
+    if (unused) *unused = options;
+    else av_dict_free(&options);
+    *out = c;
+    return 0;
+}
+
+KC_API void ffkmp_fmt_close_input_io(AVFormatContext **ctx) {
+    if (!ctx || !*ctx) return;
+    AVFormatContext *c = *ctx;
+    AVIOContext *pb = (c->flags & AVFMT_FLAG_CUSTOM_IO) ? c->pb : NULL;
+    avformat_close_input(&c);
+    *ctx = NULL;
+    if (!pb) return;
+    kc_io_bridge *bridge = (kc_io_bridge *)pb->opaque;
+    if (bridge && bridge->magic == KC_IO_BRIDGE_MAGIC) {
+        av_freep(&pb->opaque);
+    }
+    av_freep(&pb->buffer);
+    avio_context_free(&pb);
+}
+
+KC_API void *ffkmp_fmt_io_opaque(AVFormatContext *ctx) {
+    if (!ctx || !(ctx->flags & AVFMT_FLAG_CUSTOM_IO) || !ctx->pb) return NULL;
+    kc_io_bridge *bridge = (kc_io_bridge *)ctx->pb->opaque;
+    if (!bridge || bridge->magic != KC_IO_BRIDGE_MAGIC) return NULL;
+    return bridge->opaque;
+}

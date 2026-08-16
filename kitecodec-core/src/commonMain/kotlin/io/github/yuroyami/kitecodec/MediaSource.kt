@@ -150,5 +150,15 @@ public expect class MediaSource : AutoCloseable {
          */
         @Throws(FFmpegException::class)
         public fun open(path: String, options: Map<String, String>): MediaSource
+
+        /**
+         * Open over caller-supplied bytes (M1, the custom AVIO bridge): FFmpeg demuxes whatever
+         * [io] reads, with no path and no FFmpeg protocol involved. The returned source OWNS
+         * [io] and closes it when it closes. Pre-open [options] behave exactly like the path
+         * overload's. Blocking, like every open here: call it off the UI thread, and expect
+         * [io]'s own read latency to shape the open time.
+         */
+        @Throws(FFmpegException::class)
+        public fun open(io: MediaByteSource, options: Map<String, String> = emptyMap()): MediaSource
     }
 }

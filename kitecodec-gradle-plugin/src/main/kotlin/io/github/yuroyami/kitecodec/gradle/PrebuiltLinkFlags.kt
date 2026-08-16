@@ -53,6 +53,9 @@ internal object PrebuiltLinkFlags {
             // Platform basics, from the OS/SDK rather than the zip.
             add("-lz")
             add("-lbz2")
+            // The wide read profile compiled the tiff decoder, whose LZMA strips resolve from
+            // the SDK's liblzma rather than the zip (drift caught 2026-08-16).
+            add("-llzma")
             if (isMacos) {
                 add("-liconv")
                 // harfbuzz is C++ (as is x265), and harfbuzz's CoreText backend plus FFmpeg's

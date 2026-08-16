@@ -60,5 +60,9 @@ public actual class MediaSource private constructor() : AutoCloseable {
         @Throws(FFmpegException::class)
         public actual fun open(path: String, options: Map<String, String>): MediaSource =
             placeholderBackendUnavailable("Opening media")
+
+        @Throws(FFmpegException::class)
+        public actual fun open(io: MediaByteSource, options: Map<String, String>): MediaSource =
+            placeholderBackendUnavailable("Opening media")
     }
 }
