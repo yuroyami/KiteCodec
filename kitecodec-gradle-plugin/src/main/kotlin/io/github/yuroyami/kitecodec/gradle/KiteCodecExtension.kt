@@ -71,6 +71,16 @@ abstract class FFmpegSpec {
     abstract val dav1d: Property<Boolean>
 
     /**
+     * Opt into linking the libass rendering chain (libass, harfbuzz, freetype, fribidi) from
+     * the local tree's `deps/<target>/ass-chain` installs, which KiteCodec's
+     * `:kitecodec-core:buildAssChainFor<Target>` tasks produce (default false). This is what
+     * the OPTIONAL `kiteplayer-libass` module links against; without the toggle not one chain
+     * byte reaches a binary. Requires [FFmpegSource.Local]; the chain has no prebuilt or
+     * system flavour.
+     */
+    abstract val libass: Property<Boolean>
+
+    /**
      * Pinned SHA-256 checksums, keyed by Release asset name (for example
      * `"ffmpeg-n8.0-lgpl-macos-arm64.zip"`). When an asset has a pinned value it is authoritative:
      * the `.sha256` file published next to the asset is ignored, and a download that does not match

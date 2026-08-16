@@ -43,6 +43,7 @@ class KiteCodecPlugin : Plugin<Project> {
         ext.ffmpeg.version.convention(DEFAULT_FFMPEG_VERSION)
         ext.ffmpeg.source.convention(FFmpegSource.Prebuilt)
         ext.ffmpeg.dav1d.convention(false)
+        ext.ffmpeg.libass.convention(false)
         // license has NO convention on purpose: the flavor decides the consumer's legal obligations,
         // so they must pick one themselves. Validated in validateLicenseChoice() after evaluation.
         ext.ffmpeg.repo.convention(DEFAULT_RELEASE_REPO)
@@ -411,6 +412,35 @@ class KiteCodecPlugin : Plugin<Project> {
                     }
                 }
                 if (dav1dArchive.exists()) binary.linkerOpts("-ldav1d")
+                // The libass chain toggle (phase L, decision D-7): links the OPTIONAL rendering
+                // chain from the local tree's deps installs. Local-only by construction; the
+                // check makes a missing chain a sentence, not a page of undefined symbols.
+                if (ext.ffmpeg.libass.get()) {
+                    check(source.get() == FFmpegSource.Local) {
+                        "kitecodec: ffmpeg.libass = true requires FFmpegSource.Local; the chain " +
+                            "has no prebuilt or system flavour."
+                    }
+                    val chainLib = ext.ffmpeg.localRoot.asFile.get()
+                        .resolve("deps/${triple.triple}/ass-chain/lib")
+                    check(chainLib.resolve("libass.a").isFile) {
+                        "kitecodec: ffmpeg.libass = true, but ${chainLib}/libass.a does not exist. " +
+                            "Run KiteCodec's :kitecodec-core:buildAssChainFor<Target> first."
+                    }
+                    binary.linkerOpts(
+                        "-L${chainLib.absolutePath}",
+                        "-lass", "-lharfbuzz", "-lfreetype", "-lfribidi", "-lz", "-lc++",
+                    )
+                    if (triple in IOS_TARGETS || triple == KiteCodecTarget.MacosArm64 || triple == KiteCodecTarget.MacosX64) {
+                        // CoreText is the chain's font provider on Apple; Android provides
+                        // fonts at runtime and needs no framework.
+                        binary.linkerOpts(
+                            "-liconv",
+                            "-framework", "CoreText",
+                            "-framework", "CoreFoundation",
+                            "-framework", "CoreGraphics",
+                        )
+                    }
+                }
                 if (source.get() == FFmpegSource.Local) {
                     if (triple == KiteCodecTarget.MacosArm64 || triple == KiteCodecTarget.MacosX64) {
                         val defaultPrefix = if (triple == KiteCodecTarget.MacosArm64) "/opt/homebrew" else "/usr/local"

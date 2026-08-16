@@ -553,14 +553,22 @@ class KiteCodecPluginFunctionalTest {
                         "-lSvtAv1Enc", "-lvpx", "-laom", "-lopus", "-lmp3lame",
                         "-lwebpmux", "-lwebp", "-lsharpyuv", "-lass", "-lharfbuzz",
                         "-lfreetype", "-lfribidi", "-lpng16", "-lgraphite2", "-lz", "-lbz2",
-                        "-liconv", "-lc++", "-framework", "CoreGraphics", "-framework", "CoreText",
+                        "-llzma", "-liconv", "-lc++", "-framework", "CoreGraphics", "-framework", "CoreText",
                         "-framework", "CoreFoundation", "-framework", "CoreMedia", "-framework",
                         "CoreVideo", "-framework", "VideoToolbox", "-framework", "AudioToolbox",
                     ).joinToString(" "),
                 mac,
             )
-            assertEquals("ios=-L$localPath/lgpl/ios-arm64/lib -lz", ios)
-            assertEquals("sim=-L$localPath/lgpl/ios-simulator-arm64/lib -lz", sim)
+            assertEquals(
+                "ios=-L$localPath/lgpl/ios-arm64/lib -lz -framework CoreFoundation -framework CoreMedia " +
+                    "-framework CoreVideo -framework VideoToolbox",
+                ios,
+            )
+            assertEquals(
+                "sim=-L$localPath/lgpl/ios-simulator-arm64/lib -lz -framework CoreFoundation -framework CoreMedia " +
+                    "-framework CoreVideo -framework VideoToolbox",
+                sim,
+            )
             assertTrue("fetchFFmpeg" !in result.output, "Local source must execute no fetch task: ${result.output}")
         } finally {
             projectDir.deleteRecursively()
@@ -619,7 +627,7 @@ class KiteCodecPluginFunctionalTest {
                     listOf(
                         "-lSvtAv1Enc", "-lvpx", "-laom", "-lopus", "-lmp3lame",
                         "-lwebpmux", "-lwebp", "-lsharpyuv", "-lass", "-lharfbuzz",
-                        "-lfreetype", "-lfribidi", "-lpng16", "-lgraphite2", "-lz", "-lbz2",
+                        "-lfreetype", "-lfribidi", "-lpng16", "-lgraphite2", "-lz", "-lbz2", "-llzma",
                     ).joinToString(" "),
                 result.output.lineSequence().firstOrNull { it.startsWith("linux=") },
             )

@@ -632,7 +632,7 @@ fun registerBuildDav1d(triple: TargetTriple) =
         target = triple
         sourceRef = io.github.yuroyami.kitecodec.buildtools.BuildDav1dTask.DEFAULT_SOURCE_REF
         sourceDir.set(rootDir.resolve("vendor/dav1d"))
-        outputDir.set(rootDir.resolve("native-libs/deps/${triple.dirName}"))
+        outputDir.set(rootDir.resolve("native-libs/deps/${triple.dirName}/dav1d"))
     }
 
 setOf(
@@ -640,6 +640,23 @@ setOf(
     TargetTriple.AndroidArm64, TargetTriple.AndroidX64,
     TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64,
 ).forEach { registerBuildDav1d(it) }
+
+// Register the :buildAssChainFor<Target> tasks (phase L, owner-pulled 2026-08-16): the libass
+// rendering chain into native-libs/deps/<target>/ass-chain, consumed by kiteplayer-libass and
+// the plugin's libass toggle, never by a default artifact.
+fun registerBuildAssChain(triple: TargetTriple) =
+    tasks.register<io.github.yuroyami.kitecodec.buildtools.BuildAssChainTask>("buildAssChainFor${triple.gradleSuffix}") {
+        target = triple
+        sourceRefs = io.github.yuroyami.kitecodec.buildtools.BuildAssChainTask.DEFAULT_SOURCE_REFS
+        vendorDir.set(rootDir.resolve("vendor"))
+        outputDir.set(rootDir.resolve("native-libs/deps/${triple.dirName}/ass-chain"))
+    }
+
+setOf(
+    TargetTriple.MacosArm64,
+    TargetTriple.AndroidArm64, TargetTriple.AndroidX64,
+    TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64,
+).forEach { registerBuildAssChain(it) }
 
 TargetTriple.entries.forEach { triple ->
     // LGPL flavour for every target (the default).

@@ -258,9 +258,9 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
     /** The cross-built dav1d install for [target], or null when the switch is off. */
     private fun dav1dRootOrNull(target: TargetTriple): File? {
         if (!enableDav1d.getOrElse(false)) return null
-        val root = outputDir.get().asFile.parentFile.parentFile.resolve("deps/${target.dirName}")
+        val root = outputDir.get().asFile.parentFile.parentFile.resolve("deps/${target.dirName}/dav1d")
         require(root.resolve("lib/libdav1d.a").isFile) {
-            "dav1d was requested but native-libs/deps/${target.dirName}/lib/libdav1d.a does not " +
+            "dav1d was requested but native-libs/deps/${target.dirName}/dav1d/lib/libdav1d.a does not " +
                 "exist. Run :kitecodec-core:buildDav1dFor${target.gradleSuffix} first."
         }
         return root
@@ -321,8 +321,8 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
 
     /** Where the host package manager keeps the static archives, most specific first. */
     private fun thirdPartySearchDirs(target: TargetTriple): List<File> = listOfNotNull(
-        // The cross-built deps tree first: a bundled dav1d must win over any host copy.
-        outputDir.get().asFile.parentFile.parentFile.resolve("deps/${target.dirName}/lib")
+        // The cross-built deps trees first: a bundled dav1d must win over any host copy.
+        outputDir.get().asFile.parentFile.parentFile.resolve("deps/${target.dirName}/dav1d/lib")
             .takeIf { enableDav1d.getOrElse(false) },
     ) + when (target) {
         TargetTriple.MacosArm64, TargetTriple.MacosX64 -> {
