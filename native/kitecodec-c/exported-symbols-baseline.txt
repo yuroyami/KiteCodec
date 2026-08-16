@@ -89,6 +89,7 @@ ffkmp_fmt_duration
 ffkmp_fmt_find_stream_info
 ffkmp_fmt_free_output
 ffkmp_fmt_iformat_name
+ffkmp_fmt_io_opaque
 ffkmp_fmt_io_open
 ffkmp_fmt_is_seekable
 ffkmp_fmt_metadata
