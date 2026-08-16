@@ -844,7 +844,12 @@ run {
             )
             extraIncludeDirs.set(emptyList())
             libSearchDirs.set(emptyList())
-            linkFlags.set(LinkKiteCodecJniTask.androidLinkFlags(arm))
+            linkFlags.set(
+                LinkKiteCodecJniTask.androidLinkFlags(
+                    arm,
+                    dav1d = rootDir.resolve("native-libs/lgpl/${arm.ffmpegDirName}/lib/libdav1d.a").exists(),
+                ),
+            )
             exportControlFile.set(jniDir.resolve("exports.map"))
             exportControlKind.set(LinkKiteCodecJniTask.ExportControlKind.ELF_VERSION_SCRIPT)
             outputDirectory.set(layout.buildDirectory.dir("kitecodec-jni/${arm.ffmpegDirName}"))

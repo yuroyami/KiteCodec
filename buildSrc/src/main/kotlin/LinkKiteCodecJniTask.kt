@@ -287,10 +287,13 @@ abstract class LinkKiteCodecJniTask @Inject constructor(
             ),
         )
 
-        /** The exact S1.c.1 Android link recipe after the objects and opaque helper archive. */
-        fun androidLinkFlags(recipe: AndroidAbiRecipe): List<String> = listOf(
+        /** The exact S1.c.1 Android link recipe after the objects and opaque helper archive.
+         *  [dav1d] follows the tree-presence truth: true exactly when the vendored tree
+         *  bundles libdav1d.a (the D-7 switch), which libavcodec then draws symbols from. */
+        fun androidLinkFlags(recipe: AndroidAbiRecipe, dav1d: Boolean = false): List<String> = listOf(
             "--target=${recipe.ndkTarget}",
             "-lavformat", "-lavcodec", "-lavfilter", "-lavutil", "-lswscale", "-lswresample",
+        ) + (if (dav1d) listOf("-ldav1d") else emptyList()) + listOf(
             "-lmediandk", "-landroid", "-llog", "-lz", "-ldl", "-lm",
             "-Wl,-z,defs", "-Wl,-z,noexecstack", "-Wl,-z,relro", "-Wl,-z,now",
             "-Wl,--gc-sections", "-Wl,--exclude-libs,ALL",
