@@ -291,9 +291,15 @@ abstract class BuildAssChainTask : DefaultTask() {
             val prefix = if (target == TargetTriple.AndroidArm64) "aarch64-linux-android" else "x86_64-linux-android"
             val cc = bin.resolve("$prefix${BuildFFmpegTask.ANDROID_API}-clang")
             require(cc.exists()) { "NDK compiler not found: $cc" }
+            // -fPIC is not optional on Android and the meson members already get it by default
+            // (meson's b_staticpic). libass builds through autotools, which does not, and the
+            // omission only surfaces at the far end: its archive links fine into a Kotlin/Native
+            // executable and then refuses to go into a SHARED library, which is exactly what the
+            // JNI adapter needs, with "relocation R_AARCH64_ADR_PREL_PG_HI21 cannot be used
+            // against symbol 'font_cache_desc'".
             mapOf(
-                "CC" to cc.absolutePath,
-                "CXX" to "${cc.absolutePath}++",
+                "CC" to "${cc.absolutePath} -fPIC",
+                "CXX" to "${cc.absolutePath}++ -fPIC",
                 "AR" to bin.resolve("llvm-ar").absolutePath,
                 "RANLIB" to bin.resolve("llvm-ranlib").absolutePath,
                 "STRIP" to bin.resolve("llvm-strip").absolutePath,
