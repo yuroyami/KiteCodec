@@ -677,7 +677,6 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
                     "--arch=arm64", "--target-os=darwin",
                     "--cc=clang -arch arm64 -isysroot $sdk -mios-version-min=14.0",
                     "--enable-cross-compile",
-                    "--disable-asm",
                 )
             }
             TargetTriple.IosSimulatorArm64 -> {
@@ -686,7 +685,6 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
                     "--arch=arm64", "--target-os=darwin",
                     "--cc=clang -arch arm64 -isysroot $sdk -mios-simulator-version-min=14.0",
                     "--enable-cross-compile",
-                    "--disable-asm",
                 )
             }
             TargetTriple.IosX64 -> {
@@ -700,8 +698,25 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
             }
             else -> error("mobileAppleArgs called for non-iOS target $target")
         }
-        return listOf("--disable-autodetect", "--enable-zlib", "--enable-videotoolbox") +
-            appleHwaccelDecodeArgs() + crossArgs
+        // aarch64 asm is ON for the two arm64 iOS targets and stays off for IosX64, for exactly the
+        // reason the Android profile states: x86_64 inline asm needs nasm in the env, arm64 asm does
+        // not and it is what makes software decode fast. The arm64 iOS targets carried
+        // `--disable-asm` for a long time with no recorded reason, which shipped every iPhone a
+        // C-only libavcodec while the macOS tree built from the same clang carried ~1360 NEON
+        // symbols. Measured after the change: ios-arm64 went 0 -> non-zero NEON symbols.
+        //
+        // AudioToolbox is REQUESTED rather than left to autodetect, for the same reason zlib is in
+        // [portableDesktopArgs]: `--disable-autodetect` above means an unasked framework is simply
+        // absent. Without it the iOS trees carried none of the `*_at` decoders the macOS tree gets
+        // for free, so AAC, ALAC and both Dolby formats decoded on the CPU with no platform path
+        // available at all. Enabling the framework compiles the `*_at` decoder class; naming one at
+        // open is the player's decision, not this build's.
+        return listOf(
+            "--disable-autodetect",
+            "--enable-zlib",
+            "--enable-videotoolbox",
+            "--enable-audiotoolbox",
+        ) + appleHwaccelDecodeArgs() + crossArgs
     }
 
     /** Resolves an Apple SDK sysroot via `xcrun`, so the path tracks the installed Xcode. */

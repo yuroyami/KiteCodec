@@ -141,9 +141,45 @@ abstract class BuildDav1dTask : DefaultTask() {
                 endian = 'little'
                 """.trimIndent()
             }
+            // Linux and Windows cross-build with the SAME konan toolchain FFmpeg uses for them
+            // (decision W-D3): konan's clang aimed by -target over the sysroot konan ships. Anything
+            // else can reference a glibc symbol that sysroot lacks, and the failure would land at
+            // link time in a consumer's build. The link args carry -B and the gcc runtime because
+            // meson LINKS a sanity program before it believes the compiler works, which is more
+            // than dav1d's own static archive would ever need.
+            TargetTriple.LinuxX64, TargetTriple.LinuxArm64, TargetTriple.MingwX64 -> {
+                val konan = KonanCross.resolve(target) { logger.lifecycle("[KiteCodec dav1d] $it") }
+                val cpuFamily = when (target) {
+                    TargetTriple.LinuxArm64 -> "aarch64"
+                    else -> "x86_64"
+                }
+                val system = if (target == TargetTriple.MingwX64) "windows" else "linux"
+                // meson probes the linker with `-Wl,--version` before it will believe the
+                // compiler works, so the link flags matter even though dav1d is a static archive.
+                val compileArgs = konan.compileArgs(target)
+                val linkArgs = konan.linkArgs(target)
+                """
+                [binaries]
+                c = '${konan.clang}'
+                ar = '${konan.ar}'
+                strip = 'true'
+
+                [built-in options]
+                c_args = [${compileArgs.joinToString { "'$it'" }}]
+                c_link_args = [${linkArgs.joinToString { "'$it'" }}]
+
+                [host_machine]
+                system = '$system'
+                cpu_family = '$cpuFamily'
+                cpu = '$cpuFamily'
+                endian = 'little'
+                """.trimIndent()
+            }
             else -> throw GradleException(
-                "BuildDav1dTask supports macOS arm64, Android arm64/x64 and iOS arm64/simulator today; " +
-                    "$target needs its cross file written first.",
+                "BuildDav1dTask has no cross file for $target. Supported: $SUPPORTED_TARGETS. " +
+                    "wasm32 is deliberately absent and is not a TargetTriple: dav1d needs pthreads " +
+                    "(its meson.build takes dependency('threads') on every non-Windows host), while " +
+                    "the shipped wasm profile is the single-threaded 'base' variant.",
             )
         }
         val file = scratch.resolve("cross-${target.dirName}.txt")
@@ -194,5 +230,23 @@ abstract class BuildDav1dTask : DefaultTask() {
     companion object {
         /** The dav1d release this repo builds by default; mpv-android ships the same series. */
         const val DEFAULT_SOURCE_REF = "1.5.4"
+
+        /**
+         * Every target this task can write a cross file for, and therefore every target
+         * `:kitecodec-core` may register a `buildDav1dFor<Target>` task for.
+         *
+         * ONE list, read by both the registration in `kitecodec-core/build.gradle.kts` and the
+         * refusal above, because the two drifting apart produces the worst shape of this bug: a
+         * task that exists, runs, and dies on "needs its cross file written first".
+         *
+         * wasm32 is absent by nature rather than by omission: it is not a [TargetTriple] at all,
+         * and dav1d could not join the shipped wasm profile anyway (see the refusal message).
+         */
+        val SUPPORTED_TARGETS: Set<TargetTriple> = setOf(
+            TargetTriple.MacosArm64,
+            TargetTriple.AndroidArm64, TargetTriple.AndroidX64,
+            TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64,
+            TargetTriple.LinuxX64, TargetTriple.LinuxArm64, TargetTriple.MingwX64,
+        )
     }
 }

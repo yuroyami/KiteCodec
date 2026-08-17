@@ -727,11 +727,11 @@ fun registerBuildDav1d(triple: TargetTriple) =
         outputDir.set(rootDir.resolve("native-libs/deps/${triple.dirName}/dav1d"))
     }
 
-setOf(
-    TargetTriple.MacosArm64,
-    TargetTriple.AndroidArm64, TargetTriple.AndroidX64,
-    TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64,
-).forEach { registerBuildDav1d(it) }
+// Linux and Windows joined the set when KC-AV1SW went from "demand-driven" to demanded: AV1 files
+// reach a desktop as often as a phone, and neither tree compiles a single hwaccel, so without dav1d
+// their AV1 route is the typed refusal and nothing else. The set lives on the task so the tasks
+// registered and the cross files written can never disagree.
+io.github.yuroyami.kitecodec.buildtools.BuildDav1dTask.SUPPORTED_TARGETS.forEach { registerBuildDav1d(it) }
 
 // Register the :buildAssChainFor<Target> tasks (phase L, owner-pulled 2026-08-16): the libass
 // rendering chain into native-libs/deps/<target>/ass-chain, consumed by kiteplayer-libass and
@@ -744,11 +744,7 @@ fun registerBuildAssChain(triple: TargetTriple) =
         outputDir.set(rootDir.resolve("native-libs/deps/${triple.dirName}/ass-chain"))
     }
 
-setOf(
-    TargetTriple.MacosArm64,
-    TargetTriple.AndroidArm64, TargetTriple.AndroidX64,
-    TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64,
-).forEach { registerBuildAssChain(it) }
+io.github.yuroyami.kitecodec.buildtools.BuildAssChainTask.SUPPORTED_TARGETS.forEach { registerBuildAssChain(it) }
 
 TargetTriple.entries.forEach { triple ->
     // LGPL flavour for every target (the default).

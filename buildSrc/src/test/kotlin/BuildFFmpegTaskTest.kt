@@ -87,17 +87,22 @@ class BuildFFmpegTaskTest {
         // VideoToolbox DECODE (KPKMP 17.4.8 S2.a) is on for every Apple target, simulator
         // included. The hwaccel line is a PIN: it keeps the two hwaccels D-2 needs even if the
         // wide class policy ever changes.
+        //
+        // Two more things this golden pins, both added when the parity audit found them missing:
+        // AudioToolbox must be REQUESTED (autodetect is off, so an unasked framework is absent and
+        // the `*_at` decoder class never compiles), and NO `--disable-asm` may appear on an arm64
+        // iOS target, because that flag is what built every iPhone a C-only libavcodec.
         assertEquals(
             expectedSharedCoreArguments() + listOf(
                 "--disable-autodetect",
                 "--enable-zlib",
                 "--enable-videotoolbox",
+                "--enable-audiotoolbox",
                 "--enable-hwaccel=h264_videotoolbox,hevc_videotoolbox",
                 "--arch=arm64",
                 "--target-os=darwin",
                 "--cc=clang -arch arm64 -isysroot /SDK/iphoneos -mios-version-min=14.0",
                 "--enable-cross-compile",
-                "--disable-asm",
                 "--prefix=/scratch/install",
             ),
             device,
@@ -107,12 +112,12 @@ class BuildFFmpegTaskTest {
                 "--disable-autodetect",
                 "--enable-zlib",
                 "--enable-videotoolbox",
+                "--enable-audiotoolbox",
                 "--enable-hwaccel=h264_videotoolbox,hevc_videotoolbox",
                 "--arch=arm64",
                 "--target-os=darwin",
                 "--cc=clang -arch arm64 -isysroot /SDK/iphonesimulator -mios-simulator-version-min=14.0",
                 "--enable-cross-compile",
-                "--disable-asm",
                 "--prefix=/scratch/install",
             ),
             simulator,
@@ -127,6 +132,40 @@ class BuildFFmpegTaskTest {
             )
         }
         assertEquals(IOS_GPL_REFUSAL, refusal.message)
+    }
+
+    /**
+     * The asm law, stated as a law rather than left to the goldens above.
+     *
+     * Every arm64 target this project builds must carry aarch64 asm: it is the single biggest lever
+     * on software decode speed, and nothing about a cross-compile to iOS requires giving it up. Only
+     * the x86_64 targets may opt out, because their inline asm needs nasm in the environment.
+     */
+    @Test
+    fun onlyX8664TargetsMayDisableAsm() {
+        val task = ProjectBuilder.builder().build().tasks.create("ffmpeg", BuildFFmpegTask::class.java)
+        task.hostPrefix.set("/host")
+
+        listOf(TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64).forEach { target ->
+            val args = task.configureArguments(
+                target = target,
+                license = FFmpegLicense.LGPL,
+                installPrefix = "/scratch/install",
+                sdkPath = { "/SDK/${it}" },
+            )
+            assertFalse("--disable-asm" in args, "$target must build with aarch64 asm")
+            assertTrue("--enable-audiotoolbox" in args, "$target must request AudioToolbox")
+        }
+
+        // IosX64 keeps the opt-out, and keeps it for the stated nasm reason.
+        assertTrue(
+            "--disable-asm" in task.configureArguments(
+                target = TargetTriple.IosX64,
+                license = FFmpegLicense.LGPL,
+                installPrefix = "/scratch/install",
+                sdkPath = { "/SDK/${it}" },
+            ),
+        )
     }
 
     @Test
@@ -287,6 +326,39 @@ class BuildFFmpegTaskTest {
         assertEquals(
             "-ldav1d",
             StaticLinkFlags.forTarget(TargetTriple.MacosArm64, FFmpegLicense.LGPL, isStaticVendored = true, dav1d = true).first(),
+        )
+        // Linux and Windows joined the dav1d set later than the phones and are the targets with the
+        // most to gain: they compile no hwaccel at all, so dav1d is their ONLY AV1 route.
+        listOf(TargetTriple.LinuxX64, TargetTriple.LinuxArm64, TargetTriple.MingwX64).forEach { target ->
+            assertTrue(
+                "libdav1d.a" in StaticLinkFlags.thirdPartyArchives(target, FFmpegLicense.LGPL, dav1d = true),
+                "$target must bundle libdav1d.a when asked",
+            )
+            assertEquals(
+                "-ldav1d",
+                StaticLinkFlags.forTarget(target, FFmpegLicense.LGPL, isStaticVendored = true, dav1d = true).first(),
+                "$target must name -ldav1d first, before anything that draws from it",
+            )
+        }
+    }
+
+    /**
+     * The registered tasks and the writable cross files are ONE list.
+     *
+     * Guards the shape of bug where a target is registered, runs, and dies telling the caller its
+     * cross file "needs writing first". wasm32 is absent on purpose and cannot be in this set: it is
+     * not a TargetTriple, and dav1d needs pthreads while the shipped wasm profile is single-threaded.
+     */
+    @Test
+    fun dav1dSupportsExactlyTheTargetsItRegisters() {
+        assertEquals(
+            setOf(
+                TargetTriple.MacosArm64,
+                TargetTriple.AndroidArm64, TargetTriple.AndroidX64,
+                TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64,
+                TargetTriple.LinuxX64, TargetTriple.LinuxArm64, TargetTriple.MingwX64,
+            ),
+            BuildDav1dTask.SUPPORTED_TARGETS,
         )
     }
 

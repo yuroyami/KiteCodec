@@ -69,7 +69,7 @@ abstract class BuildAssChainTask : DefaultTask() {
 
             fun mesonBuild(name: String, options: List<String>) {
                 val source = scratch.resolve("src-$name")
-                vendor.resolve(name).copyRecursively(source, overwrite = true)
+                copyTreeKeepingExecutableBits(vendor.resolve(name), source)
                 val build = scratch.resolve("build-$name")
                 val setup = mutableListOf(
                     meson, "setup", build.absolutePath, source.absolutePath,
@@ -88,14 +88,22 @@ abstract class BuildAssChainTask : DefaultTask() {
                 runIn(build, listOf(ninja, "install"), env)
             }
 
-            mesonBuild("fribidi", listOf("-Ddocs=false", "-Dtests=false"))
+            // -Dbin=false: fribidi's command-line tools are no use to a static chain anywhere, and
+            // on mingw they are actively fatal, failing to link `fribidi.exe` and taking the whole
+            // build with them long after libfribidi.a itself was fine.
+            mesonBuild("fribidi", listOf("-Ddocs=false", "-Dtests=false", "-Dbin=false"))
             // freetype first WITHOUT harfbuzz: the two reference each other, and libass'
             // shaping needs harfbuzz-with-freetype, not the reverse.
             mesonBuild(
                 "freetype",
                 listOf(
                     "-Dharfbuzz=disabled", "-Dbrotli=disabled", "-Dbzip2=disabled",
-                    "-Dpng=disabled", "-Dzlib=system", "-Dtests=disabled",
+                    "-Dpng=disabled", "-Dtests=disabled",
+                    // mingw takes freetype's own bundled zlib. The system one is present in the
+                    // msys2 package, but meson resolves it to a WRAPDB SUBPROJECT that ships its
+                    // own `zlib1.rc`, which drags a second file through the resource compiler for
+                    // no gain. 'internal' is freetype's vendored copy and needs neither.
+                    if (target == TargetTriple.MingwX64) "-Dzlib=internal" else "-Dzlib=system",
                 ),
             )
             mesonBuild(
@@ -136,7 +144,7 @@ abstract class BuildAssChainTask : DefaultTask() {
         env: Map<String, String>,
     ) {
         val source = scratch.resolve("src-libass")
-        vendor.resolve("libass").copyRecursively(source, overwrite = true)
+        copyTreeKeepingExecutableBits(vendor.resolve("libass"), source)
         val fullEnv = env + toolchainEnv(target)
         runIn(source, listOf("autoreconf", "-ivf"), fullEnv)
         val configure = mutableListOf(
@@ -145,8 +153,10 @@ abstract class BuildAssChainTask : DefaultTask() {
             "--enable-static", "--disable-shared",
             "--disable-fontconfig",
         )
-        if (target.isAndroid) {
-            // No system font provider exists on Android; fonts arrive through ass_add_font.
+        if (target.isAndroid || target.isPortableDesktop) {
+            // No system font provider is reachable here. On Android fonts arrive through
+            // ass_add_font, and the Linux/Windows chain deliberately carries no fontconfig
+            // (see the class KDoc), so the same escape hatch applies for the same reason.
             configure += "--disable-require-system-font-provider"
         }
         hostTripleFor(target)?.let { configure += "--host=$it" }
@@ -154,6 +164,78 @@ abstract class BuildAssChainTask : DefaultTask() {
         runIn(build, configure, fullEnv)
         runIn(build, listOf("make", "-j${Runtime.getRuntime().availableProcessors()}"), fullEnv)
         runIn(build, listOf("make", "install"), fullEnv)
+    }
+
+    /**
+     * The resource compiler behind a two-line script that hands it the mingw headers.
+     *
+     * `windows.compile_resources()` passes meson's own arguments and nothing of `c_args`, so the
+     * resource compiler runs its preprocessor with no include path and dies on `windows.h`. Meson
+     * offers no cross-file knob for this, so the include path is baked into the binary it is told
+     * to use, which is a wrapper rather than a lie about what the compiler is.
+     */
+    private fun windresWrapper(scratch: File, sysroot: String): String {
+        val real = windresOrThrow()
+        // clang's mingw driver finds the Windows headers on its own; windres does not. The
+        // directory is SEARCHED rather than composed from the triple, because the two spellings
+        // disagree: clang calls this target `x86_64-pc-windows-gnu` while the msys2 package lays
+        // its headers out under the GNU spelling `x86_64-w64-mingw32`.
+        val root = File(sysroot)
+        val includeDir = sequenceOf(root.resolve("include"))
+            .plus(root.listFiles().orEmpty().asSequence().filter { it.isDirectory }.map { it.resolve("include") })
+            .firstOrNull { it.resolve("windows.h").isFile }
+            ?: throw GradleException("No windows.h under $sysroot; cannot preprocess resources.")
+        val script = scratch.resolve("windres-with-includes.sh")
+        script.writeText(
+            "#!/bin/sh\nexec \"$real\" --include-dir \"${includeDir.absolutePath}\" \"$@\"\n",
+        )
+        script.setExecutable(true)
+        return script.absolutePath
+    }
+
+    /**
+     * A GNU-windres-compatible resource compiler, for the one target that needs one.
+     *
+     * konan's LLVM is the "essentials" set and ships none, and the msys2 package's own binaries are
+     * Windows PE and cannot run on this host. `llvm-windres` from an Android NDK is the copy most
+     * likely to already exist on a machine that builds this project; it is a thin GNU-compatible
+     * wrapper over llvm-rc, which is exactly the interface meson drives.
+     */
+    private fun windresOrThrow(): String {
+        which("llvm-windres")?.let { return it }
+        which("windres")?.let { return it }
+        val candidates = listOfNotNull(
+            runCatching { ndkToolchainBin() }.getOrNull(),
+            File("/opt/homebrew/opt/llvm/bin"),
+            File("/usr/local/opt/llvm/bin"),
+        )
+        candidates.forEach { dir ->
+            listOf("llvm-windres", "windres").forEach { name ->
+                dir.resolve(name).takeIf { it.canExecute() }?.let { return it.absolutePath }
+            }
+        }
+        throw GradleException(
+            "No Windows resource compiler found, and mingw-x64 needs one: freetype compiles " +
+                "ftver.rc for every windows host. Put `llvm-windres` on PATH (an Android NDK's " +
+                "llvm toolchain ships one, so does Homebrew's llvm formula).",
+        )
+    }
+
+    /**
+     * Copies a checkout into the scratch tree WITH its executable bits intact.
+     *
+     * `File.copyRecursively` drops permissions, which stays invisible until a build actually
+     * executes one of the copied files. libass is where it surfaces: its x86 assembly path runs
+     * `ltnasm.sh` through libtool and dies with "Permission denied". Nothing caught this before
+     * because no x86 chain target had ever been built here; the Apple and Android arm64 targets
+     * never enter `libass/x86` at all.
+     */
+    private fun copyTreeKeepingExecutableBits(from: File, to: File) {
+        from.copyRecursively(to, overwrite = true)
+        from.walkTopDown().forEach { original ->
+            if (!original.isFile || !original.canExecute()) return@forEach
+            to.resolve(original.relativeTo(from).path).setExecutable(true)
+        }
     }
 
     /** CC/CXX/AR/RANLIB for autotools cross builds; empty for the host. */
@@ -182,6 +264,25 @@ abstract class BuildAssChainTask : DefaultTask() {
                 "CXX" to "clang++ $flags",
             )
         }
+        // Linux and Windows use the SAME konan toolchain FFmpeg and dav1d use for them (W-D3), so
+        // libass links against the libc its neighbours in the final binary were built against.
+        // -fuse-ld=lld is as mandatory here as everywhere else: autoconf link-probes a program
+        // before it believes the compiler exists, and Apple's ld cannot link ELF or PE.
+        TargetTriple.LinuxX64, TargetTriple.LinuxArm64, TargetTriple.MingwX64 -> {
+            val konan = KonanCross.resolve(target) { logger.lifecycle("[KiteCodec ass-chain] $it") }
+            val common = "-target ${konan.triple} --sysroot=${konan.sysroot}" +
+                (if (target == TargetTriple.MingwX64) " -std=gnu11" else "")
+            val link = "-fuse-ld=lld -B${konan.toolchainBin}" +
+                (konan.runtimeDir?.let { " -B$it -L$it" } ?: "")
+            mapOf(
+                "CC" to "${konan.clang} $common $link",
+                // The C++ half is harfbuzz's, and it reaches this env only through libass'
+                // configure; the chain's own C++ came out of the meson builds above.
+                "CXX" to "${konan.clang}++ $common $link",
+                "AR" to konan.ar,
+                "RANLIB" to "${konan.ar} s",
+            )
+        }
         else -> throw GradleException("BuildAssChainTask has no toolchain for $target yet.")
     }
 
@@ -190,6 +291,9 @@ abstract class BuildAssChainTask : DefaultTask() {
         TargetTriple.AndroidArm64 -> "aarch64-linux-android"
         TargetTriple.AndroidX64 -> "x86_64-linux-android"
         TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64 -> "arm64-apple-darwin"
+        TargetTriple.LinuxX64 -> "x86_64-unknown-linux-gnu"
+        TargetTriple.LinuxArm64 -> "aarch64-unknown-linux-gnu"
+        TargetTriple.MingwX64 -> "x86_64-w64-mingw32"
         else -> null
     }
 
@@ -245,6 +349,48 @@ abstract class BuildAssChainTask : DefaultTask() {
                 endian = 'little'
                 """.trimIndent()
             }
+            TargetTriple.LinuxX64, TargetTriple.LinuxArm64, TargetTriple.MingwX64 -> {
+                val konan = KonanCross.resolve(target) { logger.lifecycle("[KiteCodec ass-chain] $it") }
+                val cpuFamily = if (target == TargetTriple.LinuxArm64) "aarch64" else "x86_64"
+                val system = if (target == TargetTriple.MingwX64) "windows" else "linux"
+                val compileArgs = konan.compileArgs(target)
+                val linkArgs = konan.linkArgs(target)
+                // pkg-config MUST be named here. In a cross build meson resolves host-machine
+                // dependencies through a HOST-machine pkg-config, and with none declared it reports
+                // "Found pkg-config: NO" and then fails harfbuzz on a freetype2 that was installed
+                // into the chain prefix seconds earlier. The Apple and Android cross files get away
+                // without it; these do not.
+                val pkgConfig = which("pkg-config")
+                    ?: throw GradleException("pkg-config not found. brew install pkg-config")
+                // A Windows resource compiler is required for mingw and for nothing else: freetype
+                // compiles `ftver.rc` whenever the host system is windows, with no option to skip
+                // it, even for the static library this chain actually wants.
+                val windres = if (target == TargetTriple.MingwX64) {
+                    windresWrapper(scratch, konan.sysroot)
+                } else {
+                    null
+                }
+                """
+                [binaries]
+                c = '${konan.clang}'
+                cpp = '${konan.clang}++'
+                ar = '${konan.ar}'
+                strip = 'true'
+                pkg-config = '$pkgConfig'
+${windres?.let { "                windres = '$it'\n" } ?: ""}
+                [built-in options]
+                c_args = [${compileArgs.joinToString { "'$it'" }}]
+                c_link_args = [${linkArgs.joinToString { "'$it'" }}]
+                cpp_args = [${konan.cppCompileArgs(target).joinToString { "'$it'" }}]
+                cpp_link_args = [${konan.cppLinkArgs(target).joinToString { "'$it'" }}]
+
+                [host_machine]
+                system = '$system'
+                cpu_family = '$cpuFamily'
+                cpu = '$cpuFamily'
+                endian = 'little'
+                """.trimIndent()
+            }
             else -> throw GradleException("BuildAssChainTask has no cross file for $target yet.")
         }
         val file = scratch.resolve("cross-${target.dirName}.txt")
@@ -295,6 +441,22 @@ abstract class BuildAssChainTask : DefaultTask() {
     }
 
     companion object {
+        /**
+         * Every target this task can cross-build the chain for, and therefore every target
+         * `:kitecodec-core` may register a `buildAssChainFor<Target>` task for. One list, read by
+         * both the registration and the refusals, so the two can never disagree.
+         *
+         * wasm32 is absent because it is not a [TargetTriple]. Android is PRESENT here and still
+         * absent from `:kiteplayer-libass`: this task produces the chain, and consuming it from
+         * Android additionally needs a JNI bridge that does not exist yet.
+         */
+        val SUPPORTED_TARGETS: Set<TargetTriple> = setOf(
+            TargetTriple.MacosArm64,
+            TargetTriple.AndroidArm64, TargetTriple.AndroidX64,
+            TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64,
+            TargetTriple.LinuxX64, TargetTriple.LinuxArm64, TargetTriple.MingwX64,
+        )
+
         /** The chain this repo builds by default; mpv-android ships the same series. */
         const val DEFAULT_SOURCE_REFS = "fribidi-1.0.16 freetype-2.14.3 harfbuzz-14.2.1 libass-0.17.4"
     }
