@@ -1,0 +1,83 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>KitePlayer web</title>
+<style>
+ html,body{margin:0;height:100%;background:#0b0b0f;color:#ddd;font:13px system-ui}
+ #wrap{display:flex;flex-direction:column;height:100%}
+ canvas{flex:1;min-height:0;width:100%;object-fit:contain;background:#000}
+ #hud{padding:8px 12px;font-variant-numeric:tabular-nums;white-space:pre}
+</style></head>
+<body><div id="wrap"><canvas id="c"></canvas><div id="hud">loading…</div></div>
+<script type="module">
+import factory from "./kite.mjs";
+const hud = document.getElementById("hud");
+const canvas = document.getElementById("c");
+const say = (t) => { hud.textContent = t; };
+try {
+  const M = await factory();
+  const bytes = new Uint8Array(await (await fetch("clip.mp4")).arrayBuffer());
+  let pos = 0;
+  const readFn = M.addFunction((op, buf, len) => {
+    if (pos >= bytes.length) return -541478725;
+    const n = Math.min(len, bytes.length - pos);
+    M.HEAPU8.set(bytes.subarray(pos, pos + n), buf); pos += n; return n;
+  }, "iiii");
+  const seekFn = M.addFunction((op, off, wh) => {
+    const o = Number(off), w = Number(wh);
+    if (w === 0x10000) return BigInt(bytes.length);
+    if (w === 0) pos = o; else if (w === 1) pos += o; else if (w === 2) pos = bytes.length + o; else return -1n;
+    return BigInt(pos);
+  }, "jiji");
+
+  const outPtr = M._malloc(4);
+  if (M._ffkmp_fmt_open_input_io(outPtr, 0, readFn, seekFn, BigInt(bytes.length), 0, 0, 0, 0) < 0) throw new Error("open failed");
+  const ctx = M.HEAPU32[outPtr >> 2];
+  M._ffkmp_fmt_find_stream_info(ctx);
+  const n = M._ffkmp_fmt_nb_streams(ctx);
+  let vi = -1, par = 0;
+  for (let i = 0; i < n; i++) {
+    const p = M._ffkmp_stream_codecpar(M._ffkmp_fmt_stream(ctx, i));
+    if (M._ffkmp_codecpar_codec_type(p) === M._ffkmp_media_type_video()) { vi = i; par = p; break; }
+  }
+  const codec = M._ffkmp_find_decoder_by_id(M._ffkmp_codecpar_codec_id(par));
+  const dec = M._ffkmp_codecctx_alloc(codec);
+  M._ffkmp_codecctx_from_par(dec, par);
+  M._ffkmp_codecctx_open(dec, codec);
+  const W = M._ffkmp_codecpar_width(par), H = M._ffkmp_codecpar_height(par);
+  canvas.width = W; canvas.height = H;
+  const g = canvas.getContext("2d");
+  const rgbaFmt = M.ccall("ffkmp_pix_fmt_from_name", "number", ["string"], ["rgba"]);
+  const size = M._ffkmp_image_get_buffer_size(rgbaFmt, W, H, 1);
+  const buf = M._malloc(size);
+  const image = g.createImageData(W, H);
+  const pkt = M._ffkmp_packet_alloc(), frame = M._ffkmp_frame_alloc();
+
+  let frames = 0, t0 = performance.now(), convMs = 0, drawMs = 0, done = false;
+  function pump() {
+    if (done) return;
+    const deadline = performance.now() + 12;
+    while (performance.now() < deadline) {
+      if (M._ffkmp_fmt_read_frame(ctx, pkt) < 0) { done = true; break; }
+      const isV = M._ffkmp_packet_stream_index(pkt) === vi;
+      if (isV && M._ffkmp_codecctx_send_packet(dec, pkt) >= 0) {
+        while (M._ffkmp_codecctx_receive_frame(dec, frame) >= 0) {
+          const a = performance.now();
+          const conv = M._ffkmp_frame_convert_pixfmt(frame, rgbaFmt);
+          M._ffkmp_frame_copy_to_buffer(conv, buf, size);
+          M._ffkmp_frame_free(conv);
+          const b = performance.now();
+          image.data.set(M.HEAPU8.subarray(buf, buf + size));
+          g.putImageData(image, 0, 0);
+          const c = performance.now();
+          convMs += b - a; drawMs += c - b; frames++;
+        }
+      }
+      M._ffkmp_packet_unref(pkt);
+      if (frames > 0) break;
+    }
+    const secs = (performance.now() - t0) / 1000;
+    say(`frames ${frames}  fps ${(frames/secs).toFixed(1)}  convert ${(convMs/Math.max(frames,1)).toFixed(1)}ms  draw ${(drawMs/Math.max(frames,1)).toFixed(2)}ms  ${W}x${H}` + (done ? "  [end]" : ""));
+    requestAnimationFrame(pump);
+  }
+  requestAnimationFrame(pump);
+} catch (e) { say("ERROR: " + e.message); console.error(e); }
+</script></body></html>
