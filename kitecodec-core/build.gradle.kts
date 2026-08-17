@@ -6,6 +6,8 @@ import io.github.yuroyami.kitecodec.buildtools.BuildFFmpegTask
 import io.github.yuroyami.kitecodec.buildtools.BundleHostJniTask
 import io.github.yuroyami.kitecodec.buildtools.CompareCodecContractTask
 import io.github.yuroyami.kitecodec.buildtools.CompileKiteCodecCTask
+import io.github.yuroyami.kitecodec.buildtools.ExtractJdkHeadersTask
+import io.github.yuroyami.kitecodec.buildtools.konanLinuxTools
 import io.github.yuroyami.kitecodec.buildtools.FFmpegLicense
 import io.github.yuroyami.kitecodec.buildtools.FFmpegPaths
 import io.github.yuroyami.kitecodec.buildtools.StaticLinkFlags
@@ -1075,13 +1077,118 @@ run {
     val osArch = System.getProperty("os.arch").orEmpty().lowercase()
     val hostIsArm64Mac = "mac" in osName && osArch in setOf("aarch64", "arm64")
     if (hostIsArm64Mac && hostFfmpegLib.isDirectory) {
+        // The Linux JNI libraries (W-16). Opt in with -Pkitecodec.jni.linux=true, because they need
+        // a running Docker daemon for the JDK headers and a cross-built FFmpeg tree, and an
+        // ordinary build must need neither. Each writes into the same resource root under its own
+        // platform directory, so processResources merges them without knowing how many there are.
+        val linuxJniStages = if (
+            providers.gradleProperty("kitecodec.jni.linux").orNull == "true"
+        ) {
+            val jniDir = rootDir.resolve("native/kitecodec-jni")
+            val opaqueInclude = rootDir.resolve("native/kitecodec-c/include")
+            val konanDataDirProvider = providers.environmentVariable("KONAN_DATA_DIR")
+                .orElse(providers.systemProperty("user.home").map { home -> "$home/.konan" })
+                .map(::File)
+            listOf(
+                Triple("linux-arm64", "linux_arm64", "linux/arm64"),
+                Triple("linux-x64", "linux_x64", "linux/amd64"),
+            ).mapNotNull { (dirName, konanTarget, containerPlatform) ->
+                val ffmpegRoot = rootDir.resolve("native-libs/lgpl/$dirName")
+                if (!ffmpegRoot.resolve("lib").isDirectory) {
+                    logger.lifecycle(
+                        "[KiteCodec] skipping the $dirName JNI library: no FFmpeg tree at " +
+                            "$ffmpegRoot. Run :kitecodec-core:buildFFmpegFor${dirName.split("-")
+                                .joinToString("") { part -> part.replaceFirstChar(Char::uppercase) }} first.",
+                    )
+                    return@mapNotNull null
+                }
+                val headers = tasks.register<ExtractJdkHeadersTask>(
+                    "extractJdkHeadersFor${konanTarget.replaceFirstChar(Char::uppercase)}",
+                ) {
+                    image.set("eclipse-temurin:21-jdk")
+                    platform.set(containerPlatform)
+                    outputDir.set(layout.buildDirectory.dir("jdk-headers/$konanTarget"))
+                }
+                val helper = tasks.register<CompileKiteCodecCTask>(
+                    "compileKiteCodecCFor${konanTarget.replaceFirstChar(Char::uppercase)}Jni",
+                ) {
+                    konanTargetName.set(konanTarget)
+                    sourceDir.set(rootDir.resolve("native/kitecodec-c/src"))
+                    includeDir.set(opaqueInclude)
+                    ffmpegIncludeDirs.set(listOf(ffmpegRoot.resolve("include").absolutePath))
+                    buildDefines.set(
+                        mapOf(
+                            CompileKiteCodecCTask.DEFINE_FFMPEG_REF to BuildFFmpegTask.DEFAULT_SOURCE_REF,
+                            CompileKiteCodecCTask.DEFINE_FFMPEG_LICENSE to FFmpegLicense.LGPL.dirName,
+                            CompileKiteCodecCTask.DEFINE_FFMPEG_DIR to ffmpegRoot.resolve("lib").absolutePath,
+                        ),
+                    )
+                    konanDataDir.fileProvider(konanDataDirProvider)
+                    outputDir.set(layout.buildDirectory.dir("kitecodec-c-jni/$konanTarget"))
+                }
+                val link = tasks.register<LinkKiteCodecJniTask>(
+                    "linkKiteCodecJni${konanTarget.split("_")
+                        .joinToString("") { part -> part.replaceFirstChar(Char::uppercase) }}",
+                ) {
+                    group = "kitecodec"
+                    description = "Links libkitecodec_jni.so for $dirName."
+                    jniSources.from(fileTree(jniDir) { include("*.c", "*.h", "methods.def") })
+                    opaqueIncludeDir.set(opaqueInclude)
+                    dependsOn(helper, headers)
+                    helperArchive.from(
+                        helper.flatMap { it.outputDir.file(CompileKiteCodecCTask.ARCHIVE_NAME) },
+                    )
+                    ffmpegLibDir.set(ffmpegRoot.resolve("lib"))
+                    val tools = konanLinuxTools(konanTarget)
+                    compiler.set(tools.clang)
+                    extraIncludeDirs.set(
+                        listOf(
+                            ffmpegRoot.resolve("include").absolutePath,
+                            headers.get().outputDir.get().asFile.absolutePath,
+                            headers.get().outputDir.get().asFile.resolve("linux").absolutePath,
+                        ),
+                    )
+                    libSearchDirs.set(emptyList())
+                    // The libav* archives are NOT optional here, and --no-undefined is what makes
+                    // that enforceable: ELF -shared permits undefined symbols by default, so
+                    // omitting them once produced a 137 KB library that linked happily and could
+                    // only have failed at load. The flag turns that into a link error.
+                    linkFlags.set(
+                        tools.flags + listOf(
+                            "-lavformat", "-lavcodec", "-lavfilter",
+                            "-lavutil", "-lswscale", "-lswresample",
+                            "-lz", "-lm", "-ldl", "-lpthread",
+                            "-Wl,--no-undefined",
+                        ),
+                    )
+                    exportControlFile.set(jniDir.resolve("exports.map"))
+                    exportControlKind.set(LinkKiteCodecJniTask.ExportControlKind.ELF_VERSION_SCRIPT)
+                    outputDirectory.set(layout.buildDirectory.dir("kitecodec-jni/$dirName"))
+                    outputLibrary.set(outputDirectory.file("libkitecodec_jni.so"))
+                }
+                tasks.register<BundleHostJniTask>(
+                    "stage${konanTarget.split("_")
+                        .joinToString("") { part -> part.replaceFirstChar(Char::uppercase) }}JniForJvm",
+                ) {
+                    jniLibrary.set(link.flatMap { it.outputLibrary })
+                    platformDirectory.set(dirName)
+                    outputDir.set(layout.buildDirectory.dir("kitecodec-jvm-resources-$dirName"))
+                }
+            }
+        } else {
+            emptyList()
+        }
+
         val stageHostJni = tasks.register<BundleHostJniTask>("stageHostJniForJvm") {
             val link = tasks.named<LinkKiteCodecJniTask>("linkKiteCodecJniMacosArm64")
             jniLibrary.set(link.flatMap { it.outputLibrary })
             platformDirectory.set(hostArm)
             outputDir.set(layout.buildDirectory.dir("kitecodec-jvm-resources"))
         }
-        tasks.named<ProcessResources>("jvmProcessResources") { from(stageHostJni.flatMap { it.outputDir }) }
+        tasks.named<ProcessResources>("jvmProcessResources") {
+            from(stageHostJni.flatMap { it.outputDir })
+            linuxJniStages.forEach { stage -> from(stage.flatMap { it.outputDir }) }
+        }
     }
 
     // The falsifiability arm for W-01 and W-02, kept in the build so it can be re-run rather than

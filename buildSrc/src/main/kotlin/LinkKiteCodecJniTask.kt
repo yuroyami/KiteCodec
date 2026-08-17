@@ -114,6 +114,9 @@ abstract class PrepareKiteCodecJniHarnessTask @Inject constructor(
     }
 
     companion object {
+
+
+
         internal fun replaceExactlyOnce(
             source: String,
             expected: String,
@@ -150,6 +153,46 @@ abstract class PrepareKiteCodecJniHarnessTask @Inject constructor(
  * The output must export exactly `JNI_OnLoad`: `scripts/symbol-audit.sh` asserts it per arm, and
  * the S1.c.1 gate runs an ELF PT_LOAD 0x4000 check beside it for the Android arms.
  */
+/** The konan clang and the flags a Linux cross link needs, resolved from the konan tree (W-16). */
+class KonanLinuxTools(val clang: String, val flags: List<String>)
+
+/**
+ * Cross-link settings for a Linux JNI library (W-16), from the SAME konan toolchain
+ * Kotlin/Native links with, so the result agrees with everything else this project ships.
+ *
+ * The glibc floor comes from the konan sysroot, which is 2.25 here. Building inside a
+ * modern container instead would pin the floor at that container's glibc and quietly drop
+ * older distributions.
+ */
+fun konanLinuxTools(konanTarget: String): KonanLinuxTools {
+    val konanRoot = System.getenv("KONAN_DATA_DIR")?.let(::File)
+        ?: File(System.getProperty("user.home"), ".konan")
+    val dependencies = konanRoot.resolve("dependencies")
+    val llvmBin = CompileKiteCodecCTask.resolveLlvmBinDir(
+        dependencies,
+        CompileKiteCodecCTask.DEFAULT_LLVM_PACKAGE,
+    )
+    val clang = CompileKiteCodecCTask.resolveTool(llvmBin, "clang")
+        ?: throw GradleException("no clang under ${llvmBin.absolutePath}")
+    val spec = CompileKiteCodecCTask.specFor(konanTarget)
+    val sysrootRelative = requireNotNull(spec.konanSysroot) { "$konanTarget has no sysroot" }
+    val sysroot = dependencies.resolve(sysrootRelative)
+    val packageRoot = dependencies.resolve(sysrootRelative.substringBefore('/'))
+    val runtime = packageRoot.resolve("lib/gcc").listFiles().orEmpty()
+        .filter { it.isDirectory }
+        .flatMap { it.listFiles().orEmpty().filter { version -> version.isDirectory } }
+        .firstOrNull { it.resolve("libgcc.a").isFile }
+    val flags = buildList {
+        add("-target"); add(spec.triple)
+        add("--sysroot=${sysroot.absolutePath}")
+        // Apple's ld cannot link ELF, so lld is named explicitly and found through -B.
+        add("-fuse-ld=lld")
+        add("-B${llvmBin.absolutePath}")
+        if (runtime != null) { add("-B${runtime.absolutePath}"); add("-L${runtime.absolutePath}") }
+    }
+    return KonanLinuxTools(clang.absolutePath, flags)
+}
+
 abstract class LinkKiteCodecJniTask @Inject constructor(
     private val execOperations: ExecOperations,
 ) : DefaultTask() {

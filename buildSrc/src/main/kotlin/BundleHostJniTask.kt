@@ -45,6 +45,14 @@ abstract class BundleHostJniTask : DefaultTask() {
         description = "Bundles the desktop JNI library and its non-system dependencies for the jvm jar."
     }
 
+    /**
+     * Mach-O only. An ELF library built here links FFmpeg statically and needs nothing but the
+     * platform's own libc, so there is no dependency to bundle, no load command to rewrite and no
+     * signature to repair. Doing the Mach-O dance on it would just fail.
+     */
+    private val isMachO: Boolean
+        get() = platformDirectory.get().startsWith("macos")
+
     @TaskAction
     fun bundle() {
         val destination = outputDir.get().asFile
@@ -58,9 +66,14 @@ abstract class BundleHostJniTask : DefaultTask() {
         jni.setWritable(true)
         // A library loaded by absolute path does not need its own id, but leaving the build tree's
         // path in there makes every `otool -L` of a shipped artifact read like a mistake.
-        rewriteId(jni)
+        if (isMachO) rewriteId(jni)
 
         val bundled = linkedSetOf<String>()
+        if (!isMachO) {
+            destination.resolve(MANIFEST_NAME).writeText(jni.name + "\n")
+            logger.lifecycle("[KiteCodec] ${jni.name} staged for ${platformDirectory.get()}, no dependencies to bundle")
+            return
+        }
         val pending = ArrayDeque(listOf(jni))
         while (pending.isNotEmpty()) {
             val library = pending.removeFirst()
