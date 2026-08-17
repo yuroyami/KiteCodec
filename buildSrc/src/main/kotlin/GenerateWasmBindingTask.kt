@@ -52,6 +52,7 @@ abstract class GenerateWasmBindingTask @Inject constructor() : DefaultTask() {
                 exported.forEach { appendLine("${it.returns}\t${it.name}\t${it.parameters}") }
             },
         )
+        out.resolve(KOTLIN_FILE).writeText(kotlinBinding(exported))
         logger.lifecycle(
             "[KiteCodec wasm] ${exported.size} exported, " +
                 "${declarations.size - exported.size} left hand-written",
@@ -64,6 +65,7 @@ abstract class GenerateWasmBindingTask @Inject constructor() : DefaultTask() {
     companion object {
         const val EXPORTS_FILE = "kitecodec-exports.json"
         const val MANIFEST_FILE = "kitecodec-exports.txt"
+        const val KOTLIN_FILE = "KiteCodecWasm.kt"
 
         /**
          * Entry points a generator must not touch, with the reason on each.
@@ -72,6 +74,62 @@ abstract class GenerateWasmBindingTask @Inject constructor() : DefaultTask() {
          * `kc_jvm_attach` takes a `JavaVM *`, which does not exist in a browser at all.
          */
         val HAND_WRITTEN = setOf("ffkmp_fmt_open_input_io", "kc_jvm_attach")
+
+        /**
+         * Maps a C type to the Kotlin/Wasm type that crosses `@JsFun`.
+         *
+         * Every pointer is `Int`, because a wasm32 address is 32 bits and emscripten hands it over
+         * as a plain number; the binding treats pointers as opaque offsets and never dereferences
+         * one on the Kotlin side. `int64_t` is `Long`, which Kotlin/Wasm does carry across the
+         * boundary. That was verified by compiling one before this was written rather than assumed,
+         * because a type that silently truncated would corrupt every timestamp in the player.
+         */
+        fun kotlinType(cType: String): String {
+            val t = cType.trim()
+            return when {
+                t == "void" -> "Unit"
+                "*" in t -> "Int"
+                "int64_t" in t -> "Long"
+                else -> "Int"
+            }
+        }
+
+        /** Splits a C parameter list into its types. `void` and an empty list both mean none. */
+        fun parameterTypes(parameters: String): List<String> {
+            val p = parameters.trim()
+            if (p.isEmpty() || p == "void") return emptyList()
+            val trailingName = Regex("\\s+[a-z_][a-z0-9_]*$")
+            return p.split(",").map { raw -> raw.trim().replace(trailingName, "").trim() }
+        }
+
+        /** The Kotlin/wasmJs side of the binding, one `@JsFun` external per exported entry point. */
+        fun kotlinBinding(declarations: List<Declaration>): String = buildString {
+            appendLine("@file:Suppress(\"FunctionName\", \"unused\")")
+            appendLine("@file:OptIn(kotlin.js.ExperimentalWasmJsInterop::class)")
+            appendLine()
+            appendLine("package io.github.yuroyami.kitecodec.wasm")
+            appendLine()
+            appendLine("import kotlin.js.JsAny")
+            appendLine()
+            appendLine("/*")
+            appendLine(" * GENERATED from native/kitecodec-c/signature-baseline.txt. Do not edit.")
+            appendLine(" *")
+            appendLine(" * One external per exported C entry point. Each takes the emscripten module as its")
+            appendLine(" * first argument, because the codec lives in a SEPARATE wasm module with its own linear")
+            appendLine(" * memory: Kotlin/Wasm cannot link to it directly and calls across through JS.")
+            appendLine(" * Pointers are Int, which is what a wasm32 address is, and stay opaque on this side.")
+            appendLine(" */")
+            declarations.forEach { d ->
+                val params = parameterTypes(d.parameters)
+                val args = params.indices.joinToString(", ") { "a$it" }
+                val jsArgs = if (args.isEmpty()) "" else ", $args"
+                val ktParams = params.mapIndexed { i, t -> "a$i: " + kotlinType(t) }
+                val signature = (listOf("module: JsAny") + ktParams).joinToString(", ")
+                appendLine()
+                appendLine("@JsFun(\"(m" + jsArgs + ") => m._" + d.name + "(" + args + ")\")")
+                appendLine("public external fun " + d.name + "(" + signature + "): " + kotlinType(d.returns))
+            }
+        }
 
         /**
          * Parses the normalized baseline. Pure, so the tests can hand it text and no build runs.
