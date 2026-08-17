@@ -116,6 +116,17 @@ abstract class BuildAssChainTask : DefaultTask() {
 
             buildLibass(target, vendor, scratch, install, env)
 
+            // libtool names a Windows static archive `libass.lib`; the meson members of the chain
+            // produce `.a` on every target including this one. The extension is convention and the
+            // bytes are an ordinary ar archive, so normalising here keeps ONE filename downstream:
+            // the check below, `-lass`, and kiteplayer-libass' link line all stay target-agnostic.
+            if (target == TargetTriple.MingwX64) {
+                val windowsName = install.resolve("lib/libass.lib")
+                val unixName = install.resolve("lib/libass.a")
+                if (windowsName.isFile && !unixName.isFile) {
+                    check(windowsName.renameTo(unixName)) { "could not rename $windowsName to $unixName" }
+                }
+            }
             listOf("libfribidi.a", "libfreetype.a", "libharfbuzz.a", "libass.a").forEach { archive ->
                 check(install.resolve("lib/$archive").isFile) { "the chain build produced no lib/$archive" }
             }
@@ -145,7 +156,7 @@ abstract class BuildAssChainTask : DefaultTask() {
     ) {
         val source = scratch.resolve("src-libass")
         copyTreeKeepingExecutableBits(vendor.resolve("libass"), source)
-        val fullEnv = env + toolchainEnv(target)
+        val fullEnv = env + toolchainEnv(target, scratch)
         runIn(source, listOf("autoreconf", "-ivf"), fullEnv)
         val configure = mutableListOf(
             source.resolve("configure").absolutePath,
@@ -164,6 +175,40 @@ abstract class BuildAssChainTask : DefaultTask() {
         runIn(build, configure, fullEnv)
         runIn(build, listOf("make", "-j${Runtime.getRuntime().availableProcessors()}"), fullEnv)
         runIn(build, listOf("make", "install"), fullEnv)
+    }
+
+    /**
+     * The one define that lets harfbuzz compile against konan's msys2 package.
+     *
+     * `hb.hh` reaches for `<intrin.h>` on MinGW unless `__MINGW32_VERSION` is defined, in which
+     * case it sets WIN32_LEAN_AND_MEAN and skips the header entirely. That header is the problem:
+     * konan ships a 2019-era msys2, clang 21 declares the SSE3 intrinsics constexpr, and msys2's
+     * `intrin.h` redeclares them non-constexpr, which ends every harfbuzz translation unit with
+     * "non-constexpr declaration of '_mm_movedup_pd' follows constexpr declaration". Only C++ is
+     * affected, which is why FFmpeg and dav1d cross-build to Windows without noticing.
+     *
+     * Defining it is safe to the letter: `__MINGW32_VERSION` appears in exactly ONE place in all
+     * of harfbuzz, the branch above, so this buys the WIN32_LEAN_AND_MEAN path and nothing else.
+     * The alternative was a newer mingw sysroot, which decision W-D3 exists to forbid.
+     */
+    private fun mingwCppDefines(target: TargetTriple): List<String> =
+        if (target == TargetTriple.MingwX64) listOf("-D__MINGW32_VERSION=1") else emptyList()
+
+    /**
+     * llvm-ar, pinned to the GNU archive format, for mingw only.
+     *
+     * Left to itself on an arm64 macOS host, llvm-ar wrote freetype's archive with an ARM64EC
+     * symbol index ("Archive EC map" rather than "Archive map"), which lld does not consult when
+     * linking x86-64 mingw. That produces the worst shape of link error: libfreetype.a sits on the
+     * command line, no library is reported missing, and every FT_* symbol is undefined anyway.
+     * Only freetype tripped it; the flag covers the whole chain because the other members already
+     * produce exactly what it asks for.
+     */
+    private fun gnuArWrapper(scratch: File, realAr: String): String {
+        val script = scratch.resolve("ar-gnu-format.sh")
+        script.writeText("#!/bin/sh\nexec \"" + realAr + "\" --format=gnu \"$@\"\n")
+        script.setExecutable(true)
+        return script.absolutePath
     }
 
     /**
@@ -239,7 +284,7 @@ abstract class BuildAssChainTask : DefaultTask() {
     }
 
     /** CC/CXX/AR/RANLIB for autotools cross builds; empty for the host. */
-    private fun toolchainEnv(target: TargetTriple): Map<String, String> = when (target) {
+    private fun toolchainEnv(target: TargetTriple, scratch: File): Map<String, String> = when (target) {
         TargetTriple.MacosArm64 -> emptyMap()
         TargetTriple.AndroidArm64, TargetTriple.AndroidX64 -> {
             val bin = ndkToolchainBin()
@@ -271,7 +316,15 @@ abstract class BuildAssChainTask : DefaultTask() {
         TargetTriple.LinuxX64, TargetTriple.LinuxArm64, TargetTriple.MingwX64 -> {
             val konan = KonanCross.resolve(target) { logger.lifecycle("[KiteCodec ass-chain] $it") }
             val common = "-target ${konan.triple} --sysroot=${konan.sysroot}" +
-                (if (target == TargetTriple.MingwX64) " -std=gnu11" else "")
+                // __USE_MINGW_ANSI_STDIO fixes a cause rather than silencing a symptom. libass
+                // prints with the standard PRId64, which mingw expands to "I64d" for the old
+                // msvcrt; clang then reports it is not ISO C, and libass compiles that warning
+                // with -Werror=format-non-iso of its own choosing, so a correct line fails the
+                // build. The define selects mingw-w64's own standards-conforming stdio, where
+                // PRId64 is "lld" and there is nothing to warn about. Suppressing the warning
+                // instead would not work anyway: libass appends its flags to CFLAGS, so nothing
+                // passed through CC can come after them.
+                (if (target == TargetTriple.MingwX64) " -std=gnu11 -D__USE_MINGW_ANSI_STDIO=1" else "")
             val link = "-fuse-ld=lld -B${konan.toolchainBin}" +
                 (konan.runtimeDir?.let { " -B$it -L$it" } ?: "")
             mapOf(
@@ -279,7 +332,7 @@ abstract class BuildAssChainTask : DefaultTask() {
                 // The C++ half is harfbuzz's, and it reaches this env only through libass'
                 // configure; the chain's own C++ came out of the meson builds above.
                 "CXX" to "${konan.clang}++ $common $link",
-                "AR" to konan.ar,
+                "AR" to if (target == TargetTriple.MingwX64) gnuArWrapper(scratch, konan.ar) else konan.ar,
                 "RANLIB" to "${konan.ar} s",
             )
         }
@@ -370,18 +423,23 @@ abstract class BuildAssChainTask : DefaultTask() {
                 } else {
                     null
                 }
+                val archiver = if (target == TargetTriple.MingwX64) {
+                    gnuArWrapper(scratch, konan.ar)
+                } else {
+                    konan.ar
+                }
                 """
                 [binaries]
                 c = '${konan.clang}'
                 cpp = '${konan.clang}++'
-                ar = '${konan.ar}'
+                ar = '$archiver'
                 strip = 'true'
                 pkg-config = '$pkgConfig'
 ${windres?.let { "                windres = '$it'\n" } ?: ""}
                 [built-in options]
                 c_args = [${compileArgs.joinToString { "'$it'" }}]
                 c_link_args = [${linkArgs.joinToString { "'$it'" }}]
-                cpp_args = [${konan.cppCompileArgs(target).joinToString { "'$it'" }}]
+                cpp_args = [${(konan.cppCompileArgs(target) + mingwCppDefines(target)).joinToString { "'$it'" }}]
                 cpp_link_args = [${konan.cppLinkArgs(target).joinToString { "'$it'" }}]
 
                 [host_machine]
