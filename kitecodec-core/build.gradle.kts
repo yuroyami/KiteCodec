@@ -672,6 +672,30 @@ fun registerBuildFFmpegWasm(variantName: String, taskSuffix: String) =
     }
 
 registerBuildFFmpegWasm("base", "")
+
+// Compile the portable C helper layer for wasm (17.14 X-03). Depends on the wasm FFmpeg tree for
+// its headers, which is why it names the base variant's include directory explicitly.
+val wasmFFmpegRoot = rootDir.resolve("native-libs/lgpl/wasm32")
+tasks.register<io.github.yuroyami.kitecodec.buildtools.CompileKiteCodecCWasmTask>("compileKiteCodecCForWasm") {
+    dependsOn("buildFFmpegForWasm")
+    sourceDir.set(rootDir.resolve("native/kitecodec-c/src"))
+    includeDir.set(rootDir.resolve("native/kitecodec-c/include"))
+    ffmpegIncludeDir.set(wasmFFmpegRoot.resolve("include"))
+    ffmpegVersionHeaders.from(
+        wasmFFmpegRoot.resolve("include/libavutil/ffversion.h"),
+    )
+    buildDefines.set(
+        mapOf(
+            CompileKiteCodecCTask.DEFINE_FFMPEG_REF to BuildFFmpegTask.DEFAULT_SOURCE_REF,
+            CompileKiteCodecCTask.DEFINE_FFMPEG_LICENSE to FFmpegLicense.LGPL.dirName,
+            CompileKiteCodecCTask.DEFINE_FFMPEG_DIR to wasmFFmpegRoot.resolve("lib").absolutePath,
+        ),
+    )
+    // NOT under native-libs/lgpl/wasm32: that is BuildFFmpegWasmTask's declared output, and it
+    // wipes the directory before installing. Nesting here made FFmpeg rebuild on every run and
+    // would have deleted this archive the next time it did. Siblings, like the other deps trees.
+    outputDir.set(rootDir.resolve("native-libs/deps/wasm32/kitecodec"))
+}
 registerBuildFFmpegWasm("simd", "Simd")
 registerBuildFFmpegWasm("mt", "Mt")
 
