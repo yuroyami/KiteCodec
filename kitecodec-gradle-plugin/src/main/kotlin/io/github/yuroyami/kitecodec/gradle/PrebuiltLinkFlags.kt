@@ -43,9 +43,26 @@ internal object PrebuiltLinkFlags {
     fun extraLinkerOpts(target: KiteCodecTarget, license: FFmpegLicense): List<String> {
         val isMacos = target == KiteCodecTarget.MacosArm64 || target == KiteCodecTarget.MacosX64
         val isLinux = target == KiteCodecTarget.LinuxX64 || target == KiteCodecTarget.LinuxArm64
-        // Android: self-contained. ios/mingw: no prebuilt desktop-profile assets exist (yet);
+        val isMingw = target == KiteCodecTarget.MingwX64
+        // Linux and Windows build the REDUCED desktop profile of KPKMP.md 17.13 (decision W-D4):
+        // no third-party encoder or text stack is cross-built for them, so naming those archives
+        // fails every consumer link with `unable to find library -lass`. This branch is the twin
+        // of StaticLinkFlags.needsStaticStack and must move whenever that one does.
+        if (isLinux || isMingw) {
+            return if (isMingw) {
+                listOf(
+                    // iconv backs FFmpeg's subtitle charset conversion and msys2's sysroot has it,
+                    // so its mingw configure autodetects it and the link must name it.
+                    "-lz", "-liconv",
+                    "-lws2_32", "-lbcrypt", "-lsecur32", "-lmfplat", "-lole32", "-lstrmiids", "-luuid",
+                )
+            } else {
+                listOf("-lz", "-lm", "-ldl", "-lpthread")
+            }
+        }
+        // Android: self-contained. ios: no prebuilt desktop-profile assets exist (yet);
         // validatePrebuiltAvailability already rejects Prebuilt for them against the default repo.
-        if (!isMacos && !isLinux) return emptyList()
+        if (!isMacos) return emptyList()
 
         return buildList {
             addAll(DESKTOP_LGPL)

@@ -168,13 +168,14 @@ class BuildFFmpegTaskTest {
             ),
             argumentsFor(TargetTriple.LinuxArm64),
         )
-        // Windows differs four ways: no --enable-zlib (the msys2 sysroot has none), target-os is
-        // mingw32, its headers need -std=gnu11, and it threads with w32threads. The pthreads
-        // request from sharedCoreArgs is withdrawn here, since configure takes the last word.
+        // Windows differs three ways: target-os is mingw32, its headers need -std=gnu11, and it
+        // threads with w32threads. The pthreads request from sharedCoreArgs is withdrawn here,
+        // since configure takes the last word. zlib it DOES have, at the msys2 package root rather
+        // than under the triple directory, which is what made a first reading call it absent.
         // The fake has no runtime dir, which also pins the branch with no -B/-L pair.
         assertEquals(
             expectedSharedCoreArguments() + expectedKonanCrossArguments(
-                leading = emptyList(),
+                leading = listOf("--enable-zlib"),
                 arch = "x86_64",
                 targetOs = "mingw32",
                 cc = "/fake/llvm/bin/clang -target x86_64-w64-mingw32 " +
@@ -214,14 +215,11 @@ class BuildFFmpegTaskTest {
                 forbidden.forEach { flag ->
                     assertFalse(flag in arguments, "$flag came back for $target ($license)")
                 }
-                // Compression is per sysroot, measured: the konan linux sysroots carry zlib and
-                // nothing else, msys2's carries none of the three. configure REFUSES a library it
-                // cannot find, so asking for one more here would fail the build.
-                assertEquals(
-                    target != TargetTriple.MingwX64,
-                    "--enable-zlib" in arguments,
-                    "zlib belongs to the linux sysroots only, not to msys2's ($target)",
-                )
+                // Compression is per sysroot, measured: all three carry zlib and none carries
+                // bzlib or lzma. configure REFUSES a library it cannot find, so asking for one
+                // more here would fail the build. zlib is asked for rather than autodetected so
+                // the consumer link line, written from this same list, learns to name -lz.
+                assertTrue("--enable-zlib" in arguments, "zlib is in every sysroot here ($target)")
                 assertFalse("--enable-bzlib" in arguments, "no sysroot here carries bzlib ($target)")
                 assertFalse("--enable-lzma" in arguments, "no sysroot here carries lzma ($target)")
             }
@@ -489,7 +487,7 @@ class BuildFFmpegTaskTest {
         "--disable-protocol=udp,rtp",
         "--enable-muxer=mp4,mov,ipod,webm,matroska,matroska_audio,mp3,wav,flac,ogg,opus,mpegts,image2",
         "--enable-encoder=mpeg4,flac,pcm_s16le,pcm_s24le,pcm_f32le,png,mjpeg",
-        "--enable-filter=buffer,buffersink,abuffer,abuffersink,trim,setpts,scale,pad,overlay,hue,unsharp,vignette,colorbalance,colorlevels,curves,lut,format,colorchannelmixer,split,null,atrim,asetpts,asetrate,aresample,volume,atempo,adelay,afade,amix,anull,aformat,loop,tpad",
+        "--enable-filter=buffer,buffersink,abuffer,abuffersink,trim,setpts,setparams,scale,pad,overlay,hue,unsharp,vignette,colorbalance,colorlevels,curves,lut,format,colorchannelmixer,split,null,atrim,asetpts,asetrate,aresample,volume,atempo,adelay,afade,amix,anull,aformat,loop,tpad",
         "--enable-pthreads",
         "--enable-pic",
         "--enable-runtime-cpudetect",

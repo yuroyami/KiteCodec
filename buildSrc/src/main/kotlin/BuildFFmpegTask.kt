@@ -440,7 +440,12 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
         //   - eq and boxblur are `deps="gpl"` in FFmpeg's own configure → desktopGplArgs.
         // `hue` (which has a brightness parameter), `colorlevels` and `curves` cover most of what
         // `eq` is reached for, and are available everywhere.
-        "--enable-filter=buffer,buffersink,abuffer,abuffersink,trim,setpts,scale,pad,overlay,hue,unsharp,vignette,colorbalance,colorlevels,curves,lut,format,colorchannelmixer,split,null,atrim,asetpts,asetrate,aresample,volume,atempo,adelay,afade,amix,anull,aformat,loop,tpad",
+        // setparams added 2026-08-17 (phase W): the project's own P010 alignment test declares an
+        // input link's colour space and range with it, and it had never been enabled. Nobody saw
+        // that because the macOS host gate resolves FFmpeg from Homebrew, which carries every
+        // filter, so the VENDORED profile was only ever exercised on phones. The Linux run is what
+        // found it, which is the point of running on more than one surface.
+        "--enable-filter=buffer,buffersink,abuffer,abuffersink,trim,setpts,setparams,scale,pad,overlay,hue,unsharp,vignette,colorbalance,colorlevels,curves,lut,format,colorchannelmixer,split,null,atrim,asetpts,asetrate,aresample,volume,atempo,adelay,afade,amix,anull,aformat,loop,tpad",
 
         "--enable-pthreads",
         "--enable-pic",
@@ -650,15 +655,18 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
      * by class in [sharedCoreArgs] and needs no third-party library at all, so the 17.5 conformance
      * matrix plays in full.
      *
-     * The compression libraries are per sysroot, measured rather than assumed: the konan linux
-     * sysroots carry zlib and nothing else (no bzlib.h, no lzma.h), and the msys2 mingw sysroot
-     * carries neither. FFmpeg REFUSES a configure that requests a library it cannot find, so
-     * asking for bzlib here would fail the build rather than silently drop it. What zlib buys is
-     * matroska and mov compressed headers; bzlib and lzma buy only rarely used matroska
-     * compression, so their absence costs almost nothing on these two targets.
+     * The compression libraries are per sysroot, measured rather than assumed: all three sysroots
+     * carry zlib (msys2 keeps its copy at the package root rather than under the triple directory,
+     * which is what made a first reading of this call it absent), and none of them carries bzlib or
+     * lzma. FFmpeg REFUSES a configure that requests a library it cannot find, so asking for bzlib
+     * would fail the build rather than silently drop it. zlib is REQUESTED rather than left to
+     * autodetect for the opposite reason: an autodetected zlib compiles its symbols in while the
+     * consumer's link line, which is written from this list, never learns to name -lz, and the
+     * failure lands as `undefined symbol: inflate` in a downstream link. Asking makes the flag and
+     * the link agree by construction. What zlib buys is matroska and mov compressed headers; bzlib
+     * and lzma buy only rarely used matroska compression.
      */
-    private fun portableDesktopArgs(target: TargetTriple): List<String> =
-        if (target == TargetTriple.MingwX64) emptyList() else listOf("--enable-zlib")
+    private fun portableDesktopArgs(target: TargetTriple): List<String> = listOf("--enable-zlib")
 
     /** Mobile Apple playback profile: shared software codecs plus SDK zlib, and no desktop stack. */
     private fun mobileAppleArgs(target: TargetTriple, sdkPath: (String) -> String): List<String> {

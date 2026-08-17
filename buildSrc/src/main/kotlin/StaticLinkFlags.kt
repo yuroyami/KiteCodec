@@ -141,7 +141,12 @@ object StaticLinkFlags {
             // loader libraries on linux, and the Windows sockets, media and time APIs that
             // FFmpeg's network and mpegts code reaches for on mingw.
             return dav1dFlags + when (target) {
-                TargetTriple.MingwX64 -> listOf("-lws2_32", "-lbcrypt", "-lsecur32", "-lmfplat", "-lole32", "-lstrmiids", "-luuid")
+                // iconv is autodetected out of the msys2 sysroot by FFmpeg's mingw configure
+                // (it backs the subtitle charset conversion), so the link has to name it too.
+                TargetTriple.MingwX64 -> listOf(
+                    "-lz", "-liconv",
+                    "-lws2_32", "-lbcrypt", "-lsecur32", "-lmfplat", "-lole32", "-lstrmiids", "-luuid",
+                )
                 else -> listOf("-lz", "-lm", "-ldl", "-lpthread")
             }
         }
