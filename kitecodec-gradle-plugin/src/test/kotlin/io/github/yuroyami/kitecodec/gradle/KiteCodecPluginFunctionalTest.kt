@@ -622,13 +622,14 @@ class KiteCodecPluginFunctionalTest {
                 )
                 .build()
             val localPath = localRoot.canonicalFile.invariantSeparatorsPath
+            // The REDUCED desktop profile of KPKMP.md 17.13 (decision W-D4): Linux and Windows
+            // cross-build no third-party encoder or text stack, so naming those archives here
+            // would fail every consumer link with `unable to find library -lass`. What is left is
+            // what the konan linux sysroot actually carries. This list is the twin of
+            // StaticLinkFlags' portable-desktop branch and moves with it.
             assertEquals(
                 "linux=-L$localPath/lgpl/linux-x64/lib " +
-                    listOf(
-                        "-lSvtAv1Enc", "-lvpx", "-laom", "-lopus", "-lmp3lame",
-                        "-lwebpmux", "-lwebp", "-lsharpyuv", "-lass", "-lharfbuzz",
-                        "-lfreetype", "-lfribidi", "-lpng16", "-lgraphite2", "-lz", "-lbz2", "-llzma",
-                    ).joinToString(" "),
+                    listOf("-lz", "-lm", "-ldl", "-lpthread").joinToString(" "),
                 result.output.lineSequence().firstOrNull { it.startsWith("linux=") },
             )
             assertTrue("-L/must-not-appear/lib" !in result.output)
