@@ -66,7 +66,19 @@ kotlin {
                     linkerOpts("-L${paths.libDir}")
                     // A static vendored FFmpeg needs its third-party archives named explicitly at
                     // the final link, see StaticLinkFlags.
-                    linkerOpts(StaticLinkFlags.forTarget(triple, selectedLicense, paths.isStaticVendored))
+                    // The dav1d switch is tree-presence truth here for the same reason it is in
+                    // kitecodec-core: the flag belongs to the tree the link actually reads, not to
+                    // a DSL toggle a consumer might not have set. Without this the sample fails to
+                    // link against any tree BuildFFmpegTask bundled dav1d into.
+                    val hasDav1d = file("${paths.libDir}/libdav1d.a").exists()
+                    linkerOpts(
+                        StaticLinkFlags.forTarget(
+                            triple,
+                            selectedLicense,
+                            paths.isStaticVendored,
+                            dav1d = hasDav1d,
+                        ),
+                    )
                     linkerOpts(
                         StaticLinkFlags.hostFallbackSearchFlags(triple, homebrewPrefix, paths.isStaticVendored),
                     )
