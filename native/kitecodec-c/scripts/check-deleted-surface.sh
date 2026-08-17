@@ -32,6 +32,12 @@
 # checkouts of this same repository at older commits, where every deleted helper is still present
 # and correct, so it is excluded as a directory too.
 #
+# `native-libs` and `node_modules` are excluded for SPEED, not correctness. Both hold only
+# gitignored build output, and a static archive cannot match this scan's pattern anyway because the
+# pattern requires a following `(`. But the scan runs once per deleted name over both repositories,
+# and `native-libs` reached 284 MB once the wasm32 tree landed, which made a check that plan
+# section 9 budgets in seconds take minutes instead. Generated trees stay out so Tier 1 stays fast.
+#
 # Usage:  ./scripts/check-deleted-surface.sh
 #
 set -euo pipefail
@@ -77,7 +83,8 @@ native/kitecodec-c/README.md
 # there, and those files carry the old helper names as text until Gradle regenerates them, so
 # without this exclusion the check reports seven stale cache files and buries the answer.
 EXCLUDES="--exclude-dir=build --exclude-dir=.claude --exclude-dir=.git --exclude-dir=vendor \
---exclude-dir=.gradle --exclude-dir=.kotlin --exclude-dir=testmedia"
+--exclude-dir=.gradle --exclude-dir=.kotlin --exclude-dir=testmedia --exclude-dir=native-libs \
+--exclude-dir=node_modules"
 
 ARCHIVED="$REPO/kitecodec-core/src/nativeInterop/cinterop/archived"
 
