@@ -528,16 +528,27 @@ kotlin {
             implementation(kotlin("test"))
         }
         val commonMain = getByName("commonMain")
-        val unsupportedMain = maybeCreate("unsupportedMain").apply {
+        // Encode, mux and filter are refused on BOTH web targets (17.14 X-07): S6 is "it plays on
+        // the web", and every one of those classes is hand-written work with a strong platform
+        // alternative. One copy of each refusal, shared, rather than two that drift.
+        val webRefusedMain = maybeCreate("webRefusedMain").apply {
             dependsOn(commonMain)
         }
-        getByName("webMain").dependsOn(unsupportedMain)
+        getByName("wasmJsMain").dependsOn(webRefusedMain)
+        // `js` refuses everything else too; `wasmJs` implements the playback half for real.
+        val unsupportedMain = maybeCreate("unsupportedMain").apply {
+            dependsOn(webRefusedMain)
+        }
+        // `js` keeps the placeholder. `wasmJs` does NOT: it carries a real backend over the
+        // generated binding (17.14 X-07), so it must not inherit the throwing actuals. Attaching
+        // unsupportedMain to webMain would give both of them to it.
+        getByName("jsMain").dependsOn(unsupportedMain)
 
         val commonTest = getByName("commonTest")
         val unsupportedTest = maybeCreate("unsupportedTest").apply {
             dependsOn(commonTest)
         }
-        getByName("webTest").dependsOn(unsupportedTest)
+        getByName("jsTest").dependsOn(unsupportedTest)
 
         // The JVM is a REAL backend, not a placeholder: it runs the same JNI adapter the Android
         // target runs, over the same opaque C ABI (phase W, register item W-01). unsupportedMain

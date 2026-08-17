@@ -29,7 +29,7 @@ PY
 emcc -O3 -I"$ROOT/native/kitecodec-c/include" -I"$ROOT/native/kitecodec-handles" -I"$FF/include" \
   "$KC" "$FF"/lib/libav{filter,format,codec,util}.a "$FF"/lib/libsw{scale,resample}.a \
   -sEXPORTED_FUNCTIONS=@"$OUT/exports.json" \
-  -sEXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","addFunction","HEAPU8","HEAPU32"]' \
+  -sEXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","stringToUTF8","lengthBytesUTF8","addFunction","removeFunction","HEAP32","HEAPU8","HEAPU32"]' \
   -sALLOW_TABLE_GROWTH=1 -sMODULARIZE=1 -sEXPORT_ES6=1 -sALLOW_MEMORY_GROWTH=1 \
   -o "$OUT/kite.mjs"
 cp "$ROOT/native/kitecodec-c/probe/browser/index.html" "$OUT/index.html"

@@ -118,6 +118,10 @@ abstract class GenerateWasmBindingTask @Inject constructor() : DefaultTask() {
             appendLine(" * first argument, because the codec lives in a SEPARATE wasm module with its own linear")
             appendLine(" * memory: Kotlin/Wasm cannot link to it directly and calls across through JS.")
             appendLine(" * Pointers are Int, which is what a wasm32 address is, and stay opaque on this side.")
+            appendLine(" *")
+            appendLine(" * INTERNAL. This is the module's own wiring, not its API: a consumer calls MediaSource")
+            appendLine(" * and Frame, never these. Publishing 196 generated externals would commit the library")
+            appendLine(" * to a surface that exists only because the codec lives in another wasm module.")
             appendLine(" */")
             declarations.forEach { d ->
                 val params = parameterTypes(d.parameters)
@@ -127,7 +131,7 @@ abstract class GenerateWasmBindingTask @Inject constructor() : DefaultTask() {
                 val signature = (listOf("module: JsAny") + ktParams).joinToString(", ")
                 appendLine()
                 appendLine("@JsFun(\"(m" + jsArgs + ") => m._" + d.name + "(" + args + ")\")")
-                appendLine("public external fun " + d.name + "(" + signature + "): " + kotlinType(d.returns))
+                appendLine("internal external fun " + d.name + "(" + signature + "): " + kotlinType(d.returns))
             }
         }
 

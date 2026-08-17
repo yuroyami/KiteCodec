@@ -1847,3 +1847,21 @@ final val io.github.yuroyami.kitecodec/hardwareSurface // io.github.yuroyami.kit
 
 // Targets: [macosArm64]
 final fun <#A: kotlin/Any?> (io.github.yuroyami.kitecodec/Frame).io.github.yuroyami.kitecodec/withPlanes(kotlin/Function3<kotlin.collections/List<kotlinx.cinterop/CPointer<kotlinx.cinterop/UByteVarOf<kotlin/UByte>>>, kotlin.collections/List<kotlin/Int>, kotlin.collections/List<kotlin/Int>, #A>): #A // io.github.yuroyami.kitecodec/withPlanes|withPlanes@io.github.yuroyami.kitecodec.Frame(kotlin.Function3<kotlin.collections.List<kotlinx.cinterop.CPointer<kotlinx.cinterop.UByteVarOf<kotlin.UByte>>>,kotlin.collections.List<kotlin.Int>,kotlin.collections.List<kotlin.Int>,0:0>){0§<kotlin.Any?>}[0]
+
+// Targets: [wasmJs]
+final object io.github.yuroyami.kitecodec/KiteCodecWeb { // io.github.yuroyami.kitecodec/KiteCodecWeb|null[0]
+    final const val DEFAULT_URL // io.github.yuroyami.kitecodec/KiteCodecWeb.DEFAULT_URL|{}DEFAULT_URL[0]
+        final fun <get-DEFAULT_URL>(): kotlin/String // io.github.yuroyami.kitecodec/KiteCodecWeb.DEFAULT_URL.<get-DEFAULT_URL>|<get-DEFAULT_URL>(){}[0]
+
+    final val isLoaded // io.github.yuroyami.kitecodec/KiteCodecWeb.isLoaded|{}isLoaded[0]
+        final fun <get-isLoaded>(): kotlin/Boolean // io.github.yuroyami.kitecodec/KiteCodecWeb.isLoaded.<get-isLoaded>|<get-isLoaded>(){}[0]
+
+    final fun attach(kotlin.js/JsAny) // io.github.yuroyami.kitecodec/KiteCodecWeb.attach|attach(kotlin.js.JsAny){}[0]
+    final suspend fun load(kotlin/String = ...) // io.github.yuroyami.kitecodec/KiteCodecWeb.load|load(kotlin.String){}[0]
+
+    final class IncompleteModule : kotlin/IllegalArgumentException // io.github.yuroyami.kitecodec/KiteCodecWeb.IncompleteModule|null[0]
+
+    final class NotLoaded : kotlin/IllegalStateException { // io.github.yuroyami.kitecodec/KiteCodecWeb.NotLoaded|null[0]
+        constructor <init>() // io.github.yuroyami.kitecodec/KiteCodecWeb.NotLoaded.<init>|<init>(){}[0]
+    }
+}
