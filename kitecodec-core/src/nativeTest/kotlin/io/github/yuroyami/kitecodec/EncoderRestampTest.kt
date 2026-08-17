@@ -34,12 +34,19 @@ class EncoderRestampTest {
         tmpFiles.clear()
     }
 
+    /**
+     * Micro-seconds back to samples, rounded to nearest. One sample is 20.83 us at 48 kHz, so the
+     * micro-second round trip is lossy and a plain truncation would land a sample short.
+     */
+    private fun microsToSamples(micros: Long, sampleRate: Int): Long =
+        (micros * sampleRate + 500_000) / 1_000_000
+
     @Test
     fun missingAudioTimestampsStepByThePreviousFrameSampleCount() {
         val path = tmp("restamp.mka")
         val sampleRate = 48_000
         val sampleCounts = listOf(960, 1024)
-        val stampedSamples = mutableListOf<Long>()
+        val timelineEnds = mutableListOf<Long>()
 
         MediaSink.open(path).use { sink ->
             val enc = sink.addAudioEncoder(
@@ -59,15 +66,19 @@ class EncoderRestampTest {
                         packet,
                         Frame.ofAudio(ByteArray(samples * 2), samples, sampleRate, 1, SampleFormat.S16),
                     )
-                    // outputMicros is the pts just stamped, rescaled off the codec time-base, which
-                    // is 1/48000 for pcm; back in samples it is the value restampPts wrote.
-                    stampedSamples += enc.core.outputMicros * sampleRate / 1_000_000
+                    // outputMicros is where the written timeline ENDS, the frame just stamped
+                    // included ("The last frame's own extent is included", EncoderCore), so after
+                    // frame N it is exactly where frame N + 1 has to start.
+                    timelineEnds += microsToSamples(enc.core.outputMicros, sampleRate)
                 }
             }
         }
+        // The running total of what was fed: 960 after the first frame, 960 + 1024 after the
+        // second. That second value only comes out at 1984 if the second frame started at 960;
+        // stepping by its own 1024 would end the timeline at 2048 instead.
         assertEquals(
-            listOf(0L, 960L),
-            stampedSamples,
+            sampleCounts.runningReduce { total, samples -> total + samples }.map { it.toLong() },
+            timelineEnds,
             "the second frame must start where the first one ended, not one of its own lengths later",
         )
 

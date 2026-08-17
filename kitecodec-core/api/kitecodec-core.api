@@ -526,6 +526,13 @@ public final class io/github/yuroyami/kitecodec/HardwareAccel : java/lang/Enum {
 public abstract interface annotation class io/github/yuroyami/kitecodec/KiteCodecLowLevelApi : java/lang/annotation/Annotation {
 }
 
+public abstract interface class io/github/yuroyami/kitecodec/MediaByteSource : java/lang/AutoCloseable {
+	public abstract fun getSeekable ()Z
+	public abstract fun getSize ()Ljava/lang/Long;
+	public abstract fun read ([BII)I
+	public abstract fun seek (J)V
+}
+
 public final class io/github/yuroyami/kitecodec/MediaInfo {
 	public fun <init> (Ljava/lang/Long;Ljava/lang/String;Ljava/util/Map;Ljava/util/List;)V
 	public final fun component1 ()Ljava/lang/Long;
@@ -581,8 +588,10 @@ public final class io/github/yuroyami/kitecodec/MediaSource : java/lang/AutoClos
 }
 
 public final class io/github/yuroyami/kitecodec/MediaSource$Companion {
+	public final fun open (Lio/github/yuroyami/kitecodec/MediaByteSource;Ljava/util/Map;)Lio/github/yuroyami/kitecodec/MediaSource;
 	public final fun open (Ljava/lang/String;)Lio/github/yuroyami/kitecodec/MediaSource;
 	public final fun open (Ljava/lang/String;Ljava/util/Map;)Lio/github/yuroyami/kitecodec/MediaSource;
+	public static synthetic fun open$default (Lio/github/yuroyami/kitecodec/MediaSource$Companion;Lio/github/yuroyami/kitecodec/MediaByteSource;Ljava/util/Map;ILjava/lang/Object;)Lio/github/yuroyami/kitecodec/MediaSource;
 }
 
 public final class io/github/yuroyami/kitecodec/MediaType : java/lang/Enum {

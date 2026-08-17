@@ -15,6 +15,7 @@ import io.github.yuroyami.kitecodec.buildtools.LinkKiteCodecJniTask
 import io.github.yuroyami.kitecodec.buildtools.PrepareKiteCodecJniHarnessTask
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.testing.Test
+import org.gradle.language.jvm.tasks.ProcessResources
 import org.gradle.api.plugins.ExtensionAware
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
@@ -522,13 +523,26 @@ kotlin {
             dependsOn(commonTest)
         }
         getByName("webTest").dependsOn(unsupportedTest)
-        getByName("jvmMain").dependsOn(unsupportedMain)
-        getByName("jvmTest").dependsOn(unsupportedTest)
+
+        // The JVM is a REAL backend, not a placeholder: it runs the same JNI adapter the Android
+        // target runs, over the same opaque C ABI (phase W, register item W-01). unsupportedMain
+        // is web's alone now.
+        val jvmAndAndroidMain = maybeCreate("jvmAndAndroidMain").apply {
+            dependsOn(commonMain)
+        }
+        getByName("jvmMain").dependsOn(jvmAndAndroidMain)
+
+        // The shared codec-contract suite is what a real backend has to satisfy, so the jvm test
+        // tree runs it instead of the placeholder's throw-everything assertions.
+        val codecContractTest = maybeCreate("codecContractTest").apply {
+            dependsOn(commonTest)
+        }
+        getByName("jvmTest").dependsOn(codecContractTest)
+        // The macOS native arm runs the same suite, and always did; it only sat inside the phone
+        // scope because the source set used to be created there.
+        getByName("macosArm64Test").dependsOn(codecContractTest)
 
         if (phoneTargetsOnly) {
-            val jvmAndAndroidMain = maybeCreate("jvmAndAndroidMain").apply {
-                dependsOn(commonMain)
-            }
             // A custom JVM compilation belongs to its own source-set tree, so it cannot legally
             // depend on the published main/test trees. Mirror their source directories into an
             // isolated harness tree instead; no source is copied and no harness variant is published.
@@ -544,15 +558,12 @@ kotlin {
                 dependsOn(jniHarnessCommonMain)
             }
             val jniJvmMain = maybeCreate("jniJvmMain").apply {
+                kotlin.srcDir("src/jvmMain/kotlin")
                 dependsOn(jniHarnessPlatformMain)
             }
             checkNotNull(jniJvmCompilation).defaultSourceSet.dependsOn(jniJvmMain)
             getByName("androidMain").dependsOn(jvmAndAndroidMain)
 
-            val codecContractTest = maybeCreate("codecContractTest").apply {
-                dependsOn(commonTest)
-            }
-            getByName("macosArm64Test").dependsOn(codecContractTest)
             val jniHarnessCommonTest = maybeCreate("jniHarnessCommonTest").apply {
                 kotlin.srcDir("src/commonTest/kotlin")
                 dependencies {
@@ -565,6 +576,9 @@ kotlin {
                 dependsOn(jniHarnessCommonTest)
             }
             val jniJvmTest = maybeCreate("jniJvmTest").apply {
+                // The JVM contract actuals live in the PUBLISHED jvm test tree now that the jvm
+                // variant is real (W-01); the harness mirrors them rather than keeping a twin.
+                kotlin.srcDir("src/jvmTest/kotlin")
                 dependsOn(jniHarnessContractTest)
             }
             checkNotNull(jniJvmTestCompilation).defaultSourceSet.dependsOn(jniJvmTest)
@@ -764,8 +778,16 @@ run {
         .map(::File)
     val macosFfmpegInclude = rootDir.resolve("native-libs/lgpl/macos-arm64/include")
     val macosFfmpegLib = rootDir.resolve("native-libs/lgpl/macos-arm64/lib")
+    // dav1d is vendored per target and toggled by the consumer DSL, so the flag follows the tree
+    // rather than a constant: the Android arms already do exactly this a few lines below.
+    val macosDav1d = if (rootDir.resolve("native-libs/lgpl/macos-arm64/lib/libdav1d.a").exists()) {
+        listOf("-ldav1d")
+    } else {
+        emptyList()
+    }
     val macosJniLinkFlags = listOf(
         "-lavformat", "-lavcodec", "-lavfilter", "-lavutil", "-lswscale", "-lswresample",
+    ) + macosDav1d + listOf(
         "-lSvtAv1Enc", "-lvpx", "-laom", "-lopus", "-lmp3lame",
         "-lwebpmux", "-lwebp", "-lsharpyuv",
         "-lass", "-lharfbuzz", "-lgraphite2", "-lfreetype", "-lfribidi", "-lpng16",
@@ -1015,6 +1037,48 @@ run {
                     )
                 }
             }
+        }
+    }
+}
+
+/*
+ * ── The host JNI library rides the jvm artifact (phase W, register item W-02) ────────────────
+ *
+ * `linkKiteCodecJniMacosArm64` was scaffolded as test-only, loaded through the
+ * `kitecodec.jni.path` property. A desktop consumer has no such property, so W-01's real JVM
+ * variant would still fail at the first `System.loadLibrary`. Staging the dylib into the jvm
+ * resource tree under `kitecodec-native/<os>-<arch>/` is what makes one `implementation()` line
+ * enough on a desktop, and it is the layout `JniLibrary.jvm.kt` reads. Linux and Windows twins
+ * drop into the same map once their FFmpeg trees exist (W.5); nothing else has to change.
+ *
+ * Guarded on the vendored tree because the link cannot run without it, and an arm64 Mac because
+ * that is the only host whose JNI arm is wired today. Everywhere else the jvm artifact publishes
+ * without a bundled library and the loader's own message says how to supply one.
+ */
+run {
+    val hostArm = "macos-arm64"
+    val hostFfmpegLib = rootDir.resolve("native-libs/lgpl/$hostArm/lib")
+    val osName = System.getProperty("os.name").orEmpty().lowercase()
+    val osArch = System.getProperty("os.arch").orEmpty().lowercase()
+    val hostIsArm64Mac = "mac" in osName && osArch in setOf("aarch64", "arm64")
+    if (hostIsArm64Mac && hostFfmpegLib.isDirectory) {
+        val stageHostJni = tasks.register<Sync>("stageHostJniForJvm") {
+            group = "kitecodec"
+            description = "Stages libkitecodec_jni into the jvm artifact's resources for $hostArm."
+            val link = tasks.named<LinkKiteCodecJniTask>("linkKiteCodecJniMacosArm64")
+            from(link.flatMap { it.outputLibrary }) { into("kitecodec-native/$hostArm") }
+            into(layout.buildDirectory.dir("kitecodec-jvm-resources"))
+        }
+        tasks.named<ProcessResources>("jvmProcessResources") { from(stageHostJni) }
+    }
+
+    // The falsifiability arm for W-01 and W-02, kept in the build so it can be re-run rather than
+    // described. `-Pkitecodec.jni.falsify=true` points the loader at a path that cannot exist, so
+    // every jvm test that touches the backend must fail. A green run under this flag would mean
+    // the suite is not reaching the native library at all.
+    if (providers.gradleProperty("kitecodec.jni.falsify").orNull == "true") {
+        tasks.named<Test>("jvmTest") {
+            systemProperty("kitecodec.jni.path", "/nonexistent/libkitecodec_jni.dylib")
         }
     }
 }

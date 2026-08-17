@@ -3,7 +3,6 @@ package io.github.yuroyami.kitecodec
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -64,9 +63,14 @@ class FilterGraphDrainTest {
     /**
      * The drain used to hand the landing frame to the callback and move straight on. A callback that
      * neither cloned nor closed it left it populated, and `av_buffersink_get_frame` MOVES its next
-     * result into that same frame and requires it to be empty. Two outputs in a row through a
-     * callback that takes no ownership prove the release: each output carries its own samples, and
-     * the frame the callback saw is empty again the moment the callback returns.
+     * result into that same frame and requires it to be empty.
+     *
+     * The release is done by closing the wrapper the callback was given, which the drain states is
+     * deliberate: "The wrapper itself must be closed, not just the landing frame unreffed: a
+     * callback that retains the wrapper would otherwise hold an 'open' Frame whose pointer aliases
+     * storage this loop reuses and the graph eventually frees." So two outputs in a row through a
+     * callback that takes no ownership prove both halves: each output carries its own samples, and
+     * the wrapper the callback kept is closed the moment it returns, which is the unref.
      */
     @Test
     fun theLandingFrameIsReleasedAfterEveryCallback() {
@@ -78,8 +82,7 @@ class FilterGraphDrainTest {
             fed.forEachIndexed { i, bytes ->
                 graph.feedInput(0, s16Frame(bytes, i * 20_000L)) { out ->
                     // A callback that takes no ownership at all: no copy(), no close(). Reading the
-                    // bytes does not touch the frame's lifetime, and `info` is deliberately left
-                    // unread here, because it caches and the assertions below need the live values.
+                    // bytes here is legal because the wrapper is still open inside the callback.
                     seen += out.copyPlanesToByteArray()
                     lastSeen = out
                 }
@@ -89,9 +92,13 @@ class FilterGraphDrainTest {
             assertTrue(fed[0].contentEquals(seen[0]), "the first output is not the first frame's samples")
             assertTrue(fed[1].contentEquals(seen[1]), "the second output is not the second frame's samples")
 
-            val afterCallback = lastSeen!!.info
-            assertEquals(0, afterCallback.sampleCount, "the drain left its landing frame populated")
-            assertFalse(afterCallback.hasPts, "the drain left its landing frame populated")
+            // Retaining it bought nothing: every read now refuses instead of aliasing the storage
+            // the next receive lands in.
+            val retained = assertFailsWith<IllegalStateException> { lastSeen!!.info }
+            assertTrue(
+                "Frame is closed" in (retained.message ?: ""),
+                "the drain left the wrapper it gave the callback open: ${retained.message}",
+            )
         }
     }
 

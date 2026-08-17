@@ -326,6 +326,16 @@ final enum class io.github.yuroyami.kitecodec/Vp9Profile : kotlin/Enum<io.github
     }
 }
 
+abstract interface io.github.yuroyami.kitecodec/MediaByteSource : kotlin/AutoCloseable { // io.github.yuroyami.kitecodec/MediaByteSource|null[0]
+    abstract val seekable // io.github.yuroyami.kitecodec/MediaByteSource.seekable|{}seekable[0]
+        abstract fun <get-seekable>(): kotlin/Boolean // io.github.yuroyami.kitecodec/MediaByteSource.seekable.<get-seekable>|<get-seekable>(){}[0]
+    abstract val size // io.github.yuroyami.kitecodec/MediaByteSource.size|{}size[0]
+        abstract fun <get-size>(): kotlin/Long? // io.github.yuroyami.kitecodec/MediaByteSource.size.<get-size>|<get-size>(){}[0]
+
+    abstract fun read(kotlin/ByteArray, kotlin/Int, kotlin/Int): kotlin/Int // io.github.yuroyami.kitecodec/MediaByteSource.read|read(kotlin.ByteArray;kotlin.Int;kotlin.Int){}[0]
+    abstract fun seek(kotlin/Long) // io.github.yuroyami.kitecodec/MediaByteSource.seek|seek(kotlin.Long){}[0]
+}
+
 sealed interface io.github.yuroyami.kitecodec.dsl/FilterStep { // io.github.yuroyami.kitecodec.dsl/FilterStep|null[0]
     abstract val filterName // io.github.yuroyami.kitecodec.dsl/FilterStep.filterName|{}filterName[0]
         abstract fun <get-filterName>(): kotlin/String? // io.github.yuroyami.kitecodec.dsl/FilterStep.filterName.<get-filterName>|<get-filterName>(){}[0]
@@ -1232,6 +1242,7 @@ final class io.github.yuroyami.kitecodec/MediaSource : kotlin/AutoCloseable { //
     final suspend fun seekMicros(kotlin/Long) // io.github.yuroyami.kitecodec/MediaSource.seekMicros|seekMicros(kotlin.Long){}[0]
 
     final object Companion { // io.github.yuroyami.kitecodec/MediaSource.Companion|null[0]
+        final fun open(io.github.yuroyami.kitecodec/MediaByteSource, kotlin.collections/Map<kotlin/String, kotlin/String> = ...): io.github.yuroyami.kitecodec/MediaSource // io.github.yuroyami.kitecodec/MediaSource.Companion.open|open(io.github.yuroyami.kitecodec.MediaByteSource;kotlin.collections.Map<kotlin.String,kotlin.String>){}[0]
         final fun open(kotlin/String): io.github.yuroyami.kitecodec/MediaSource // io.github.yuroyami.kitecodec/MediaSource.Companion.open|open(kotlin.String){}[0]
         final fun open(kotlin/String, kotlin.collections/Map<kotlin/String, kotlin/String>): io.github.yuroyami.kitecodec/MediaSource // io.github.yuroyami.kitecodec/MediaSource.Companion.open|open(kotlin.String;kotlin.collections.Map<kotlin.String,kotlin.String>){}[0]
     }
