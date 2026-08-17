@@ -676,6 +676,12 @@ registerBuildFFmpegWasm("base", "")
 // Compile the portable C helper layer for wasm (17.14 X-03). Depends on the wasm FFmpeg tree for
 // its headers, which is why it names the base variant's include directory explicitly.
 val wasmFFmpegRoot = rootDir.resolve("native-libs/lgpl/wasm32")
+// The web binding, generated from the gated signature baseline (17.14 X-05).
+tasks.register<io.github.yuroyami.kitecodec.buildtools.GenerateWasmBindingTask>("generateWasmBinding") {
+    signatureBaseline.set(rootDir.resolve("native/kitecodec-c/signature-baseline.txt"))
+    outputDir.set(rootDir.resolve("native-libs/deps/wasm32/binding"))
+}
+
 tasks.register<io.github.yuroyami.kitecodec.buildtools.CompileKiteCodecCWasmTask>("compileKiteCodecCForWasm") {
     dependsOn("buildFFmpegForWasm")
     sourceDir.set(rootDir.resolve("native/kitecodec-c/src"))
