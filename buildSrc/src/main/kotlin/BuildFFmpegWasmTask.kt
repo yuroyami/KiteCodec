@@ -185,15 +185,28 @@ abstract class BuildFFmpegWasmTask @Inject constructor() : DefaultTask() {
         /** Homebrew's emscripten layout; overridable for an emsdk checkout. */
         const val DEFAULT_EMSCRIPTEN_LLVM_BIN = "/opt/homebrew/opt/emscripten/libexec/llvm/bin"
 
-        /** The 17.6 lean web set: h264, hevc, aac, mp3, flac and pcm. */
-        const val DECODERS = "h264,hevc,aac,aac_latm,aac_fixed,mp3,mp3float,mp3adu,mp3adufloat,flac," +
+        /**
+         * The 17.6 lean web set: h264, hevc, vp9, aac, mp3, flac and pcm.
+         *
+         * vp9 was NOT in the first draft, and the 17.5 matrix run caught it: `vp9.webm` is a
+         * MustPlay row and the web build could not decode it. The tier serves the matrix or the
+         * matrix stops being the one definition of playing all formats, so vp9 is in.
+         */
+        const val DECODERS = "h264,hevc,vp9,aac,aac_latm,aac_fixed,mp3,mp3float,mp3adu,mp3adufloat,flac," +
             "pcm_s16le,pcm_s16be,pcm_s24le,pcm_s24be,pcm_s32le,pcm_s32be,pcm_u8,pcm_s8," +
             "pcm_f32le,pcm_f64le,pcm_alaw,pcm_mulaw"
 
-        /** `mov` covers mp4/mov/m4a; `matroska` covers mkv and webm. */
-        const val DEMUXERS = "mov,matroska"
+        /**
+         * `mov` covers mp4/mov/m4a; `matroska` covers mkv and webm.
+         *
+         * `mp3` and `flac` are the ELEMENTARY-stream demuxers and were missing from the first
+         * draft, which carried their decoders but no way to open a bare `.mp3` or `.flac`. The
+         * matrix run caught it as `open -29` on two rows: a decoder without its demuxer is a
+         * codec nobody can reach.
+         */
+        const val DEMUXERS = "mov,matroska,mp3,flac"
 
-        const val PARSERS = "h264,hevc,aac,aac_latm,mpegaudio,flac"
+        const val PARSERS = "h264,hevc,vp9,aac,aac_latm,mpegaudio,flac"
 
         const val BSFS = "h264_mp4toannexb,hevc_mp4toannexb,aac_adtstoasc,extract_extradata,null"
 

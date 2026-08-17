@@ -66,15 +66,35 @@ class BuildFFmpegWasmTaskTest {
         assertFalse("--disable-pthreads" in args("mt"))
     }
 
-    /** The lean web set is a decision, not an accident, so its contents are pinned. */
+    /**
+     * The web tier must serve the 17.5 matrix rows it claims, and this pins the REASON rather than
+     * the literal list.
+     *
+     * An earlier version asserted the demuxer string equalled `mov,matroska` exactly. It was right
+     * to fail when that changed, but it pinned the wrong thing: what matters is that every codec a
+     * MustPlay row needs is reachable, not that the string never moves. The matrix run found three
+     * gaps this now covers, and each is named with the row that exposed it.
+     */
     @Test
-    fun theLeanSetCarriesTheCodecsTheWebTierPromises() {
+    fun everyCodecTheMatrixRequiresIsReachable() {
         val decoders = args("base").single { it.startsWith("--enable-decoder=") }
-        listOf("h264", "hevc", "aac", "mp3", "flac", "pcm_s16le").forEach {
-            assertTrue(it in decoders.split("=", limit = 2)[1].split(","), "$it missing from the web tier")
-        }
+            .substringAfter("=").split(",")
         val demuxers = args("base").single { it.startsWith("--enable-demuxer=") }
-        assertEquals("--enable-demuxer=mov,matroska", demuxers)
+            .substringAfter("=").split(",")
+
+        // Video rows: sync1080p30.mp4 and friends, hevc4k10.mp4, vp9.webm.
+        listOf("h264", "hevc", "vp9").forEach {
+            assertTrue(it in decoders, "$it missing: a MustPlay video row needs it")
+        }
+        // Audio rows: audio-aac.m4a, audio-mp3.mp3, audio-flac.flac, the pcm cases.
+        listOf("aac", "mp3", "flac", "pcm_s16le").forEach {
+            assertTrue(it in decoders, "$it missing: a MustPlay audio row needs it")
+        }
+        // A decoder with no demuxer is a codec nobody can reach, which is exactly how
+        // audio-mp3.mp3 and audio-flac.flac failed at open with -29 before this was fixed.
+        listOf("mov", "matroska", "mp3", "flac").forEach {
+            assertTrue(it in demuxers, "$it demuxer missing: its MustPlay row cannot be opened")
+        }
     }
 
     @Test
