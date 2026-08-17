@@ -679,13 +679,14 @@ static void case_video_args_at_the_widest_inputs(void)
                                       1920, 1080, widest_fmt, 1, 25, 25, 1, 1, 1) < 0,
               "a graph in a hardware pixel format was accepted");
     KC_NULL(graph);
-    /* An unknown pixel format falls back to yuv420p inside the helper rather than rendering a
-     * NULL name, which is the case that would otherwise print "(null)" or crash. */
+    /* An unknown pixel format is an ARGUMENT ERROR, not an invitation to substitute yuv420p:
+     * a graph silently built for a different format than the caller's frames misreads every
+     * plane. The helper resolves the name first and refuses when there is none, so no NULL
+     * name ever reaches snprintf. */
     KC_EQ_INT(ffkmp_graph_build_video(&graph, &src, &sink, "null",
-                                      64, 64, 999999, 1, 25, 25, 1, 1, 1), 0);
-    KC_NOT_NULL(graph);
-    ffkmp_graph_free(&graph);
-    kc_detail("pix_fmt=%s", widest_name);
+                                      64, 64, 999999, 1, 25, 25, 1, 1, 1), AVERROR(EINVAL));
+    KC_NULL(graph);
+    kc_detail("pix_fmt=%s, unknown format refused with EINVAL", widest_name);
 }
 
 static void case_video_multi_args_at_the_widest_inputs(void)

@@ -237,15 +237,18 @@ static void case_metadata_carried_and_dropped(void)
     kc_detail("w=%d h=%d fmt=%d pts=%lld", ffkmp_frame_width(dst), ffkmp_frame_height(dst),
               ffkmp_frame_format(dst), (long long)ffkmp_frame_pts(dst));
 
-    kc_case("and it carries nothing else: sar, range, space and duration stay at their defaults");
-    KC_EQ_INT(dst->sample_aspect_ratio.num, 0);
-    KC_EQ_INT(dst->sample_aspect_ratio.den, 1);
-    KC_EQ_INT((int)dst->color_range, (int)AVCOL_RANGE_UNSPECIFIED);
-    KC_EQ_INT((int)dst->colorspace, (int)AVCOL_SPC_UNSPECIFIED);
-    KC_EQ_I64(dst->duration, 0);
-    kc_note("the source declared 4/3, MPEG range, BT470BG and a duration of 4242, and none of the");
-    kc_note("four reached the result. That is the baseline, not an endorsement: a consumer that");
-    kc_note("needs them has to copy them itself today.");
+    kc_case("and it carries the rest too: sar, range, space and duration travel with the picture");
+    KC_EQ_INT(dst->sample_aspect_ratio.num, 4);
+    KC_EQ_INT(dst->sample_aspect_ratio.den, 3);
+    KC_EQ_INT((int)dst->color_range, (int)AVCOL_RANGE_MPEG);
+    KC_EQ_INT((int)dst->colorspace, (int)AVCOL_SPC_BT470BG);
+    KC_EQ_I64(dst->duration, 4242);
+    kc_note("the source declared 4/3, MPEG range, BT470BG and a duration of 4242, and all four");
+    kc_note("reach the result: the helper runs av_frame_copy_props, which is what lets a colour");
+    kc_note("aware consumer trust the converted frame's tags instead of re-deriving them.");
+    kc_detail("sar=%d/%d range=%d space=%d duration=%lld",
+              dst->sample_aspect_ratio.num, dst->sample_aspect_ratio.den,
+              (int)dst->color_range, (int)dst->colorspace, (long long)dst->duration);
     ffkmp_frame_free(dst);
     ffkmp_frame_free(src);
 }
@@ -390,8 +393,9 @@ static void case_allocation_baseline(void)
     ffkmp_frame_free(dst);
     KC_ALLOC_BALANCED(&before);
 
-    kc_case("the per-call cost is stable across repeats, which is what caching will change");
+    kc_case("repeats on the SAME shape hit the thread-local cache and cost strictly less");
     if (kc_alloc_active()) {
+        long long steady = -1;
         for (repeat = 0; repeat < 8; repeat++) {
             long long cost;
             kc_alloc_snapshot(&before);
@@ -399,41 +403,65 @@ static void case_allocation_baseline(void)
             KC_NOT_NULL(dst);
             ffkmp_frame_free(dst);
             cost = kc_alloc_new_delta(&before);
-            KC_CHECKF(cost == per_call_even,
-                      "repeat %d cost %lld allocating calls, the first cost %lld; the per-call "
-                      "cost is supposed to be constant because nothing is cached", repeat, cost,
-                      per_call_even);
+            if (steady < 0) steady = cost;
+            KC_CHECKF(cost == steady,
+                      "repeat %d cost %lld allocating calls, the first repeat cost %lld; every "
+                      "cache hit is supposed to cost the same", repeat, cost, steady);
             KC_CHECKF(kc_alloc_live_delta(&before) == 0, "repeat %d leaked", repeat);
         }
-        /* Measured when this baseline was written: 9 for an even-height frame. Asserted, so a
-         * change in the per-call cost is a failing case with a number in it rather than a silent
-         * improvement or regression. */
+        /* The cached-context baseline. per_call_even is the cost of a call that had to REBUILD
+         * the context (the case above ran after a differently shaped conversion); steady is the
+         * cost once the context matches. Both are asserted, so a regression that reintroduces
+         * per-call context construction fails here with numbers in it. */
         KC_CHECKF(per_call_even == 9,
-                  "an even-height conversion cost %lld allocating calls, the recorded baseline is "
-                  "9. If B2's caching landed, this is the case that should be updated with the new "
-                  "number and a note", per_call_even);
-        kc_detail("9 allocating calls per conversion, 8 repeats, all identical");
+                  "a shape-changing conversion cost %lld allocating calls, the recorded baseline "
+                  "is 9", per_call_even);
+        KC_CHECKF(steady == 4,
+                  "a cache-hit conversion cost %lld allocating calls, the recorded baseline is 4",
+                  steady);
+        KC_CHECKF(steady < per_call_even, "the cache did not make a repeat cheaper");
+        per_call_even = steady;
+        kc_detail("rebuild=9, cache hit=4 allocating calls, 8 repeats, all identical");
+        kc_note("sws_getCachedContext keeps one context per thread. Only a shape change (size or");
+        kc_note("either pixel format) pays construction again, which is what perf blocker 3 asked");
+        kc_note("for; the four remaining calls are the destination frame and its buffer.");
     } else {
         kc_partial("allocation pairing not observable in this variant");
     }
 
-    kc_case("an odd height costs more, because swscale cannot take its fast path");
+    kc_case("an odd height changes the shape, so it pays a rebuild AND swscale's slow path");
     if (kc_alloc_active()) {
+        long long held_by_cache;
         kc_alloc_snapshot(&before);
         dst = ffkmp_frame_convert_pixfmt(odd, AV_PIX_FMT_RGBA);
         KC_NOT_NULL(dst);
         ffkmp_frame_free(dst);
         per_call_odd = kc_alloc_new_delta(&before);
-        KC_CHECKF(kc_alloc_live_delta(&before) == 0, "the odd-height conversion leaked");
+        held_by_cache = kc_alloc_live_delta(&before);
         KC_CHECKF(per_call_odd == 61,
                   "a 64x63 conversion cost %lld allocating calls, the recorded baseline is 61",
                   per_call_odd);
         KC_CHECKF(per_call_odd > per_call_even, "the odd case did not cost more");
-        kc_detail("even=%lld odd=%lld", per_call_even, per_call_odd);
-        kc_note("both numbers are the cost of rebuilding the SwsContext per call. They are the");
-        kc_note("baseline B2's cached contexts have to beat, and the ratio is why the odd case is");
-        kc_note("recorded separately.");
+        /* The frame is gone but the NEW context is not: the cache holds exactly one, so what
+         * stays live here is the odd context minus the even one it replaced. */
+        KC_CHECKF(held_by_cache > 0, "the odd rebuild left nothing cached, so nothing was cached");
+        kc_detail("cache hit=%lld odd rebuild=%lld, cached blocks held=%lld", per_call_even,
+                  per_call_odd, held_by_cache);
+        kc_note("the odd number is a rebuild, not a steady-state cost: alternating two shapes on");
+        kc_note("one thread defeats the cache by construction, which is why decode paths convert");
+        kc_note("one shape at a time.");
+
+        kc_case("and the cache holds exactly one context: the next shape frees the odd one");
+        dst = ffkmp_frame_convert_pixfmt(even, AV_PIX_FMT_RGBA);
+        KC_NOT_NULL(dst);
+        ffkmp_frame_free(dst);
+        KC_CHECKF(kc_alloc_live_delta(&before) == 0,
+                  "converting the even shape again left %lld blocks live; the cache is supposed "
+                  "to hold one context, not accumulate them", kc_alloc_live_delta(&before));
+        kc_detail("the odd context was released when the even shape came back, window balanced");
     } else {
+        kc_partial("allocation pairing not observable in this variant");
+        kc_case("and the cache holds exactly one context: the next shape frees the odd one");
         kc_partial("allocation pairing not observable in this variant");
     }
 
@@ -477,7 +505,7 @@ static void case_guard_paths(void)
         AVFrame *dst;
         kc_alloc_counts before;
 
-        kc_case("%s is refused with NULL and allocates nothing: %s", rows[i].name, rows[i].why);
+        kc_case("%s is refused with NULL and keeps nothing: %s", rows[i].name, rows[i].why);
         /* The first row is the NULL-source row, so it is the only one with no frame to build. */
         if (i > 0) {
             src = rows[i].with_buffer
@@ -488,7 +516,13 @@ static void case_guard_paths(void)
         kc_alloc_snapshot(&before);
         dst = ffkmp_frame_convert_pixfmt(src, rows[i].dst_format);
         KC_NULL(dst);
-        KC_ALLOC_BALANCED(&before);
+        /* Not BALANCED: a refusal that reached sws_getCachedContext RELEASES the context the
+         * cache was holding, so the window legitimately ends NEGATIVE. What no refusal may do is
+         * leave a block behind, which is what a positive delta would mean. */
+        KC_CHECKF(kc_alloc_live_delta(&before) <= 0,
+                  "the refusal left %lld blocks live", kc_alloc_live_delta(&before));
+        kc_detail("new=%lld freed=%lld live=%lld", kc_alloc_new_delta(&before),
+                  kc_alloc_free_delta(&before), kc_alloc_live_delta(&before));
         if (src != NULL)
             ffkmp_frame_free(src);
     }

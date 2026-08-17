@@ -340,7 +340,7 @@ public actual class MediaSource internal constructor(
             ffkmp_frame_use_best_effort_ts(frame.nativeFrame)
             // The wrap'd Frame is reference-only; the callback reads info / pixels and a consumer
             // that needs the data afterwards takes a copy(). The underlying AVFrame pointer is
-            // reused for the next iteration, so the wrapper is force-closed here (idempotently) —
+            // reused for the next iteration, so the wrapper is force-closed here (idempotently):
             // a callback that retained it without closing must never see it as still open.
             val view = FrameOps.wrap(frame.nativeFrame, decoder.stream.index, decoder.stream.type, decoder.stream.timeBase)
             try {
