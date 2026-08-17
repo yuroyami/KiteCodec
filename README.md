@@ -1,12 +1,12 @@
 # KiteCodec
 
 Video and audio processing for Kotlin Multiplatform: read a media file, change it,
-and write it back. Native targets reach FFmpeg's libav\* libraries through cinterop. The local
-Android proof uses a dynamically registered JNI adapter over the same opaque C helpers, exercised
-on the host by a separate unpublished JVM harness. Public JVM, JS and WasmJs variants always use
-an explicit unsupported placeholder:
-diagnostics and capability probes work, while every media operation fails immediately with the
-typed `FFmpegError.Unsupported`. There is no `ffmpeg` process to launch and no log output to parse.
+and write it back. Native targets reach FFmpeg's libav\* libraries through cinterop. The JVM and
+Android variants reach the same libraries through a dynamically registered JNI adapter over the
+same opaque C helpers, and the JVM artifact carries that adapter inside its jar, so a desktop app
+needs one dependency line and nothing else. JS and WasmJs variants use an explicit unsupported
+placeholder: diagnostics and capability probes work, while every media operation fails immediately
+with the typed `FFmpegError.Unsupported`. There is no `ffmpeg` process to launch and no log output to parse.
 
 [![CI](https://img.shields.io/github/actions/workflow/status/yuroyami/KiteCodec/ci.yml?label=CI)](https://github.com/yuroyami/KiteCodec/actions/workflows/ci.yml)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.4.10-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org)
@@ -286,13 +286,18 @@ machine by the native and shared-contract suites, seven C suites under three
 sanitizer variants, and the e2e script. `linuxX64` and
 `mingwX64` are T2 on CI evidence only, never on a machine you can inspect here.
 The `androidNative*` klibs are T1: they compile per ABI and nothing runs them.
-The Android/JNI layer is source- and host-verified only. The phone proof creates a separate custom
-JVM test compilation whose macOS JNI dylib is a fixture, never a publication. Every scope publishes
-the same dependency-compatible JVM placeholder, so no consumer jar tries to load a missing native
-library. No Android playback or physical-device qualification is claimed.
+The Android/JNI layer is source- and host-verified only, and no Android playback or physical-device
+qualification is claimed. The JVM variant is no longer a placeholder: it compiles the same JNI tree
+Android does, its test source set runs the shared codec contract over real FFmpeg on this arm64
+Mac, and the host library is published inside the jar. Only the macOS arm64 library is bundled
+today; a Linux or Windows JVM resolves the artifact and then finds no library for its platform,
+which the loader says in one sentence.
 `iosArm64` and `iosSimulatorArm64` now have a local/private build and consumer
 path on this arm64 Mac, but no public or CI tier is inferred from it here.
-`iosX64`, `macosX64` and `linuxArm64` remain unqualified.
+`linuxX64` and `linuxArm64` now have vendored FFmpeg trees cross-built from the Kotlin/Native
+toolchains and 109 native tests passing on linuxArm64 in a container; `mingwX64` has the same
+vendored tree and links to a PE32+ binary, with nothing run. `iosX64` and `macosX64` remain
+unqualified.
 JS and WasmJs are deliberately T1 placeholders: their API and failure contract are tested, but
 they do not decode, encode, filter, remux or transcode media.
 
@@ -301,15 +306,15 @@ they do not decode, encode, filter, remux or transcode media.
 | `macosArm64` | no | unit tests, native tests and an e2e transcode, run twice: against Homebrew, and against the vendored LGPL build compiled from source | Homebrew, vendored, or a future prebuilt asset |
 | `linuxX64` | no | unit tests, native tests and an e2e transcode, against whatever 6.x FFmpeg Ubuntu 24.04 ships. This is what exercises the lavc-6 compatibility path. | apt, vendored, or a future prebuilt asset |
 | `androidNativeArm64` / `Arm32` / `X64` | no | the klib compiles, per ABI. No tests run on Android. | NDK cross-compile of the LGPL MediaCodec profile |
-| JVM | no | every scope runs and publishes the same typed unavailable placeholder as Web; the local phone scope adds a separate unpublished JNI test compilation loading a test-only macOS arm64 dylib | none for the public placeholder; vendored macOS LGPL tree for the unpublished test fixture |
+| JVM | no | the real JNI tree, not a placeholder: 41 tests including the shared codec contract and the VideoToolbox hwaccel contract run over real FFmpeg on an arm64 Mac. The host library rides in the jar, self-contained | vendored macOS LGPL tree, linked into the bundled JNI library |
 | Android `minSdk 24` actual | no | local AAR model packages JNI for `arm64-v8a` and `x86_64`; both ELF link arms and 16 KiB ELF/app packaging rules are checked. No Android playback or physical-device qualification is claimed. | NDK cross-compile of the LGPL Android profile |
 | `js` | no | Node tests verify readable unavailable diagnostics, empty capabilities and typed unsupported failures; no media runtime exists | none; unsupported placeholder |
 | `wasmJs` | no | Node/Wasm tests verify the same placeholder contract; no media runtime exists | none; unsupported placeholder |
-| `mingwX64` | no | native tests and an e2e transcode | a pinned BtbN `win64-gpl-shared` zip. The CI job unpacks it by hand into `native-libs/gpl/mingw-x64`. No discovery, no prebuilt asset. |
+| `mingwX64` | no | the vendored tree cross-builds and the whole stack links to a PE32+ binary. Nothing has been run: there is no Windows machine here | vendored LGPL cross-build at the reduced desktop profile, from the Kotlin/Native toolchain. CI's pinned BtbN `win64-gpl-shared` zip remains a separate path |
 | `iosArm64`, `iosSimulatorArm64` | no | no CI claim; local arm64-Mac proof only | LGPL STANDARD playback build from source, with SDK zlib and VideoToolbox DECODE (encode stays desktop-only), no desktop third-party stack or GPL; consumable through `FFmpegSource.Local` |
 | `iosX64` | no | not qualified | the same mobile profile is coded for the simulator SDK, but this stage does not build or consume it |
 | `macosX64` | no | not built | Kotlin deprecated the target |
-| `linuxArm64` | no | not built | needs an arm64 runner with Kotlin/Native host support |
+| `linuxArm64` | no | 109 native tests pass in an arm64 Linux container over the vendored cross-build, covering demux, decode, encode, filter and transcode | vendored LGPL cross-build at the reduced desktop profile, from the Kotlin/Native toolchain |
 
 Six triples have no prebuilt asset. For those the Gradle plugin fails
 configuration and prints the alternatives, rather than letting the download
