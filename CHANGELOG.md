@@ -11,6 +11,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 The library is source-only for now. Nothing has been published, not `kitecodec-core`, not the Gradle plugin, and not the FFmpeg Release assets the plugin's `FFmpegSource.Prebuilt` default downloads. Release state and the per-target table live in the [README](https://github.com/yuroyami/KiteCodec#release-status) rather than being restated here.
 
 ### Added
+- **A real JVM variant, so a desktop app is one dependency line.** `jvmMain` compiled
+  `unsupportedMain` until now, so every JVM consumer got a library whose every entry point threw,
+  while the working JNI implementation was compiled only for Android. The jvm target builds the
+  real tree now, its test source set runs the shared codec-contract suite (41 tests green over real
+  FFmpeg), and the host JNI library rides inside the jar under `kitecodec-native/<os>-<arch>/`,
+  self-contained: the libraries the link pulls from a package manager travel with it, their load
+  commands rewritten to `@loader_path` and each one re-signed, because Apple silicon refuses an
+  invalidated signature with SIGKILL and no exception. `JniLibrary` tries an explicit
+  `kitecodec.jni.path`, then `java.library.path`, then the bundle. The JVM API dump gains
+  `MediaByteSource` and the `MediaSource.open` overload that takes one, which the placeholder never
+  had.
+- **FFmpeg for Linux and Windows.** `buildFFmpegForLinuxX64`, `...LinuxArm64` and `...MingwX64`
+  produce real trees for the first time, cross-built from the Kotlin/Native toolchains so the ABI
+  matches what Kotlin/Native links against, at a reduced profile (software codecs plus zlib, no
+  third-party encoder or text stack). Measured: 109 native tests pass on linuxArm64 in a container
+  over the result, and the whole stack links to a PE32+ binary for Windows.
+  `-Pkitecodec.withDesktopTargets=true` adds the three triples to a publication instead of
+  replacing its Apple and Android variants.
 - **Owned stream colour and typed VP9 metadata.** Video stream snapshots now carry container/probe
   colour declarations plus typed VP9 profile, level, bit depth and chroma subsampling across both
   native and JNI builders. Nine compatible C accessors advance the C ABI from 2.5 to 2.6, the
