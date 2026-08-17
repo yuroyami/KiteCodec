@@ -654,6 +654,27 @@ fun registerBuildFFmpeg(triple: TargetTriple, flavour: FFmpegLicense) =
         outputDir.set(rootDir.resolve("native-libs/${flavour.dirName}/${triple.dirName}"))
     }
 
+// Register :buildFFmpegForWasm[Simd|Mt] (17.14 X-02). Not a TargetTriple: konan has no wasm
+// target, so none of the cross-toolchain plumbing above applies. Output goes to a sibling of the
+// native trees so packaging finds it the same way.
+fun registerBuildFFmpegWasm(variantName: String, taskSuffix: String) =
+    tasks.register<io.github.yuroyami.kitecodec.buildtools.BuildFFmpegWasmTask>(
+        "buildFFmpegForWasm$taskSuffix",
+    ) {
+        variant = variantName
+        sourceRef = BuildFFmpegTask.DEFAULT_SOURCE_REF
+        emscriptenLlvmBin.set(
+            providers.gradleProperty("kitecodec.emscripten.llvmBin")
+                .orElse(io.github.yuroyami.kitecodec.buildtools.BuildFFmpegWasmTask.DEFAULT_EMSCRIPTEN_LLVM_BIN),
+        )
+        sourceDir.set(rootDir.resolve("vendor/ffmpeg"))
+        outputDir.set(rootDir.resolve("native-libs/lgpl/wasm32${if (variantName == "base") "" else "-" + variantName}"))
+    }
+
+registerBuildFFmpegWasm("base", "")
+registerBuildFFmpegWasm("simd", "Simd")
+registerBuildFFmpegWasm("mt", "Mt")
+
 // Register the :buildDav1dFor<Target> tasks (D-7, KC-AV1SW): cross-compile dav1d into
 // native-libs/deps/<target>, which is where a dav1d-enabled buildFFmpegFor<Target> looks.
 fun registerBuildDav1d(triple: TargetTriple) =
