@@ -51,12 +51,15 @@ object StaticLinkFlags {
     private fun needsStaticStack(target: TargetTriple, isStaticVendored: Boolean): Boolean {
         if (!isStaticVendored) return false
         return when (target) {
-            TargetTriple.MacosArm64, TargetTriple.MacosX64,
-            TargetTriple.LinuxX64, TargetTriple.LinuxArm64,
-            -> true
+            TargetTriple.MacosArm64, TargetTriple.MacosX64 -> true
             // Mobile Apple uses only FFmpeg's shared software profile and SDK zlib.
             TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64, TargetTriple.IosX64,
-            TargetTriple.MingwX64,
+            // Linux and Windows build the REDUCED desktop profile (KPKMP.md 17.13, decision
+            // W-D4): no third-party encoder or text stack is cross-built for them, so naming
+            // those archives here would fail every link with `unable to find library -lass`.
+            // The list must follow the configure profile, which is why this row moved when the
+            // profile did.
+            TargetTriple.LinuxX64, TargetTriple.LinuxArm64, TargetTriple.MingwX64,
             TargetTriple.AndroidArm64, TargetTriple.AndroidArm32, TargetTriple.AndroidX64,
             -> false
         }
@@ -131,6 +134,16 @@ object StaticLinkFlags {
                 "-framework", "CoreVideo",
                 "-framework", "VideoToolbox",
             )
+        }
+        if (isStaticVendored && target.isPortableDesktop) {
+            // The reduced profile links no third-party stack, but a static libav* still draws on
+            // the platform: zlib (asked for on linux, absent on mingw), the maths and dynamic
+            // loader libraries on linux, and the Windows sockets, media and time APIs that
+            // FFmpeg's network and mpegts code reaches for on mingw.
+            return dav1dFlags + when (target) {
+                TargetTriple.MingwX64 -> listOf("-lws2_32", "-lbcrypt", "-lsecur32", "-lmfplat", "-lole32", "-lstrmiids", "-luuid")
+                else -> listOf("-lz", "-lm", "-ldl", "-lpthread")
+            }
         }
         if (!needsStaticStack(target, isStaticVendored)) return dav1dFlags
 

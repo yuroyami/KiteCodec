@@ -158,4 +158,18 @@ enum class TargetTriple(val dirName: String, val gradleSuffix: String) {
     ;
 
     val isAndroid: Boolean get() = this == AndroidArm64 || this == AndroidArm32 || this == AndroidX64
+
+    /**
+     * Linux and Windows: desktop targets with no cross-built third-party stack.
+     *
+     * They get the reduced profile of KPKMP.md 17.13's decision W-D4. The full desktop profile
+     * demands x264, svt-av1, opus, libass and six more libraries that have never been cross-built
+     * for these triples, and building nine dependencies three ways is not what phase W buys. The
+     * reduced profile is the 17.6 `standard` tier and plays the whole 17.5 matrix; a consumer who
+     * wants the GPL stack builds it through the plugin, which is what the plugin is for.
+     */
+    val isPortableDesktop: Boolean get() = this == LinuxX64 || this == LinuxArm64 || this == MingwX64
+
+    /** How Kotlin/Native spells this target, which is how the C tasks key their sysroots. */
+    val konanTargetName: String get() = dirName.replace('-', '_')
 }

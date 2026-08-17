@@ -3,6 +3,7 @@ import com.vanniktech.maven.publish.KotlinMultiplatform
 import com.android.build.api.dsl.KotlinMultiplatformAndroidLibraryTarget
 import com.android.build.api.variant.KotlinMultiplatformAndroidComponentsExtension
 import io.github.yuroyami.kitecodec.buildtools.BuildFFmpegTask
+import io.github.yuroyami.kitecodec.buildtools.BundleHostJniTask
 import io.github.yuroyami.kitecodec.buildtools.CompareCodecContractTask
 import io.github.yuroyami.kitecodec.buildtools.CompileKiteCodecCTask
 import io.github.yuroyami.kitecodec.buildtools.FFmpegLicense
@@ -255,13 +256,25 @@ kotlin {
 
     // Every Kotlin/Native target gets the same single consolidated cinterop. Each resolves its
     // own FFmpeg install via FFmpegPaths.resolve(...): vendored static if available, else system.
+    // -Pkitecodec.withDesktopTargets=true ADDS the three cross desktop triples to the phone scope
+    // rather than replacing it (phase W, register item W-07). A desktop publication that dropped
+    // the Apple and Android variants would break every mobile consumer resolving the same version,
+    // which is why this is an addition and not its own scope.
+    val withDesktopTargets = providers.gradleProperty("kitecodec.withDesktopTargets")
+        .map { it == "true" }.getOrElse(false)
+
     val knTargetMap: Map<KotlinNativeTarget, TargetTriple> = if (phoneTargetsOnly || applePhoneTargetsOnly) {
         if (applePhoneTargetsOnly) requireArm64Mac("kitecodec.applePhoneTargetsOnly")
-        mapOf(
-            macosArm64() to TargetTriple.MacosArm64,
-            iosArm64() to TargetTriple.IosArm64,
-            iosSimulatorArm64() to TargetTriple.IosSimulatorArm64,
-        )
+        buildMap {
+            put(macosArm64(), TargetTriple.MacosArm64)
+            put(iosArm64(), TargetTriple.IosArm64)
+            put(iosSimulatorArm64(), TargetTriple.IosSimulatorArm64)
+            if (withDesktopTargets) {
+                put(linuxX64(), TargetTriple.LinuxX64)
+                put(linuxArm64(), TargetTriple.LinuxArm64)
+                put(mingwX64(), TargetTriple.MingwX64)
+            }
+        }
     } else if (hostTargetsOnly) {
         // Consumer-e2e smoke scope: just the host's own native desktop target. Portable
         // JVM/JS/Wasm variants are registered above in every scope.
@@ -1062,14 +1075,13 @@ run {
     val osArch = System.getProperty("os.arch").orEmpty().lowercase()
     val hostIsArm64Mac = "mac" in osName && osArch in setOf("aarch64", "arm64")
     if (hostIsArm64Mac && hostFfmpegLib.isDirectory) {
-        val stageHostJni = tasks.register<Sync>("stageHostJniForJvm") {
-            group = "kitecodec"
-            description = "Stages libkitecodec_jni into the jvm artifact's resources for $hostArm."
+        val stageHostJni = tasks.register<BundleHostJniTask>("stageHostJniForJvm") {
             val link = tasks.named<LinkKiteCodecJniTask>("linkKiteCodecJniMacosArm64")
-            from(link.flatMap { it.outputLibrary }) { into("kitecodec-native/$hostArm") }
-            into(layout.buildDirectory.dir("kitecodec-jvm-resources"))
+            jniLibrary.set(link.flatMap { it.outputLibrary })
+            platformDirectory.set(hostArm)
+            outputDir.set(layout.buildDirectory.dir("kitecodec-jvm-resources"))
         }
-        tasks.named<ProcessResources>("jvmProcessResources") { from(stageHostJni) }
+        tasks.named<ProcessResources>("jvmProcessResources") { from(stageHostJni.flatMap { it.outputDir }) }
     }
 
     // The falsifiability arm for W-01 and W-02, kept in the build so it can be re-run rather than

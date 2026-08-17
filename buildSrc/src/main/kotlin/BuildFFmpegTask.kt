@@ -233,15 +233,17 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
         sdkPath: (String) -> String = ::xcrunSdkPath,
         ndkToolchainBin: () -> File = ::ndkToolchainBin,
         dav1dRoot: File? = null,
+        konanBin: (TargetTriple) -> KonanTools = ::konanCrossTools,
     ): List<String> {
         require(!(target.isAndroid && license == FFmpegLicense.GPL))
         require(!(target.isIos && license == FFmpegLicense.GPL)) { IOS_GPL_REFUSAL }
         val profileArgs = when {
             target.isAndroid -> androidArgs(target, ndkToolchainBin())
             target.isIos -> mobileAppleArgs(target, sdkPath)
+            target.isPortableDesktop -> portableDesktopArgs(target) + desktopTargetArgs(target, konanBin)
             else -> desktopBaseArgs() +
                 (if (license == FFmpegLicense.GPL) desktopGplArgs() else emptyList()) +
-                desktopTargetArgs(target)
+                desktopTargetArgs(target, konanBin)
         }
         // The optional dav1d switch (D-7). configure discovers dav1d ONLY through pkg-config,
         // so the host pkg-config is forced even on cross builds; configureEnv points it at the
@@ -509,7 +511,78 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
         "--enable-hwaccel=h264_videotoolbox,hevc_videotoolbox",
     )
 
-    private fun desktopTargetArgs(target: TargetTriple): List<String> = when (target) {
+    /**
+     * One Kotlin/Native cross toolchain: konan's clang, its binutils, the triple and the sysroot.
+     *
+     * Injected as a lambda so the configure goldens can pin the flag SHAPE without pinning this
+     * machine's absolute paths, exactly as the Android arm injects its NDK bin directory.
+     */
+    internal data class KonanTools(
+        val clang: String,
+        /** `-B<dir>`: where clang finds `ld.lld`. Apple's own `ld` cannot link ELF or PE. */
+        val toolchainBin: String,
+        /** The gcc runtime directory (crtbegin/crtend, libgcc), which sits OUTSIDE the sysroot. */
+        val runtimeDir: String?,
+        val ar: String,
+        val nm: String,
+        val ranlib: String,
+        val triple: String,
+        val sysroot: String,
+    )
+
+    private fun konanCrossTools(target: TargetTriple): KonanTools {
+        val konanRoot = System.getenv("KONAN_DATA_DIR")?.let(::File)
+            ?: File(System.getProperty("user.home"), ".konan")
+        val dependencies = konanRoot.resolve("dependencies")
+        require(dependencies.isDirectory) {
+            "No konan dependencies at ${dependencies.absolutePath}. They arrive with the " +
+                "Kotlin/Native distribution, so a build that has already compiled Kotlin/Native " +
+                "code has them."
+        }
+        val llvmBin = CompileKiteCodecCTask.resolveLlvmBinDir(
+            dependencies,
+            CompileKiteCodecCTask.DEFAULT_LLVM_PACKAGE,
+        ) { message -> logger.lifecycle("[KiteCodec] $message") }
+        fun tool(name: String): String = (CompileKiteCodecCTask.resolveTool(llvmBin, name)
+            ?: throw GradleException(
+                "Cannot cross-build FFmpeg for $target: no $name under ${llvmBin.absolutePath}.",
+            )).absolutePath
+        // The konan LLVM package is the "essentials" set: clang, lld, llvm-ar and little else.
+        // ranlib is llvm-ar's own `s` operation, and Xcode's nm is LLVM's and reads ELF and PE
+        // as happily as Mach-O (verified against a cross-linked linuxX64 binary). Stripping is
+        // turned off in the configure args instead of hunting for a strip that can do it: these
+        // are static archives, and a consumer's own link strips what it does not use.
+        val archiver = tool("llvm-ar")
+        val spec = CompileKiteCodecCTask.specFor(target.konanTargetName)
+        val sysrootRelative = requireNotNull(spec.konanSysroot) { "$target has no konan sysroot" }
+        val sysroot = dependencies.resolve(sysrootRelative)
+        require(sysroot.isDirectory) {
+            "Cannot cross-build FFmpeg for $target: no sysroot at ${sysroot.absolutePath}."
+        }
+        // konan's linux packages keep the gcc runtime beside the sysroot, not inside it, so lld
+        // finds neither crtbeginS.o nor libgcc without being told. The version directory is not
+        // hardcoded: the package pins its own gcc version and a konan bump would change it.
+        val packageRoot = dependencies.resolve(sysrootRelative.substringBefore('/'))
+        val runtimeDir = packageRoot.resolve("lib/gcc").listFiles().orEmpty()
+            .filter { it.isDirectory }
+            .flatMap { it.listFiles().orEmpty().filter { version -> version.isDirectory } }
+            .firstOrNull { it.resolve("libgcc.a").isFile }
+        return KonanTools(
+            clang = tool("clang"),
+            toolchainBin = llvmBin.absolutePath,
+            runtimeDir = runtimeDir?.absolutePath,
+            ar = archiver,
+            nm = "/usr/bin/nm",
+            ranlib = "$archiver s",
+            triple = spec.triple,
+            sysroot = sysroot.absolutePath,
+        )
+    }
+
+    private fun desktopTargetArgs(
+        target: TargetTriple,
+        konanBin: (TargetTriple) -> KonanTools,
+    ): List<String> = when (target) {
         TargetTriple.MacosArm64 -> listOf(
             "--arch=arm64", "--target-os=darwin",
             "--cc=clang -arch arm64",
@@ -520,19 +593,72 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
             "--cc=clang -arch x86_64",
             "--enable-cross-compile",
         ) + appleHardwareArgs() + macosPrefixArgs()
-        TargetTriple.LinuxX64 -> listOf("--arch=x86_64", "--target-os=linux", "--cc=clang")
-        TargetTriple.LinuxArm64 -> listOf(
-            "--arch=aarch64", "--target-os=linux",
-            "--cc=aarch64-linux-gnu-gcc",
-            "--enable-cross-compile",
-        )
-        TargetTriple.MingwX64 -> listOf(
-            "--arch=x86_64", "--target-os=mingw32",
-            "--cc=x86_64-w64-mingw32-gcc",
-            "--enable-cross-compile",
-        )
+        // Linux and Windows cross-build with the SAME toolchain Kotlin/Native links against:
+        // konan's own clang, aimed by -target, over the sysroot konan ships for that triple
+        // (KPKMP.md 17.13, decision W-D3). This is not a preference. FFmpeg built by any other
+        // toolchain can reference a glibc symbol the konan sysroot does not carry, and the failure
+        // arrives at LINK time in a consumer's build, which is the worst place to find it.
+        //
+        // The konan "gcc" packages are not compilers on this host: their binaries are Linux ELF
+        // and Windows PE respectively, shipped for their headers and libraries. Only the sysroot
+        // is used, exactly as CompileKiteCodecCTask already does for the C helper layer.
+        TargetTriple.LinuxX64, TargetTriple.LinuxArm64, TargetTriple.MingwX64 -> {
+            val tools = konanBin(target)
+            val arch = when (target) {
+                TargetTriple.LinuxArm64 -> "aarch64"
+                else -> "x86_64"
+            }
+            val targetOs = if (target == TargetTriple.MingwX64) "mingw32" else "linux"
+            listOf(
+                "--arch=$arch", "--target-os=$targetOs",
+                "--enable-cross-compile",
+                // -fuse-ld=lld with -B is not optional: without it clang hands the objects to
+                // Apple's ld, which answers "unknown options: --sysroot ... --hash-style=gnu"
+                // because it only links Mach-O.
+                "--cc=${tools.clang} -target ${tools.triple} --sysroot=${tools.sysroot} " +
+                    "-fuse-ld=lld -B${tools.toolchainBin}" +
+                    (tools.runtimeDir?.let { " -B$it -L$it" } ?: ""),
+                "--ar=${tools.ar}", "--nm=${tools.nm}", "--ranlib=${tools.ranlib}",
+                "--disable-stripping",
+                // configure builds a few tools that must run HERE, so they need the host compiler.
+                "--host-cc=/usr/bin/clang",
+            ) + if (target == TargetTriple.MingwX64) {
+                listOf(
+                    // mingw's headers need the GNU dialect, and konan's clang defaults to a newer
+                    // C standard than the msys2 headers were written for.
+                    "--extra-cflags=-std=gnu11",
+                    // Windows threading is w32threads, not pthreads. sharedCoreArgs asks for
+                    // pthreads for everyone else, and configure REFUSES a requested library it
+                    // cannot find, so the request is withdrawn here rather than made conditional
+                    // up there: configure takes the last word on a flag, so this pair wins.
+                    "--disable-pthreads", "--enable-w32threads",
+                )
+            } else {
+                emptyList()
+            }
+        }
         else -> error("desktopTargetArgs called for non-desktop target $target")
     }
+
+    /**
+     * The reduced desktop profile for Linux and Windows (decision W-D4).
+     *
+     * Software codecs, the desktop compression libraries the sysroots actually carry, and nothing
+     * that needs a cross-built third-party library. What it costs against the macOS desktop
+     * profile, stated rather than hidden: no libsvtav1/libvpx/libaom/libopus/libmp3lame ENCODERS,
+     * no libwebp, no libass and no drawtext. Decoding is untouched, because the read side is wide
+     * by class in [sharedCoreArgs] and needs no third-party library at all, so the 17.5 conformance
+     * matrix plays in full.
+     *
+     * The compression libraries are per sysroot, measured rather than assumed: the konan linux
+     * sysroots carry zlib and nothing else (no bzlib.h, no lzma.h), and the msys2 mingw sysroot
+     * carries neither. FFmpeg REFUSES a configure that requests a library it cannot find, so
+     * asking for bzlib here would fail the build rather than silently drop it. What zlib buys is
+     * matroska and mov compressed headers; bzlib and lzma buy only rarely used matroska
+     * compression, so their absence costs almost nothing on these two targets.
+     */
+    private fun portableDesktopArgs(target: TargetTriple): List<String> =
+        if (target == TargetTriple.MingwX64) emptyList() else listOf("--enable-zlib")
 
     /** Mobile Apple playback profile: shared software codecs plus SDK zlib, and no desktop stack. */
     private fun mobileAppleArgs(target: TargetTriple, sdkPath: (String) -> String): List<String> {

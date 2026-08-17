@@ -33,21 +33,37 @@ internal actual object JniLibrary {
     private fun loadBundledOrInstalled() {
         val installed = runCatching { System.loadLibrary(LIBRARY_NAME) }
         if (installed.isSuccess) return
-        val resource = "/$RESOURCE_ROOT/$platformDirectory/$fileName"
-        val stream = JniLibrary::class.java.getResourceAsStream(resource)
+
+        // manifest.txt lists every file in the bundle, the JNI library LAST. The others are
+        // dependencies it loads through @loader_path, so they must all sit in one directory
+        // before the load; extracting only the library would fail at the first missing symbol.
+        val directoryResource = "/$RESOURCE_ROOT/$platformDirectory"
+        val manifest = JniLibrary::class.java.getResourceAsStream("$directoryResource/$MANIFEST_NAME")
+            ?.bufferedReader()?.use { it.readLines() }
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
             ?: throw UnsatisfiedLinkError(
-                "kitecodec_jni is neither on java.library.path nor bundled at $resource. " +
+                "kitecodec_jni is neither on java.library.path nor bundled at $directoryResource. " +
                     "This build of kitecodec-core carries no native library for $platformDirectory; " +
                     "supply one with -Dkitecodec.jni.path or -Djava.library.path.",
             )
-        val extracted = stream.use { input ->
-            val directory = Files.createTempDirectory("kitecodec-jni").toFile().apply { deleteOnExit() }
-            File(directory, fileName).also { target ->
-                Files.copy(input, target.toPath(), StandardCopyOption.REPLACE_EXISTING)
-                target.deleteOnExit()
-            }
+
+        val directory = Files.createTempDirectory("kitecodec-jni").toFile().apply { deleteOnExit() }
+        var library: File? = null
+        for (name in manifest) {
+            val stream = JniLibrary::class.java.getResourceAsStream("$directoryResource/$name")
+                ?: throw UnsatisfiedLinkError(
+                    "the bundle manifest names $name but $directoryResource/$name is not in the jar.",
+                )
+            val target = File(directory, name)
+            stream.use { Files.copy(it, target.toPath(), StandardCopyOption.REPLACE_EXISTING) }
+            target.deleteOnExit()
+            if (name == fileName) library = target
         }
-        System.load(extracted.absolutePath)
+        val loadable = library ?: throw UnsatisfiedLinkError(
+            "the bundle at $directoryResource carries no $fileName.",
+        )
+        System.load(loadable.absolutePath)
     }
 
     /** `macos-arm64`, `linux-x64`, `windows-x64`: the same names the vendored FFmpeg trees use. */
@@ -73,4 +89,5 @@ internal actual object JniLibrary {
 
     private const val LIBRARY_NAME = "kitecodec_jni"
     private const val RESOURCE_ROOT = "kitecodec-native"
+    private const val MANIFEST_NAME = "manifest.txt"
 }
