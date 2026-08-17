@@ -680,6 +680,7 @@ tasks.register<io.github.yuroyami.kitecodec.buildtools.CompileKiteCodecCWasmTask
     dependsOn("buildFFmpegForWasm")
     sourceDir.set(rootDir.resolve("native/kitecodec-c/src"))
     includeDir.set(rootDir.resolve("native/kitecodec-c/include"))
+    handlesDir.set(rootDir.resolve("native/kitecodec-handles"))
     ffmpegIncludeDir.set(wasmFFmpegRoot.resolve("include"))
     ffmpegVersionHeaders.from(
         wasmFFmpegRoot.resolve("include/libavutil/ffversion.h"),
@@ -828,6 +829,8 @@ mavenPublishing {
  */
 run {
     val jniDir = rootDir.resolve("native/kitecodec-jni")
+    // The handle table, shared with the web binding rather than copied (17.14 X-04).
+    val handlesDir = rootDir.resolve("native/kitecodec-handles")
     val opaqueInclude = rootDir.resolve("native/kitecodec-c/include")
     val javaHome = javaToolchains
         .launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) }
@@ -889,6 +892,7 @@ run {
         group = "kitecodec"
         description = "Links the test-only macOS JNI dylib against the vendored LGPL FFmpeg"
         jniSources.from(fileTree(jniDir) { include("*.c", "*.h", "methods.def") })
+        jniSources.from(fileTree(handlesDir) { include("*.c", "*.h") })
         opaqueIncludeDir.set(opaqueInclude)
         val helperCompile = tasks.named<CompileKiteCodecCTask>("compileKiteCodecCForMacosArm64")
         dependsOn(helperCompile)
@@ -917,6 +921,7 @@ run {
             group = "kitecodec"
             description = "Links libkitecodec_jni.so for ${arm.abiDirectory}"
             jniSources.from(fileTree(jniDir) { include("*.c", "*.h", "methods.def") })
+            jniSources.from(fileTree(handlesDir) { include("*.c", "*.h") })
             opaqueIncludeDir.set(opaqueInclude)
             dependsOn(helperCompile)
             helperArchive.from(helperCompile.flatMap { it.outputDir.file(CompileKiteCodecCTask.ARCHIVE_NAME) })
@@ -986,6 +991,7 @@ run {
             group = "verification"
             description = "Links a test-only JNI dylib with a genuinely major-mismatched identity helper."
             jniSources.from(fileTree(jniDir) { include("*.c", "*.h", "methods.def") })
+            jniSources.from(fileTree(handlesDir) { include("*.c", "*.h") })
             opaqueIncludeDir.set(opaqueInclude)
             dependsOn(mismatchHelperCompile)
             helperArchive.from(
@@ -1029,6 +1035,9 @@ run {
             jniSources.from(
                 prepareCorruptJni.flatMap { it.outputDirectory }.map { directory -> directory.asFileTree },
             )
+            // The staged tree is a copy of native/kitecodec-jni only; the shared handle table is
+            // not in it and the link would fail on every kj_handle_* symbol without this.
+            jniSources.from(fileTree(handlesDir) { include("*.c", "*.h") })
             opaqueIncludeDir.set(opaqueInclude)
             dependsOn(normalHelperCompile)
             helperArchive.from(
@@ -1130,6 +1139,7 @@ run {
             providers.gradleProperty("kitecodec.jni.linux").orNull == "true"
         ) {
             val jniDir = rootDir.resolve("native/kitecodec-jni")
+            val handlesDir = rootDir.resolve("native/kitecodec-handles")
             val opaqueInclude = rootDir.resolve("native/kitecodec-c/include")
             val konanDataDirProvider = providers.environmentVariable("KONAN_DATA_DIR")
                 .orElse(providers.systemProperty("user.home").map { home -> "$home/.konan" })
@@ -1178,6 +1188,7 @@ run {
                     group = "kitecodec"
                     description = "Links libkitecodec_jni.so for $dirName."
                     jniSources.from(fileTree(jniDir) { include("*.c", "*.h", "methods.def") })
+                    jniSources.from(fileTree(handlesDir) { include("*.c", "*.h") })
                     opaqueIncludeDir.set(opaqueInclude)
                     dependsOn(helper, headers)
                     helperArchive.from(

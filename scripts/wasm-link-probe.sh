@@ -34,7 +34,7 @@ else
 fi
 
 set +e
-emcc -O2 -I"$ROOT/native/kitecodec-c/include" -I"$FF/include" \
+emcc -O2 -I"$ROOT/native/kitecodec-c/include" -I"$ROOT/native/kitecodec-handles" -I"$FF/include" \
   "$ROOT/native/kitecodec-c/probe/wasm_link_probe.c" "$KC" "${LIBS[@]}" \
   -o "$WORK/probe.js" > "$WORK/link.log" 2>&1
 link=$?

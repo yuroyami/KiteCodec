@@ -37,6 +37,14 @@ abstract class CompileKiteCodecCWasmTask @Inject constructor() : DefaultTask() {
     @get:PathSensitive(PathSensitivity.RELATIVE)
     abstract val includeDir: DirectoryProperty
 
+    /**
+     * `native/kitecodec-handles`, the generation-tagged handle table shared with the JNI adapter
+     * (17.14 X-04). Its own directory rather than a copy, so a fix here reaches both bindings.
+     */
+    @get:InputDirectory
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val handlesDir: DirectoryProperty
+
     /** The wasm FFmpeg tree's `include`, produced by [BuildFFmpegWasmTask]. */
     @get:InputDirectory
     @get:PathSensitive(PathSensitivity.RELATIVE)
@@ -58,8 +66,10 @@ abstract class CompileKiteCodecCWasmTask @Inject constructor() : DefaultTask() {
         val emcc = requireOnPath("emcc")
         val emar = requireOnPath("emar")
         val out = outputDir.get().asFile
-        val sources = sourceDir.get().asFile.listFiles().orEmpty()
-            .filter { it.isFile && it.extension == "c" }
+        val sources = (
+            sourceDir.get().asFile.listFiles().orEmpty().toList() +
+                handlesDir.get().asFile.listFiles().orEmpty().toList()
+            ).filter { it.isFile && it.extension == "c" }
             .sortedBy { it.name }
         if (sources.isEmpty()) {
             throw GradleException("No .c sources under ${sourceDir.get().asFile.absolutePath}.")
@@ -75,6 +85,7 @@ abstract class CompileKiteCodecCWasmTask @Inject constructor() : DefaultTask() {
 
         val includeArgs = listOf(
             "-I${includeDir.get().asFile.absolutePath}",
+            "-I${handlesDir.get().asFile.absolutePath}",
             "-I${ffmpegIncludeDir.get().asFile.absolutePath}",
         )
         val defineArgs = CompileKiteCodecCTask.defineArguments(buildDefines.get())

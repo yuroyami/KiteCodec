@@ -28,6 +28,7 @@
 
 #include "kitecodec_abi.h"
 #include "kitecodec_handles.h"
+#include "kc_handles.h"
 #include "kitecodec_helpers.h"
 
 #ifdef __cplusplus
@@ -38,57 +39,25 @@ extern "C" {
 
 /* One kind per opaque typedef the boundary carries (kitecodec_handles.h), in one fixed order.
  * kj_handle_get refuses a token whose kind differs from the caller's expectation. */
-enum kj_kind {
-    KJ_KIND_NONE = 0,
-    KJ_KIND_CODEC,
-    KJ_KIND_CODEC_CTX,
-    KJ_KIND_CODEC_PAR,
-    KJ_KIND_DICT,
-    KJ_KIND_DICT_ENTRY,
-    KJ_KIND_FILTER_CTX,
-    KJ_KIND_FILTER_GRAPH,
-    KJ_KIND_FMT_CTX,
-    KJ_KIND_FRAME,
-    KJ_KIND_PACKET,
-    KJ_KIND_STREAM,
-    KJ_KIND_COUNT
-};
 
 /* One long-array element is one handle token; one int-array element is one scalar argument. */
 int kj_longs_dup(JNIEnv *env, jlongArray values, jlong **out, int32_t *out_len);
 int kj_ints_dup(JNIEnv *env, jintArray values, int **out, int32_t *out_len);
 
-/* Mint an owned token. Returns 0 only when ptr is NULL or the table is exhausted. Thread safe. */
-jlong kj_handle_put(int kind, void *ptr);
-
-/* Mint an owned token and turn table exhaustion into a typed bridge failure. */
+/* The table itself is declared in kc_handles.h and implemented in native/kitecodec-handles, so the
+ * web binding runs the same code (KPKMP.md 17.14 X-04). Only the three that need a JNIEnv are
+ * declared here, because only they can throw.
+ *
+ * kj_handle_put_checked turns table exhaustion into a typed bridge failure.
+ * kj_handle_put_borrowed mints a token whose lifetime is bounded by a live parent; closing the
+ *   parent invalidates every descendant atomically before the parent pointer goes back to its owner.
+ * kj_handle_get resolves or throws: on a zero, stale, closed or wrong-kind token it throws the
+ *   bridge's typed exception on env and returns NULL, and the caller must return immediately
+ *   because the pending exception IS the result. Use kj_handle_peek when silence is wanted instead.
+ */
 jlong kj_handle_put_checked(JNIEnv *env, int kind, void *ptr);
-
-/* Mint a borrowed token whose lifetime is bounded by parent. Closing the parent invalidates every
- * descendant atomically before the parent pointer is returned to its owner for destruction. */
 jlong kj_handle_put_borrowed(JNIEnv *env, int kind, void *ptr, jlong parent);
-
-/* Resolve a token. On success returns the pointer. On a zero, stale, closed or wrong-kind token,
- * throws the bridge's typed exception on env and returns NULL; the caller must return immediately
- * (the pending exception is the result). Thread safe. */
 void *kj_handle_get(JNIEnv *env, jlong token, int kind);
-
-/* Like kj_handle_get but never throws: returns NULL silently. For close paths that must be
- * idempotent rather than loud. */
-void *kj_handle_peek(jlong token, int kind);
-
-/* Invalidate a token and return the pointer it held so the caller can free it. Returns NULL when
- * the token is zero, stale or of the wrong kind, which is what makes double close a no-op instead
- * of a crash. Thread safe. */
-void *kj_handle_close(jlong token, int kind);
-
-/* Explicitly releases a borrowed/static token without destroying the pointer it names. Idempotent.
- * Used for stream, codec, codec-parameter, dictionary and filter-context views. */
-void kj_handle_release(jlong token, int kind);
-
-/* Test seam: how many live (unclosed) handles the table holds. The packaging-model host tests and
- * the leak assertions read this through a test-only external. */
-int64_t kj_handle_live_count(void);
 
 /* ── JNI utilities (kj_util.c). String, array and exception conversion lives HERE only. ─────── */
 
