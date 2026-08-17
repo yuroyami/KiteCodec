@@ -18,7 +18,27 @@ public actual object FFmpeg {
 
     public actual val versions: Versions get() = versionsFrom(identity)
 
-    public actual val identity: FFmpegIdentity get() = webIdentity()
+    /**
+     * Cached per loaded module, not per call.
+     *
+     * Reading it copies the whole 2,176-byte `kc_ffmpeg_report` out of codec memory and decodes
+     * seven strings, and `KitePlayerPlatform.availability` touches it more than once per player.
+     * Keyed on the module so a reload after `KiteCodecWeb.load` cannot serve a stale answer, which
+     * is the same reason the web platform defaults refuse to cache availability.
+     */
+    private var cachedFor: kotlin.js.JsAny? = null
+    private var cached: FFmpegIdentity? = null
+
+    public actual val identity: FFmpegIdentity
+        get() {
+            val module = requireModule()
+            val hit = cached
+            if (hit != null && cachedFor === module) return hit
+            val fresh = webIdentity()
+            cached = fresh
+            cachedFor = module
+            return fresh
+        }
 
     public actual fun hasEncoder(name: String): Boolean =
         withCString(name) { ptr -> ffkmp_find_encoder_by_name(requireModule(), ptr) != 0 }

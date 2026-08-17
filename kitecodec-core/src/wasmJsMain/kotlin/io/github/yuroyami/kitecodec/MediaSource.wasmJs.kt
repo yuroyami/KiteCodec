@@ -12,6 +12,7 @@ import io.github.yuroyami.kitecodec.wasm.ffkmp_codecpar_codec_id
 import io.github.yuroyami.kitecodec.wasm.ffkmp_codecpar_codec_type
 import io.github.yuroyami.kitecodec.wasm.ffkmp_codecpar_format
 import io.github.yuroyami.kitecodec.wasm.ffkmp_codecpar_height
+import io.github.yuroyami.kitecodec.wasm.ffkmp_codecpar_sample_aspect_ratio
 import io.github.yuroyami.kitecodec.wasm.ffkmp_codecpar_sample_rate
 import io.github.yuroyami.kitecodec.wasm.ffkmp_codecpar_width
 import io.github.yuroyami.kitecodec.wasm.ffkmp_codec_id_name
@@ -27,6 +28,7 @@ import io.github.yuroyami.kitecodec.wasm.ffkmp_fmt_stream
 import io.github.yuroyami.kitecodec.wasm.ffkmp_media_type_audio
 import io.github.yuroyami.kitecodec.wasm.ffkmp_media_type_subtitle
 import io.github.yuroyami.kitecodec.wasm.ffkmp_media_type_video
+import io.github.yuroyami.kitecodec.wasm.ffkmp_stream_avg_frame_rate
 import io.github.yuroyami.kitecodec.wasm.ffkmp_stream_codecpar
 import io.github.yuroyami.kitecodec.wasm.ffkmp_stream_duration_micros
 import io.github.yuroyami.kitecodec.wasm.ffkmp_stream_index
@@ -45,9 +47,13 @@ public actual class MediaSource internal constructor(
     private val contextSlot: Int,
     private val context: Int,
     private val bridge: WebIoBridge,
+    private val unused: List<String>,
 ) : AutoCloseable {
 
     private var closed = false
+
+    /** Cleared on close, checked by every reader and decoder that borrows this container. */
+    private val lifetime = SourceLifetime()
 
     private fun alive(): Int =
         if (!closed) context else throw FFmpegException(FFmpegError.Internal("this media source is closed"))
@@ -65,7 +71,14 @@ public actual class MediaSource internal constructor(
 
     public actual val chapters: List<Chapter> get() = emptyList()
 
-    public actual val unusedOpenOptions: List<String> get() = emptyList()
+    /**
+     * The keys FFmpeg did not consume, which is a real answer now.
+     *
+     * It answered `emptyList()` before, while `open` was also discarding every option unread. That
+     * pair is the worst of both: a caller probing for option support reads "none unused" as "all
+     * supported". The options are forwarded now and this reports what came back.
+     */
+    public actual val unusedOpenOptions: List<String> get() = unused
 
     public actual val startTimeMicros: Long
         get() = ffkmp_fmt_start_time(requireModule(), alive()).takeIf { it != Long.MIN_VALUE } ?: 0L
@@ -134,6 +147,7 @@ public actual class MediaSource internal constructor(
             context = alive(),
             timeBases = this.streams.associate { it.index to it.timeBase },
             wanted = streams.map { it.index }.toSet(),
+            lifetime = lifetime,
         )
 
     public actual fun openDecoder(
@@ -166,12 +180,14 @@ public actual class MediaSource internal constructor(
             ffkmp_codecctx_free(m, ctx)
             throw FFmpegException(FFmpegError.Internal("opening the decoder failed"))
         }
-        return StreamDecoder(ctx, stream)
+        return StreamDecoder(ctx, stream, lifetime)
     }
 
     actual override fun close() {
         if (closed) return
         closed = true
+        // Before the context goes: every reader and decoder holding it raw must stop using it.
+        lifetime.closed()
         val m = requireModule()
         ffkmp_fmt_close_input_io(m, contextSlot)
         wasmFree(m, contextSlot)
@@ -188,12 +204,23 @@ public actual class MediaSource internal constructor(
             val m = requireModule()
             val bridge = WebIoBridge.install(io)
             val slot = wasmAlloc(m, 4)
-            val rc = openInputIo(m, slot, bridge.readPointer, bridge.seekPointer, io.size ?: 0L)
+            val opts = CStringArrays.of(m, options)
+            val rc = try {
+                openInputIo(
+                    m, slot, bridge.readPointer, bridge.seekPointer, io.size ?: 0L,
+                    opts.keys, opts.values, options.size,
+                )
+            } catch (failure: Throwable) {
+                opts.free(m); wasmFree(m, slot); bridge.release(); throw failure
+            }
             if (rc < 0) {
-                wasmFree(m, slot)
-                bridge.release()
+                opts.free(m); wasmFree(m, slot); bridge.release()
                 throw FFmpegException(FFmpegError.InvalidData(rc, "could not open this media ($rc)"))
             }
+            // Read the leftovers BEFORE freeing: the C side rewrites the key array in place,
+            // NULLing the entries it consumed, so a freed array answers nothing.
+            val leftover = opts.survivingKeys(m, options)
+            opts.free(m)
             val ctx = readInt32(m, slot)
             if (ffkmp_fmt_find_stream_info(m, ctx) < 0) {
                 ffkmp_fmt_close_input_io(m, slot)
@@ -201,7 +228,7 @@ public actual class MediaSource internal constructor(
                 bridge.release()
                 throw FFmpegException(FFmpegError.InvalidData(0, "could not read stream information"))
             }
-            return MediaSource(slot, ctx, bridge)
+            return MediaSource(slot, ctx, bridge, leftover)
         }
 
         private fun noFilesystem(path: String) = FFmpegException(
@@ -241,8 +268,10 @@ private fun readStreams(m: kotlin.js.JsAny, context: Int): List<StreamInfo> {
                     width = ffkmp_codecpar_width(m, par),
                     height = ffkmp_codecpar_height(m, par),
                     pixelFormat = pixelFormatOf(m, ffkmp_codecpar_format(m, par)),
-                    frameRate = Rational.of(0L, 1L),
-                    sampleAspectRatio = Rational.of(1L, 1L),
+                    frameRate = readRational(m) { n, d -> ffkmp_stream_avg_frame_rate(m, native, n, d) },
+                    sampleAspectRatio = readRational(m, fallbackNum = 1, fallbackDen = 1) { n, d ->
+                        ffkmp_codecpar_sample_aspect_ratio(m, par, n, d)
+                    },
                 )
             } else {
                 null
@@ -261,25 +290,85 @@ private fun readStreams(m: kotlin.js.JsAny, context: Int): List<StreamInfo> {
     }
 }
 
-/** `ffkmp_stream_time_base` writes through two int out-parameters, so it needs a scratch pair. */
-private fun readTimeBase(m: kotlin.js.JsAny, stream: Int): Rational {
+private fun readTimeBase(m: kotlin.js.JsAny, stream: Int): Rational =
+    readRational(m, fallbackNum = 1, fallbackDen = 1_000_000) { n, d ->
+        ffkmp_stream_time_base(m, stream, n, d)
+    }
+
+/**
+ * Reads any `(int *num, int *den)` pair out of the codec module.
+ *
+ * Several entry points answer through two out-parameters, which JavaScript cannot pass directly, so
+ * each needs a scratch pair in codec memory. One helper rather than three copies of the same eight
+ * lines. A zero denominator means FFmpeg declared nothing and the caller's fallback applies: an
+ * undeclared frame rate is 0/1 ("unknown"), an undeclared aspect ratio is 1/1 ("square"), and an
+ * undeclared time base is microseconds.
+ */
+private inline fun readRational(
+    m: kotlin.js.JsAny,
+    fallbackNum: Long = 0,
+    fallbackDen: Long = 1,
+    read: (numPtr: Int, denPtr: Int) -> Unit,
+): Rational {
     val scratch = wasmAlloc(m, 8)
     try {
-        ffkmp_stream_time_base(m, stream, scratch, scratch + 4)
+        read(scratch, scratch + 4)
         val num = readInt32(m, scratch)
         val den = readInt32(m, scratch + 4)
-        return if (den == 0) Rational.of(1L, 1_000_000L) else Rational.of(num.toLong(), den.toLong())
+        return if (den == 0) Rational.of(fallbackNum, fallbackDen) else Rational.of(num.toLong(), den.toLong())
     } finally {
         wasmFree(m, scratch)
     }
 }
 
 @OptIn(kotlin.js.ExperimentalWasmJsInterop::class)
-@JsFun("(m, out, readFn, seekFn, size) => m._ffkmp_fmt_open_input_io(out, 0, readFn, seekFn, BigInt(size), 0, 0, 0, 0)")
+@JsFun("(m, out, readFn, seekFn, size, keys, values, n) => m._ffkmp_fmt_open_input_io(out, 0, readFn, seekFn, BigInt(size), keys, values, n, 0)")
 private external fun openInputIo(
     module: kotlin.js.JsAny,
     out: Int,
     readFn: Int,
     seekFn: Int,
     size: Long,
+    keys: Int,
+    values: Int,
+    count: Int,
 ): Int
+
+/**
+ * Two NULL-terminated `char *` arrays in codec memory, which is how the C surface takes options.
+ *
+ * The key array is an OUT parameter as well as an in one: `ffkmp_fmt_open_input_io` NULLs the entry
+ * for every option FFmpeg consumed, so what survives is exactly the unused set. That is why
+ * [survivingKeys] must run before [free].
+ */
+private class CStringArrays(val keys: Int, val values: Int, private val strings: List<Int>) {
+
+    fun survivingKeys(m: kotlin.js.JsAny, options: Map<String, String>): List<String> {
+        if (options.isEmpty()) return emptyList()
+        return options.keys.filterIndexed { index, _ -> readInt32(m, keys + index * 4) != 0 }
+    }
+
+    fun free(m: kotlin.js.JsAny) {
+        strings.forEach { wasmFree(m, it) }
+        if (keys != 0) wasmFree(m, keys)
+        if (values != 0) wasmFree(m, values)
+    }
+
+    companion object {
+        fun of(m: kotlin.js.JsAny, options: Map<String, String>): CStringArrays {
+            if (options.isEmpty()) return CStringArrays(0, 0, emptyList())
+            val strings = mutableListOf<Int>()
+            val keys = wasmAlloc(m, options.size * 4)
+            val values = wasmAlloc(m, options.size * 4)
+            options.entries.forEachIndexed { index, (key, value) ->
+                val keyPtr = allocCString(m, key)
+                val valuePtr = allocCString(m, value)
+                strings += keyPtr
+                strings += valuePtr
+                writeInt32(m, keys + index * 4, keyPtr)
+                writeInt32(m, values + index * 4, valuePtr)
+            }
+            return CStringArrays(keys, values, strings)
+        }
+    }
+}

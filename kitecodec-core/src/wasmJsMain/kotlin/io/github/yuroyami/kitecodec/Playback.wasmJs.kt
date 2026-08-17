@@ -89,12 +89,14 @@ public actual class PacketReader internal constructor(
     private val context: Int,
     private val timeBases: Map<Int, Rational>,
     private val wanted: Set<Int>,
+    private val lifetime: SourceLifetime,
 ) : AutoCloseable {
 
     private var closed = false
 
     public actual fun read(): Packet? {
         if (closed) throw FFmpegException(FFmpegError.Internal("this packet reader is closed"))
+        lifetime.check("packet reader")
         val m = requireModule()
         val eof = ffkmp_averror_eof(m)
         while (true) {
@@ -118,6 +120,7 @@ public actual class PacketReader internal constructor(
     }
 
     public actual fun seek(micros: Long, direction: SeekDirection, notEarlierThan: Long?) {
+        lifetime.check("packet reader")
         val m = requireModule()
         val flags = when (direction) {
             SeekDirection.Backward -> ffkmp_avseek_flag_backward(m)
@@ -137,6 +140,7 @@ public actual class PacketReader internal constructor(
 public actual class StreamDecoder internal constructor(
     private val context: Int,
     public actual val stream: StreamInfo,
+    private val lifetime: SourceLifetime,
 ) : AutoCloseable {
 
     public actual var isDrained: Boolean = false
@@ -147,6 +151,7 @@ public actual class StreamDecoder internal constructor(
 
     private fun alive() {
         if (closed) throw FFmpegException(FFmpegError.Internal("this decoder is closed"))
+        lifetime.check("decoder")
     }
 
     public actual fun send(packet: Packet?): Boolean {
@@ -185,6 +190,36 @@ public actual class StreamDecoder internal constructor(
         closed = true
         val m = requireModule()
         if (frame != 0) ffkmp_frame_free(m, frame)
-        ffkmp_codecctx_free(m, context)
+        // Only if the container still stands: closing it already tore the decoder's context down.
+        if (lifetime.isOpen) ffkmp_codecctx_free(m, context)
+    }
+}
+
+/**
+ * The lifetime of the container every reader and decoder borrows from.
+ *
+ * These hold the `AVFormatContext` as a raw address, and `MediaSource.close()` frees it. Without
+ * this, a reader used after its source was closed would read freed memory and answer plausible
+ * nonsense, which is exactly the failure the generation-tagged handle table exists to prevent on
+ * the JNI side (17.14 X-04). The web backend does not route through that table, so it owes the
+ * same guarantee in Kotlin: one flag the parent clears and every child checks first.
+ */
+internal class SourceLifetime {
+    var isOpen: Boolean = true
+        private set
+
+    fun closed() {
+        isOpen = false
+    }
+
+    fun check(what: String) {
+        if (!isOpen) {
+            throw FFmpegException(
+                FFmpegError.Internal(
+                    "this $what outlived the MediaSource it came from. The container was closed, " +
+                        "so its context is freed and using it would read released memory.",
+                ),
+            )
+        }
     }
 }

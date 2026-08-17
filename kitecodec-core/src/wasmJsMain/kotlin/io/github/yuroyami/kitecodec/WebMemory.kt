@@ -68,3 +68,8 @@ internal fun pixelFormatOf(module: JsAny, id: Int): PixelFormat =
 internal fun sampleFormatOf(module: JsAny, id: Int): SampleFormat =
     utf8OrNull(module, io.github.yuroyami.kitecodec.wasm.ffkmp_sample_fmt_name(module, id))
         ?.let { SampleFormat(it) } ?: SampleFormat.None
+
+/** Writes one 32-bit value at [pointer], which must be 4-byte aligned. */
+@OptIn(kotlin.js.ExperimentalWasmJsInterop::class)
+@JsFun("(m, p, v) => { m.HEAP32[p >> 2] = v; }")
+internal external fun writeInt32(module: JsAny, pointer: Int, value: Int)

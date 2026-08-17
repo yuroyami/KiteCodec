@@ -37,7 +37,12 @@ internal fun webIdentity(): FFmpegIdentity {
         return FFmpegIdentity(
             status = int(ReportLayout.status),
             bypassed = int(ReportLayout.bypassed) != 0,
-            bypassedStatus = if (int(ReportLayout.bypassed) != 0) int(ReportLayout.status) else 0,
+            // Always 0, and that is a limit of the C report rather than a value.
+            // `kc_ffmpeg_report` carries the post-bypass status and no original one, so what the
+            // status WOULD have been cannot be recovered here. The first draft derived it from
+            // `status`, which is 0 in exactly the case `bypassed` is true, so the field looked
+            // populated while carrying nothing. Reported as unknown instead.
+            bypassedStatus = 0,
             cAbiVersion = "${int(ReportLayout.abiMajor)}.${int(ReportLayout.abiMinor)}",
             libraries = libraries,
             configurationsAgree = int(ReportLayout.configurationAgrees) != 0,
