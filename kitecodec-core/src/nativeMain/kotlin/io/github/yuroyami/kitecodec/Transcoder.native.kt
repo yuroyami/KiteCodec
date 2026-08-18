@@ -29,7 +29,9 @@ public actual object Transcoder {
             "audioCopy is mutually exclusive with audioSpec/audioFilter: copied packets never touch a decoder, so they can't be filtered or re-encoded"
         }
         require(spec != null || videoFilter == null) { "videoFilter requires a video encoder spec" }
-        require(spec != null || videoCopy || audioSpec != null || audioCopy) { "Nothing to output: no video spec/copy, no audio" }
+        require(spec != null || videoCopy || audioSpec != null || audioCopy || subtitleCopy) {
+            "Nothing to output: no video spec or copy, no audio, no subtitle copy"
+        }
         require(startMicros >= 0 && endMicros > startMicros) { "Invalid trim window [$startMicros, $endMicros]" }
 
         MediaSource.open(input).use { source ->
@@ -42,9 +44,14 @@ public actual object Transcoder {
             val ainfo = audioStream?.audio
             val subtitleStreams = if (subtitleCopy) source.streams.filter { it.type == MediaType.Subtitle } else emptyList()
 
-            // The stream whose timestamps drive the end-of-trim stop: video when present, else audio.
-            val leadStream = videoStream ?: audioStream
-                ?: throw FFmpegException(FFmpegError.Internal("Input has neither requested stream"))
+            // The stream whose timestamps drive the end-of-trim stop: video when present, else
+            // audio, else the first copied subtitle. Subtitles were left out entirely, so asking
+            // for subtitleCopy on its own failed here even though it is a perfectly good output
+            // (audit P1-15): extracting the subtitles from a film is exactly that request.
+            val leadStream = videoStream ?: audioStream ?: subtitleStreams.firstOrNull()
+                ?: throw FFmpegException(
+                    FFmpegError.Internal("Input has none of the requested streams"),
+                )
 
             // Progress denominator: trim window clamped by what the container declares.
             val totalWindowMicros: Long? = run {
@@ -98,12 +105,28 @@ public actual object Transcoder {
                             val progressEvery = if (venc != null) 30L else 100L
                             var sinceReport = 0L
                             val primaryCore = venc?.core ?: aenc?.core
+
+                            /**
+                             * How far a COPY-only output has got, in microseconds (audit P1-16).
+                             *
+                             * Progress was read from the encoders alone, so a transcode with
+                             * nothing to encode, `-c copy` on every stream, reported zero percent
+                             * from beginning to end while doing real work at full speed. Copied
+                             * packets carry the timeline just as well; they just have no encoder
+                             * to ask.
+                             */
+                            var copiedMicros = 0L
+                            fun noteCopied(micros: Long) {
+                                if (micros > copiedMicros) copiedMicros = micros
+                            }
+
                             fun reportMaybe(force: Boolean = false) {
                                 if (onProgress == null) return
                                 sinceReport += 1
                                 if (!force && sinceReport < progressEvery) return
                                 sinceReport = 0
-                                val outMicros = primaryCore?.outputMicros ?: 0
+                                val outMicros = primaryCore?.outputMicros
+                                    ?: (copiedMicros - startMicros).coerceAtLeast(0)
                                 onProgress(
                                     TranscodeProgress(
                                         framesEncoded = venc?.core?.framesEncoded ?: 0,
@@ -265,10 +288,22 @@ public actual object Transcoder {
                                     when {
                                         pastEnd -> if (info.index == leadStream.index) throw StopDemux()
                                         beforeStart -> {}  // drop
-                                        isVideoCopy -> vcopy!!.writeCopyPacket(packet)
-                                        info.index == acopy?.sourceIndex -> acopy.writeCopyPacket(packet)
-                                        else -> subCopies[info.index]?.writeCopyPacket(packet)
+                                        isVideoCopy -> {
+                                            vcopy!!.writeCopyPacket(packet)
+                                            if (ptsMs != Long.MIN_VALUE) noteCopied(ptsMs)
+                                        }
+                                        info.index == acopy?.sourceIndex -> {
+                                            acopy.writeCopyPacket(packet)
+                                            if (ptsMs != Long.MIN_VALUE) noteCopied(ptsMs)
+                                        }
+                                        else -> subCopies[info.index]?.let { copy ->
+                                            copy.writeCopyPacket(packet)
+                                            if (ptsMs != Long.MIN_VALUE) noteCopied(ptsMs)
+                                        }
                                     }
+                                    // A copy-only run has no encoder to drive the report, so the
+                                    // packets themselves do it.
+                                    if (primaryCore == null) reportMaybe()
                                 },
                             )
 

@@ -133,6 +133,17 @@ public expect class StreamDecoder : AutoCloseable {
         private set
 
     /**
+     * Packets and frames this decoder skipped as damaged since it was opened, or since [flush].
+     *
+     * Zero for healthy input. Non-zero means the decoded result is INCOMPLETE: under
+     * [CorruptData.Skip], which is the default, damaged data is dropped and decoding continues,
+     * and this counter is the only way to find out that it happened (audit P1-05). Under
+     * [CorruptData.Fail] the first damage throws instead, so this stays zero.
+     */
+    public var corruptDataSkipped: Long
+        private set
+
+    /**
      * Offers [packet], or null to start the decoder drain.
      *
      * A packet belonging to a different stream is REFUSED rather than decoded. Feeding one used to

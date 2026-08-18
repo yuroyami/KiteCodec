@@ -48,7 +48,13 @@ public actual class MediaSource private constructor() : AutoCloseable {
         decoder: CodecId?,
         options: DecoderOptions?,
         hardware: HardwareAccel?,
+        corruptData: CorruptData,
     ): StreamDecoder = placeholderBackendUnavailable("Opening a stream decoder")
+
+    public actual var corruptData: CorruptData = CorruptData.Skip
+
+    public actual var corruptDataSkipped: Long = 0L
+        private set
 
     actual override fun close(): Unit = Unit
 

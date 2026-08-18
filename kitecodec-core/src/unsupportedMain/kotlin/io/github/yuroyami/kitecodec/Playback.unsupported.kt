@@ -58,6 +58,9 @@ public actual class StreamDecoder private constructor() : AutoCloseable {
     public actual var isDrained: Boolean = false
         private set
 
+    public actual var corruptDataSkipped: Long = 0L
+        private set
+
     @Throws(FFmpegException::class)
     public actual fun send(packet: Packet?): Boolean =
         placeholderBackendUnavailable("Sending a decoder packet")

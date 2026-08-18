@@ -67,6 +67,24 @@ public actual class MediaSource internal constructor(
             ?: streams.firstOrNull { it.type == MediaType.Video }
     public actual val primaryAudio: StreamInfo? get() = streams.firstOrNull { it.type == MediaType.Audio }
 
+    @Volatile
+    public actual var corruptData: CorruptData = CorruptData.Skip
+
+    @Volatile
+    public actual var corruptDataSkipped: Long = 0L
+        private set
+
+    /**
+     * The one place the batch flows decide about damaged data (audit P1-05).
+     *
+     * Under [CorruptData.Fail] it throws; otherwise it counts the loss so a caller can tell a
+     * clean decode from an incomplete one, which used to be impossible.
+     */
+    private fun noteCorruptData(rc: Int) {
+        if (corruptData == CorruptData.Fail) throw FFmpegException(avError(rc))
+        corruptDataSkipped++
+    }
+
     public actual fun decodedFrames(stream: StreamInfo): Flow<Frame> = decodeStreams(listOf(stream))
 
     public actual fun decodeStreams(streams: List<StreamInfo>): Flow<Frame> = flow {
@@ -161,6 +179,7 @@ public actual class MediaSource internal constructor(
                 }
                 Internals.errorEagain -> drain(decoder, frame, onFrame)
                 FFmpegError.AVERROR_INVALIDDATA -> {
+                    noteCorruptData(rc)
                     drain(decoder, frame, onFrame)
                     return
                 }
@@ -177,7 +196,10 @@ public actual class MediaSource internal constructor(
         while (true) {
             val rc = Internals.codecCtxReceiveFrame(decoder.context, frame.checkOpen())
             if (rc == Internals.errorEagain || rc == Internals.errorEof) return
-            if (rc == FFmpegError.AVERROR_INVALIDDATA) return
+            if (rc == FFmpegError.AVERROR_INVALIDDATA) {
+                noteCorruptData(rc)
+                return
+            }
             if (rc < 0) throw FFmpegException(avError(rc))
             Internals.frameUseBestEffort(frame.checkOpen())
             val callbackFrame = FrameOps.wrap(
@@ -296,11 +318,14 @@ public actual class MediaSource internal constructor(
         decoder: CodecId?,
         options: io.github.yuroyami.kitecodec.dsl.DecoderOptions?,
         hardware: HardwareAccel?,
+        corruptData: CorruptData,
     ): StreamDecoder {
         require(stream.type.isAv) { "Only video and audio streams can be decoded, got ${stream.type}" }
         requireOwnStream(stream)
         return synchronized(stateLock) {
-            StreamDecoder.open(checkOpen(), stream, threadCount, lowDelay, decoder, options, hardware)
+            StreamDecoder.open(
+                checkOpen(), stream, threadCount, lowDelay, decoder, options, hardware, corruptData,
+            )
         }
     }
 

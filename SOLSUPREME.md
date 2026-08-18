@@ -1,4 +1,4 @@
-# SOLSUPREME — KiteCodec + KitePlayer code-only deep audit and supremacy roadmap
+# SOLSUPREME: KiteCodec + KitePlayer code-only deep audit and supremacy roadmap
 
 - Audit date: 2026-08-18
 - KiteCodec conclusion snapshot: `f135ae286e5b054f750cb046cd9bfba00f02ddd7` (the audit began at `69c5145062ba39eb371903cdd644d851b1174a0c`)
@@ -20,7 +20,7 @@ The target architecture should remain Kotlin-first and layered. Move KiteCodec s
 
 Classification used below:
 
-- **P0:** release blocker—memory/process safety, silent data loss, materially false platform/capability behavior, or inability to deliver a claimed runtime.
+- **P0:** release blocker: memory/process safety, silent data loss, materially false platform/capability behavior, or inability to deliver a claimed runtime.
 - **P1:** high-impact correctness, lifecycle, parity, integration, or API defect that should precede broad feature work.
 - **P2/design:** maintainability, performance scalability, ergonomics, hardening, or future-compatibility work with a currently usable narrower path.
 - **Feature gap/roadmap:** code is absent rather than implemented incorrectly. These items are not mislabeled as bugs.
@@ -151,7 +151,7 @@ This second matrix is deliberately stricter. A player target needs the common en
 | Wasm Node | Full | Real if external module attached | Silent paced sink, no meaningful video surface | API/test host only | Useful conformance environment, not playback product |
 | JS | Full API surface | Explicit unavailable placeholder | Placeholder | No codec runtime | Compile-only compatibility target |
 | tvOS/watchOS/iOS x64/Android Native | Core/subtitle/RT declarations only in varying combinations | No assembled KitePlayer backend | RT device glue refuses most of these | No complete stack | Target declaration, not player support |
-| macOS x64 | Not declared by KitePlayer | — | — | — | Missing target |
+| macOS x64 | Not declared by KitePlayer | n/a |: | n/a | Missing target |
 
 The final visible Web canvas additions improve capability but do not make the checked-in sample/package self-contained: `KitePlayerPlatform.createOrNull()` constructs `WebOutputBackend` without a canvas (`KitePlayerPlatform.wasmJs.kt:51-55`), `WebOutputBackend.videoRenderer` and `subtitleRasterizer` remain null (`WebOutputBackend.kt:36-42`), and `kiteplayer-compose-video` has no Wasm target. A consumer must explicitly call `WebCanvasRendererFactory(canvas).create()`, then `attachRenderer(renderer)` before opening media (`KitePlayer.kt:504-506`); there is no default facade parameter that wires it.
 
@@ -201,65 +201,65 @@ Missing **full-stack** target families include tvOS and watchOS (core/RT declara
 | Diagnostics/events | Partial | State, events, warnings, stats, history, and support bundle exist. Event delivery is lossy, backend warnings bypass history, support data can leak option secrets, and some diagnostics are false/stale. |
 | Java/Swift ergonomics | Weak | Kotlin Flow/value-class/AutoCloseable surfaces dominate; no deliberate Java callback/Publisher facade or Swift AsyncSequence/scoped-frame package. |
 
-## 6. P0 — release-blocking correctness and safety defects
+## 6. P0: release-blocking correctness and safety defects
 
-### P0-01 — Wasm drops packets when the decoder says “not consumed”
+### P0-01: Wasm drops packets when the decoder says “not consumed”
 
 - Evidence: `kitecodec-core/src/wasmJsMain/kotlin/io/github/yuroyami/kitecodec/MediaSource.wasmJs.kt:94-118`; contract in `kitecodec-core/src/commonMain/kotlin/io/github/yuroyami/kitecodec/Playback.kt:122-156`.
 - Failure: `StreamDecoder.send()` returning false/EAGAIN means the packet was not consumed. The batch decode loop closes/drops that packet instead of draining output and retrying the same packet. Buffered and B-frame codecs can lose frames.
 - Required correction: implement the JVM/Native `send -> drain -> retry same input` loop once in common Kotlin. EOF must continue receiving until actual codec EOF, not until the first temporary empty result.
 - Acceptance: a bounded-queue fake backend proves every input is retried unchanged; B-frame fixtures produce identical frame counts and terminal PTS on JVM, Native, and Wasm.
 
-### P0-02 — Wasm confuses closed packets, drain submission, and actual EOF
+### P0-02: Wasm confuses closed packets, drain submission, and actual EOF
 
 - Evidence: `Playback.wasmJs.kt:146-185`.
 - Failure: `packet?.pointer ?: 0` turns a closed packet into a null/EOF packet. `isDrained` becomes true when null is submitted, even if submission returns EAGAIN, while receive does not transition on real `AVERROR_EOF`. Callers can truncate buffered tail frames or accidentally drain by sending a closed packet.
 - Required correction: validate packet liveness and stream ownership, model `Open -> Draining -> Drained -> Closed`, and derive transitions only from native return codes.
 - Acceptance: closed/wrong-stream packets are typed failures; EAGAIN cannot mark drained; EOF is reached only after receive reports EOF.
 
-### P0-03 — Wasm silently ignores requested decoder policy
+### P0-03: Wasm silently ignores requested decoder policy
 
 - Evidence: `MediaSource.wasmJs.kt:153-183`; common contract `MediaSource.kt:112-131`.
 - Failure: `threadCount`, exact `decoder`, arbitrary `DecoderOptions`, and `hardware` are accepted but ignored; only low-delay is applied. A caller can request a particular software/hardware/security policy and run something else without warning.
 - Required correction: implement each option or reject every unsupported non-default value before allocation. Silent degradation is not acceptable.
 - Acceptance: a per-target capability test enumerates every parameter and proves applied-or-refused behavior.
 
-### P0-04 — Wasm seeking and frame extraction violate the public timeline contract
+### P0-04: Wasm seeking and frame extraction violate the public timeline contract
 
 - Evidence: `Playback.wasmJs.kt:122-133`; `MediaSource.wasmJs.kt:121-143`; common timeline KDoc in `MediaSource.kt:20-91`.
 - Failure: content-relative microseconds are sent directly to FFmpeg without adding `startTimeMicros`; backward bounds are incorrect; reader-open state is not validated; `extractFrame` seeks exactly to the target and returns the first frame without decoding forward to the requested PTS. Nonzero-start and keyframe-based formats return the wrong position/frame.
 - Required correction: centralize content/container timestamp conversion and seek windows in common Kotlin; seek to a safe earlier point and discard until target PTS.
 - Acceptance: MPEG-TS/nonzero-start, sparse-keyframe, backward/forward/precise, target-before-start, and target-after-end fixtures match across backends.
 
-### P0-05 — Wasm source/decoder ownership leaks and permits cursor races
+### P0-05: Wasm source/decoder ownership leaks and permits cursor races
 
 - Evidence: `MediaSource.wasmJs.kt:94-118,145-151,186-195`; `Playback.wasmJs.kt:188-195`.
 - Failure: multiple readers/decode flows can mutate one format cursor. Independently allocated codec contexts are not freed if the source was closed first because the code incorrectly assumes format teardown owns them. Partial multi-decoder creation leaks earlier contexts when a later open fails.
 - Required correction: one source-owned cursor lease, independently owned child decoder handles, staged construction, and unconditional child cleanup independent of parent state.
 - Acceptance: fail every allocation/open step under fault injection; live-handle count returns to zero; concurrent cursor acquisition is rejected deterministically.
 
-### P0-06 — Web custom I/O blocks, violates source semantics, leaks, and crosses JS once per byte
+### P0-06: Web custom I/O blocks, violates source semantics, leaks, and crosses JS once per byte
 
 - Evidence: `WebIoBridge.kt:6-17,32-104`; ownership contract `MediaByteSource.kt:14-34`; `WebMemory.kt:57-69`.
 - Failure: non-suspend `MediaSource.open` synchronously stages an entire known-size input up to 512 MiB, calls seek even on nonseekable sources, never closes the owned source, and copies with Kotlin-to-JS calls per byte. A 1080p YUV frame can require roughly three million boundary calls; a large browser input can freeze the UI.
 - Required correction: a Web-specific asynchronous/range source or Worker-backed ring buffer, bulk `HEAPU8.set/subarray`, and exactly-once source closure. Keep a small explicit in-memory source as a separate convenience API.
 - Acceptance for the current in-memory scope: seekable and nonseekable inputs obey their contract, source closure is exactly once, and all transfers are bulk rather than per-byte. Progressive network input, unknown size, and media beyond the documented 512 MiB ceiling belong to the subsequent streaming-source feature, not this defect’s minimum fix.
 
-### P0-07 — Unconfined Kotlin/Native object lifetimes contain check-then-use races; confined objects lack defensive parity
+### P0-07: Unconfined Kotlin/Native object lifetimes contain check-then-use races; confined objects lack defensive parity
 
 - Evidence: `Frame.native.kt:78-99,315-322`; `Playback.native.kt:149-169,348-418`; `FilterGraph.native.kt:45-93,233-241`; seek and codec-parameter paths in `MediaSource.native.kt:354-402`.
 - Failure: unconfined Frame, FilterGraph, and sink operations separate atomic/plain closed checks from raw-pointer FFI use and free, so concurrent close can produce UAF. `MediaSource` and `PacketReader` explicitly require coroutine-context confinement/serialized operations (`MediaSource.kt:5-9`; `Playback.kt:60-64,191-201`); their check-then-use shape is therefore a defensive-parity limitation under the current contract rather than a supported-use concurrency guarantee. The JVM backend nevertheless holds locks for full operations.
 - Required correction: a reusable operation lease/mutex abstraction for unconfined Native handles, plus runtime confinement enforcement or the same defensive lifetime behavior for source/reader objects.
 - Acceptance: close-vs-read/send/seek/filter/encode/copy tests under TSan and stress loops produce neither crash nor stale access.
 
-### P0-08 — Native filter/encoder paths bypass their own checked frame accessor
+### P0-08: Native filter/encoder paths bypass their own checked frame accessor
 
 - Evidence: mandatory accessor documented in `Frame.native.kt:90-99`; direct `frame.nativeFrame` use in `FilterGraph.native.kt:72-83,207-216` and `MediaSink.native.kt:403-420,485-510`.
 - Failure: already-closed or concurrently closed frames pass freed `AVFrame*` into FFmpeg. Media type is also not consistently validated before passing a frame to audio/video graph or encoder operations.
 - Required correction: accept a scoped frame lease, validate video/audio compatibility, and never expose/use a naked pointer outside that scope.
 - Acceptance: closed frame, wrong-media frame, and concurrent frame-close inputs always fail before FFI.
 
-### P0-09 — C pixel conversion accepts a process-aborting format, and its test calls the crash success
+### P0-09: C pixel conversion accepts a process-aborting format, and its test calls the crash success
 
 - Evidence: `native/kitecodec-c/src/helpers_frame.c:90-98`; JNI input `native/kitecodec-jni/kj_frame.c:122-135`; `native/kitecodec-c/tests/test_convert.c:531-603`, especially `:583-592`.
 - Failure: an arbitrary integer reaches swscale without pixel-format validation. The audited ASan/plain runs observed child signal 6, while the test explicitly accepts `SIGABRT`, `SIGSEGV`, or `SIGBUS` as a passing outcome. This is directly reachable through the exported C helper and an internal JNI integer entry; normal typed Kotlin conversion paths select known formats and do not expose an arbitrary integer, so supported Kotlin reachability is narrower than the C ABI defect.
@@ -268,84 +268,84 @@ Missing **full-stack** target families include tvOS and watchOS (core/RT declara
 
 This is P0 for any shipped artifact that treats `kitecodec_helpers.h` as a supported/exported C boundary. If the helper surface is made private and all typed bridge callers prove enum validation before it, its release severity can be narrowed to internal P1 hardening; the signal-accepting test is wrong either way.
 
-### P0-10 — JVM sink closing is not an atomic state transition
+### P0-10: JVM sink closing is not an atomic state transition
 
 - Evidence: `MediaSink.jvm.kt:197-245`; related Native paths `MediaSink.native.kt:114-201,285-333,374-681`.
 - Failure: close snapshots and clears encoders under the mux lock, releases the lock while flushing, and leaves a live format token. A second close can write the trailer/free the muxer while the first is encoding; a concurrent add can append a core after the snapshot and leak it. Native also allows encode/close races.
 - Required correction: explicit `Open -> Closing -> Closed/Failed`, one atomic closer, serialized encoder flush/trailer/I/O close, and rejection of add/encode in Closing.
 - Acceptance: concurrent close/encode/add stress has one trailer, no leaked encoder, no native access after free, and deterministic suppressed errors.
 
-### P0-11 — The checked-in release pipeline declares itself unable to produce its prerequisite assets
+### P0-11: The checked-in release pipeline declares itself unable to produce its prerequisite assets
 
 - Evidence: blocker recorded in `.github/workflows/release-binaries.yml:25-29`; publish dependency at `:182-185`; asset requirements in `.github/workflows/publish.yml:10-13,85-102`; candid status in `README.md:141-153`.
 - Failure: the workflow itself records that its macOS self-contained arm cannot pass with the configured dependencies; the release job requires macOS, Linux, and Android together, and Maven publication requires that asset set. Code inspection proves the checked-in pipeline is blocked as written. It does not independently prove the live state of Homebrew formulas, GitHub releases, or Maven services.
 - Required correction: define a reproducible static dependency build or a slimmer release profile, create all assets, install-test them as consumers, then publish atomically.
 - Acceptance: clean macOS/Linux/Windows/Android consumers resolve only public coordinates/assets and run probe + decode + encode without repository-local paths.
 
-### P0-12 — One-dependency JVM distribution is built for fewer platforms than the loader can resolve
+### P0-12: One-dependency JVM distribution is built for fewer platforms than the loader can resolve
 
 - Evidence: loader `JniLibrary.jvm.kt:7-16,27-87`; resource staging `kitecodec-core/build.gradle.kts:1126-1275`.
 - Failure: the loader deliberately allows an explicit `kitecodec.jni.path` or `java.library.path`, then resource fallback. Its mappings cover macOS/Linux/Windows and x64/arm64, but the advertised one-dependency resource path is produced effectively only under an arm64-Mac/vendored-tree condition. Linux is optional and nested there; there is no macOS x64 or Windows producer/install artifact. Unknown OS/CPU values also fall back to Linux/x64 instead of refusing.
 - Required correction: explicit supported mapping with no fallback, OS/arch-specific runtime variants/classifiers, builds on matching runners, and artifact-content tests.
 - Acceptance: each advertised JVM platform has a classifier/runtime artifact, checksum, license payload, and consumer smoke; unknown platforms fail before extraction with a precise message.
 
-### P0-13 — Wasm publication omits the module required by the Kotlin API
+### P0-13: Wasm publication omits the module required by the Kotlin API
 
 - Evidence: build tasks `kitecodec-core/build.gradle.kts:668-718`; loader default in `KiteCodecWeb.kt:7-67`; demo/probe-only emcc links in `scripts/wasm-browser-demo.sh` and `scripts/wasm-matrix-probe.sh`.
 - Failure: Gradle builds archives and bindings but no publication/resource task emits and attaches the final `.mjs` and `.wasm`. The Kotlin target can compile and its Node tests can pass without the media runtime consumers need.
 - Required correction: publish a versioned runtime package containing JS loader, Wasm binary, worker variants, capability/build manifest, and bundler metadata.
 - Acceptance: npm/Gradle consumers in Node and two browser bundlers load the packaged runtime without relative repository files and decode a fixture.
 
-### P0-14 — Portable Linux/Windows GPL build tasks are functionally LGPL; Linux release packaging would mislabel them
+### P0-14: Portable Linux/Windows GPL build tasks are functionally LGPL; Linux release packaging would mislabel them
 
 - Evidence: portable build branch `BuildFFmpegTask.kt:229-247`; tests `BuildFFmpegTaskTest.kt:232-266`; GPL task promise `kitecodec-core/build.gradle.kts:749-775`; public enum `FFmpegLicense.kt:7-15`; release packaging `.github/workflows/release-binaries.yml:138-176`.
 - Failure: portable Linux/Windows producer tasks do not add `--enable-gpl` or desktop GPL arguments, yet task/docs contracts promise x264/x265. The checked-in release workflow packages the Linux GPL product under that false contract; it has no equivalent Windows release asset. Capability and legal labels do not describe the produced library.
 - Required correction: either reject GPL for those targets or produce and verify an actual GPL profile. Artifact name, license, capabilities, link flags, and SBOM must derive from configure evidence.
 - Acceptance: packaged manifest and runtime probe agree on GPL status and `libx264`/`libx265`; mismatch fails packaging.
 
-### P0-15 — Ordinary Android is not independently buildable or publishable
+### P0-15: Ordinary Android is not independently buildable or publishable
 
 - Evidence: hidden target activation `kitecodec-core/build.gradle.kts:37-44,236-257`; coupled selector `:198-203,268-279,346-366`; ABI recipes `LinkKiteCodecJniTask.kt:301-335`; NDK resolution `kitecodec-core/build.gradle.kts:926-945`.
 - Failure: the AAR exists only in a local phone-superset scope requiring arm64 macOS and Apple targets. JNI recipes omit arm32 while Native claims it; NDK fallback contains a developer path and a hardcoded `darwin-x86_64` host tag.
 - Required correction: a conventional Android module/target, AGP-provided SDK/NDK paths, pinned `ndkVersion`, Linux-capable builds, and a declared ABI set.
 - Acceptance: `assembleRelease` and publication run on Linux from a clean clone; emulator/device tests cover every packaged ABI.
 
-### P0-16 — Release artifacts do not yet carry a complete corresponding-source/provenance payload
+### P0-16: Release artifacts do not yet carry a complete corresponding-source/provenance payload
 
 - Evidence: patches applied in `BuildFFmpegTask.kt:166-211`; untouched upstream tarball and TODO in `.github/workflows/release-binaries.yml:198-209`; static dependency bundling in `.github/scripts/package-ffmpeg.sh:137-150`; JNI bundle contents `BundleHostJniTask.kt:16-29,56-111`; Apache-only POM `kitecodec-core/build.gradle.kts:793-803`.
 - Failure: patched FFmpeg and numerous static dependencies can be shipped while only upstream FFmpeg source or a small manifest/license subset is attached. The JVM jar can embed the same stack without a corresponding provenance/license package. This is a technical release-compliance blocker; it is not legal advice.
 - Required correction: exact post-patch FFmpeg sources or reproducible patch set, license notices and source for each dependency where its license requires source delivery, a complete provenance/SBOM record for all dependencies, build scripts/configure manifest, relink information where applicable, and artifact-to-source hashes.
 - Acceptance: an automated audit maps every linked archive/shared object to a license, source digest, build recipe, provenance record, and required delivered-source artifact. This is both a reproducibility policy and a mechanism for satisfying license-specific obligations; it is not a claim that every permissive dependency universally requires source shipment.
 
-### P0-17 — Stable Android Native advertises a MediaCodec profile without the mandatory JavaVM handoff
+### P0-17: Stable Android Native advertises a MediaCodec profile without the mandatory JavaVM handoff
 
 - Evidence: MediaCodec build contract `BuildFFmpegTask.kt:734-767`; C attachment `native/kitecodec-c/src/kitecodec_abi.c:343-362`; JVM/regular-Android attachment through `Internals.jvm.kt:225-274`; compile-only Android Native CI `.github/workflows/ci.yml:400-438`.
 - Failure: the FFmpeg profile enables JNI/MediaCodec and states `av_jni_set_java_vm` is required, but no `nativeMain` path calls `kc_jvm_attach`. Software codecs may work while the advertised MediaCodec route is not operationally integrated.
 - Required correction: implement and device-test a supported K/N JavaVM handoff, or disable MediaCodec and remove that capability from Android Native until it exists.
 - Acceptance: each stable Android Native ABI opens and decodes H.264/HEVC through MediaCodec on device, with a capability probe proving VM attachment; otherwise the capability is absent and software/fallback behavior is explicit.
 
-### P0-18 — The checked-in Gemini pair has no reproducible public installation path
+### P0-18: The checked-in Gemini pair has no reproducible public installation path
 
 - Evidence: KitePlayer `settings.gradle.kts:3-28` resolves the codec plugin and library from `mavenLocal()` before remote repositories; KitePlayer `README.md:404-405` says it is not publicly published; KitePlayer has no checked-in `.github/workflows`; shared publication setup at `build.gradle.kts:64-104` configures POM shape but no remote repository/signing/release orchestration.
 - Failure: from the checked-in mechanisms alone, a clean consumer has no demonstrated path to obtain the pair from normal repositories. A stale local artifact with the same `0.0.9` version can shadow any other build. `checkPublicationReadiness` passed 11 modules/116 POMs/22 sibling edges because it checks metadata shape, not whether anything can be installed or run. This is a statement about repository evidence, not a live query of external repositories.
 - Required correction: atomic, version-aligned KiteCodec and KitePlayer releases; remote repository/signing/developer metadata; no unconditional `mavenLocal()`; isolated consumer builds that resolve from the staged release repository only.
 - Acceptance: empty Gradle/Maven caches on each target install the pair without sibling checkouts, local paths, or preseeded native artifacts and run an open/play/seek/close smoke.
 
-### P0-19 — KitePlayer publishes backend variants that its required KiteCodec release model cannot supply
+### P0-19: KitePlayer publishes backend variants that its required KiteCodec release model cannot supply
 
 - Evidence: KitePlayer backend targets and dependency `kiteplayer-ffmpeg/build.gradle.kts:68-106`; KiteCodec publication scopes `kitecodec-core/build.gradle.kts:79-106,150-160,236-257,294-313`; final-link warning `KitePlayer/kiteplayer-sample/build.gradle.kts:5-10`.
 - Failure: ordinary Android, iOS, Linux arm64, and MinGW KitePlayer variants depend on matching KiteCodec variants that the checked-in remote-publication model refuses or classifies as local/experimental. Android Native is not an ordinary Android AAR substitute. Kotlin/Native applications also need the KiteCodec Gradle plugin at the final link, but applying it inside a dependency is not transitive.
 - Required correction: publish one matching target matrix atomically or stop publishing unmatched player variants. Provide a player application plugin/convention that configures the codec source/license/link requirements once, while encoding link metadata in variants wherever Gradle permits.
 - Acceptance: Gradle metadata resolution tests for every player target prove exactly one matching codec variant and a final link without undocumented consumer build logic.
 
-### P0-20 — KitePlayer can declare Ended before all decoded audio is rendered
+### P0-20: KitePlayer can declare Ended before all decoded audio is rendered
 
 - Evidence: KitePlayer `PlaybackCore.kt:2627-2708` decides terminal drain from decoder/packet state and `audio.buffered`; the capacity-four decoded-audio handoff is created at `:4403-4404`, produced at `:4234-4240`, and consumed at `:4267-4300`; preserve-pitch stages `AudioPipeline.kt:193-202`, `TempoStage.kt:114-181`, and `AudioPlayback.kt:428-443` expose no EOS flush.
 - Failure: the packet queue/decoder can be drained while decoded buffers still wait for the feeder. If the device ring is momentarily empty, the sink is drained and the player reaches Ended before those buffers are fed. At non-1x preserve-pitch speed, WSOLA retains a short tail and reset discards it. This is silent media loss, especially visible on short files and slow conversion.
 - Required correction: explicit EOS tokens and joins through decoder-to-feeder-to-DSP-to-sink; `finish()` on every buffering DSP stage; terminal state gated on all handoffs/stages being drained.
 - Acceptance: adversarial capacity-one/slow-feeder tests and short audio fixtures at every supported speed produce the full expected sample count before Ended.
 
-## 7. P1 — high-impact correctness, parity, and API defects
+## 7. P1: high-impact correctness, parity, and API defects
 
 ### Decoder, packet, timeline, and source lifecycle
 
@@ -411,20 +411,20 @@ This is P0 for any shipped artifact that treats `kitecodec_helpers.h` as a suppo
 
 ### Confirmed bridge defects and explicitly qualified hardening risks
 
-1. **Unsafe bridge primitive/internal hardening gap — handle lookup does not lease object lifetime.** `native/kitecodec-handles/kc_handles.c:128-147` unlocks before returning the raw pointer; JNI callers then operate on it (`native/kitecodec-jni/kj_packet.c:16-34`, `native/kitecodec-jni/kj_format.c:157-162,206-215`). The visible supported JVM wrappers deliberately hold object locks across their JNI calls (`Frame.jvm.kt:11-24`; `Playback.jvm.kt:8-17,134-147`; `FilterGraph.jvm.kt:45-56,122-197`), so a supported-wrapper race is not demonstrated. The C/JNI primitive remains unsafe for any raw/internal caller and should gain acquire/release leases; confirmed Native races are separate.
-2. **Confirmed scalability defect — handle close is O(high-water-capacity × descendants).** `native/kitecodec-handles/kc_handles.c:27-31,50-85` recursively scans the entire never-shrinking table under one mutex. Maintain child adjacency and a free list; benchmark one million churned handles.
-3. **Confirmed long-horizon token defect — generation encoding is inconsistent.** `native/kitecodec-handles/kc_handles.h:29-54` and `native/kitecodec-handles/kc_handles.c:33-38,87-95,128-139` encode 31 generation bits but store/compare all 32; after enough reuse a newly minted token cannot resolve. Resolution also does not validate the kind encoded in the token. Normalize modulo width and validate both token and requested kind.
-4. **Dynamic-ABI risk, mitigated by current static same-build packaging — the report ABI is size-unsafe.** `native/kitecodec-c/include/kitecodec_abi.h:106-168` plus `native/kitecodec-c/src/kitecodec_abi.c:306-310` blindly assign the current struct into caller memory. A mismatched dynamic C caller/library can overflow an older caller allocation. Add `struct_size` and caller capacity or versioned getters.
-5. **Confirmed contract mismatch — the ABI-gate header overpromises.** `native/kitecodec-c/include/kitecodec_abi.h:186-190` says every entry gates, but public helpers such as `native/kitecodec-c/src/helpers_frame.c:24-25` call FFmpeg directly. Either hide them behind initialized sessions/generated guards or document/enforce mandatory `kc_init`.
-6. **Confirmed exceptional-path leak — unused-option JNI conversion can strand an opened format.** `native/kitecodec-jni/kj_format.c:84-116,598-637` can leave a Java exception pending while minting a native handle; Java discards the return. Build Java output first, check each JNI call, mint the handle last, and unwind on exception.
-7. **Confirmed encoding mismatch — two JNI paths use modified UTF-8 despite having a correct decoder.** `native/kitecodec-jni/kj_format.c:85-110,604-628` uses `NewStringUTF`; `native/kitecodec-jni/kj_util.c:21-129,273-283` already contains standard UTF-8 conversion. Use it and return a structured string array instead of delimiter joining.
-8. **Confirmed supported-path diagnostic loss — custom-I/O callback exceptions are destroyed.** `native/kitecodec-jni/kj_format.c:478-505` clears Throwable and returns generic I/O. Preserve the first Throwable/global reference and rethrow after FFmpeg unwinds; keep EOF, cancellation, and I/O distinct.
-9. **Conditional risk — a native thread attached for a callback is not detached.** `native/kitecodec-jni/kj_format.c:466-505`. Current AVIO calls are synchronously caller-driven, so the attach branch is not proven reachable by a repository path. If it is reached, return an `attached_here` flag and detach after the callback; use a TLS destructor for persistent native workers.
-10. **Confirmed type-safety hole — JNI registration erases C signature checking.** `native/kitecodec-jni/kj_registration.c:18-40` declares all functions `extern void fn()` and casts them, while `native/kitecodec-jni/methods.def` and `Internals.jvm.kt` are hand-maintained mirrors. Generate typed C prototypes, Kotlin externals, and registration rows from one schema.
-11. **Direct-C/internal misuse hardening — one format-context type has provenance-dependent destructors.** `native/kitecodec-c/include/kitecodec_helpers.h:349-369` and `native/kitecodec-jni/kj_format.c:157-168,640-649`. Supported Kotlin pairs these correctly, but the type permits a mismatched close. Wrap provenance and destructor in one owned context type with one close operation.
-12. **Direct-C hardening — custom read callbacks are not bounded in the shared helper.** `native/kitecodec-c/src/helpers_format.c:193-200` accepts a positive result larger than `len`; JNI separately guards it. Guard in the shared C helper.
-13. **Internal misuse hardening — dictionary iteration accepts an entry from another dictionary.** `native/kitecodec-jni/kj_format.c:364-370` validates only handle kind. Supported Kotlin pairs them correctly; track parentage or use an iterator object.
-14. **Input-dependent malformed-output risk — UTF-8 identity fields can be truncated mid-codepoint.** `native/kitecodec-c/src/kitecodec_abi.c:112-123,204-211` feeds strict JNI decoding `native/kitecodec-jni/kj_abi.c:48-70`. It requires a non-ASCII provisioning/identity field to land on the fixed-buffer boundary; no repository fixture demonstrates it. Truncate on codepoint boundaries and expose truncation/required length.
+1. **Unsafe bridge primitive/internal hardening gap: handle lookup does not lease object lifetime.** `native/kitecodec-handles/kc_handles.c:128-147` unlocks before returning the raw pointer; JNI callers then operate on it (`native/kitecodec-jni/kj_packet.c:16-34`, `native/kitecodec-jni/kj_format.c:157-162,206-215`). The visible supported JVM wrappers deliberately hold object locks across their JNI calls (`Frame.jvm.kt:11-24`; `Playback.jvm.kt:8-17,134-147`; `FilterGraph.jvm.kt:45-56,122-197`), so a supported-wrapper race is not demonstrated. The C/JNI primitive remains unsafe for any raw/internal caller and should gain acquire/release leases; confirmed Native races are separate.
+2. **Confirmed scalability defect: handle close is O(high-water-capacity × descendants).** `native/kitecodec-handles/kc_handles.c:27-31,50-85` recursively scans the entire never-shrinking table under one mutex. Maintain child adjacency and a free list; benchmark one million churned handles.
+3. **Confirmed long-horizon token defect: generation encoding is inconsistent.** `native/kitecodec-handles/kc_handles.h:29-54` and `native/kitecodec-handles/kc_handles.c:33-38,87-95,128-139` encode 31 generation bits but store/compare all 32; after enough reuse a newly minted token cannot resolve. Resolution also does not validate the kind encoded in the token. Normalize modulo width and validate both token and requested kind.
+4. **Dynamic-ABI risk, mitigated by current static same-build packaging: the report ABI is size-unsafe.** `native/kitecodec-c/include/kitecodec_abi.h:106-168` plus `native/kitecodec-c/src/kitecodec_abi.c:306-310` blindly assign the current struct into caller memory. A mismatched dynamic C caller/library can overflow an older caller allocation. Add `struct_size` and caller capacity or versioned getters.
+5. **Confirmed contract mismatch: the ABI-gate header overpromises.** `native/kitecodec-c/include/kitecodec_abi.h:186-190` says every entry gates, but public helpers such as `native/kitecodec-c/src/helpers_frame.c:24-25` call FFmpeg directly. Either hide them behind initialized sessions/generated guards or document/enforce mandatory `kc_init`.
+6. **Confirmed exceptional-path leak: unused-option JNI conversion can strand an opened format.** `native/kitecodec-jni/kj_format.c:84-116,598-637` can leave a Java exception pending while minting a native handle; Java discards the return. Build Java output first, check each JNI call, mint the handle last, and unwind on exception.
+7. **Confirmed encoding mismatch: two JNI paths use modified UTF-8 despite having a correct decoder.** `native/kitecodec-jni/kj_format.c:85-110,604-628` uses `NewStringUTF`; `native/kitecodec-jni/kj_util.c:21-129,273-283` already contains standard UTF-8 conversion. Use it and return a structured string array instead of delimiter joining.
+8. **Confirmed supported-path diagnostic loss: custom-I/O callback exceptions are destroyed.** `native/kitecodec-jni/kj_format.c:478-505` clears Throwable and returns generic I/O. Preserve the first Throwable/global reference and rethrow after FFmpeg unwinds; keep EOF, cancellation, and I/O distinct.
+9. **Conditional risk: a native thread attached for a callback is not detached.** `native/kitecodec-jni/kj_format.c:466-505`. Current AVIO calls are synchronously caller-driven, so the attach branch is not proven reachable by a repository path. If it is reached, return an `attached_here` flag and detach after the callback; use a TLS destructor for persistent native workers.
+10. **Confirmed type-safety hole: JNI registration erases C signature checking.** `native/kitecodec-jni/kj_registration.c:18-40` declares all functions `extern void fn()` and casts them, while `native/kitecodec-jni/methods.def` and `Internals.jvm.kt` are hand-maintained mirrors. Generate typed C prototypes, Kotlin externals, and registration rows from one schema.
+11. **Direct-C/internal misuse hardening: one format-context type has provenance-dependent destructors.** `native/kitecodec-c/include/kitecodec_helpers.h:349-369` and `native/kitecodec-jni/kj_format.c:157-168,640-649`. Supported Kotlin pairs these correctly, but the type permits a mismatched close. Wrap provenance and destructor in one owned context type with one close operation.
+12. **Direct-C hardening: custom read callbacks are not bounded in the shared helper.** `native/kitecodec-c/src/helpers_format.c:193-200` accepts a positive result larger than `len`; JNI separately guards it. Guard in the shared C helper.
+13. **Internal misuse hardening: dictionary iteration accepts an entry from another dictionary.** `native/kitecodec-jni/kj_format.c:364-370` validates only handle kind. Supported Kotlin pairs them correctly; track parentage or use an iterator object.
+14. **Input-dependent malformed-output risk: UTF-8 identity fields can be truncated mid-codepoint.** `native/kitecodec-c/src/kitecodec_abi.c:112-123,204-211` feeds strict JNI decoding `native/kitecodec-jni/kj_abi.c:48-70`. It requires a non-ASCII provisioning/identity field to land on the fixed-buffer boundary; no repository fixture demonstrates it. Truncate on codepoint boundaries and expose truncation/required length.
 
 ### C filter/frame correctness and maintainability
 
@@ -472,7 +472,7 @@ Actual backends should expose narrow primitives such as `demuxRead`, `codecSend`
 - original Kotlin/Java callback cause;
 - recoverability/fallback hint.
 
-The literal error message bug in both playback actuals—`"av_opt_set ('${'$'}key')"`—also means diagnostics show `$key` rather than the real option. Central generation eliminates that class of drift.
+The literal error message bug in both playback actuals: `"av_opt_set ('${'$'}key')"`: also means diagnostics show `$key` rather than the real option. Central generation eliminates that class of drift.
 
 ### Ownership API
 
@@ -763,7 +763,7 @@ External subtitle URLs and `SubtitleSource.io` are explicitly unwired (`MediaIte
 
 1. **The advertised Wasm HTTP source cannot satisfy the current synchronous AVIO bridge.** `kiteplayer-network/build.gradle.kts:40-74` supplies Ktor/fetch; `KtorMediaIo.kt:58-68,83-111` suspends while waiting for streamed bytes; `kiteplayer-ffmpeg/src/wasmJsMain/kotlin/io/github/yuroyami/kiteplayer/ffmpeg/BlockingMediaIo.wasmJs.kt:27-74` rejects any read that suspends. The rejected coroutine remains alive and can later mutate the caller buffer/cursor. Any response whose next chunk is not already buffered eventually fails. Run FFmpeg/AVIO in a Worker over a bounded shared/staged buffer or fully stage an explicitly small input, and cancel every rejected operation.
 2. **Ktor range reads trust an unverified response.** `KtorMediaIo.kt:83-111,121-176` accepts any 206 but does not verify `Content-Range` begins at the requested byte or that total/entity identity stays stable. A broken proxy/server can silently feed wrong bytes after a seek. Validate range, length, ETag/Last-Modified via If-Range, and fail on mutation.
-3. **P2 defensive hardening — direct seek input is not validated.** `KtorMediaIo.kt:70-74` accepts negative offsets and does not reject seek on a nonseekable instance. The `MediaIo` contract requires the engine to call seek only when `seekable`, and the engine does so; a supported engine violation is not demonstrated. The public implementation should still enforce nonnegative/seekable/open invariants for direct or future callers.
+3. **P2 defensive hardening: direct seek input is not validated.** `KtorMediaIo.kt:70-74` accepts negative offsets and does not reject seek on a nonseekable instance. The `MediaIo` contract requires the engine to call seek only when `seekable`, and the engine does so; a supported engine violation is not demonstrated. The public implementation should still enforce nonnegative/seekable/open invariants for direct or future callers.
 4. **Streaming resilience is absent.** There is no explicit timeout budget, retry/backoff, reconnect, redirect/auth refresh policy, throughput/cache statistics, or cancellation-to-HTTP interruption contract. These are product gaps, not evidence that the bounded pipe itself is wrong.
 5. **DASH is not adaptive playback.** `DashMediaIo.kt:17-76,78-129` chooses the highest-bitrate representation from one set, downloads each whole segment serially into `ByteArray`, drops separate audio, refuses live and multi-period, and cannot seek. Rename the tier as static segmented-source prototype until ABR, audio/video coordination, prefetch, live window, and failure recovery exist.
 6. **Untrusted MPDs can cause unbounded expansion.** `DashManifest.kt:173-219` expands attacker-controlled repeat/count values into an in-memory URL list with unchecked duration/timescale arithmetic and no segment cap. Use checked rescaling, presentation bounds, and maximum segment/manifest limits.
@@ -850,7 +850,7 @@ The build topology also contains abundant historical “phase/register” prose 
 - One direct-buffer/plane lease supports decoder-to-renderer and decoder-to-audio-pipeline paths; copied arrays remain convenience APIs.
 - One target/capability manifest generates both repositories' Gradle variants, documentation tables, artifact names, license/SBOM data, and consumer test matrix.
 - One Gemini application plugin/BOM configures compatible versions and native runtime policy. It must not make KiteCodec depend on KitePlayer.
-- One cross-repository conformance suite opens, plays, seeks, switches tracks, falls back hardware, reaches EOF, changes devices, and closes using packaged artifacts—not sibling projects or Maven Local.
+- One cross-repository conformance suite opens, plays, seeks, switches tracks, falls back hardware, reaches EOF, changes devices, and closes using packaged artifacts: not sibling projects or Maven Local.
 
 ## 17. Mandatory P0 release gate
 
@@ -919,9 +919,9 @@ flowchart TD
 1. **One semantic owner.** Common Kotlin owns lifecycle, commands, EOF, retries, seek, cancellation, recovery, selection, and diagnostics.
 2. **Truthful completion.** A suspend call completes only when its documented state exists; superseded, degraded, refused, cancelled, and failed are distinct outcomes.
 3. **End-to-end drain.** EOF is an explicit token traveling through demux, decoder, handoff, DSP/filter, queue, renderer/sink, and terminal state.
-4. **Factory-owned reopenability.** Anything the engine may reopen is supplied by a factory or a backend session capable of in-place mutation—not by reusing a closed object.
+4. **Factory-owned reopenability.** Anything the engine may reopen is supplied by a factory or a backend session capable of in-place mutation: not by reusing a closed object.
 5. **Leased native access.** Every native operation holds an in-flight lifetime lease; close marks Closing and waits or returns a typed unproven-teardown state.
-6. **Negotiated capability.** Decoder options, output layout, zero-copy tier, controls, subtitle path, network policy, and runtime availability are applied, degraded with reason, or refused—never silently ignored.
+6. **Negotiated capability.** Decoder options, output layout, zero-copy tier, controls, subtitle path, network policy, and runtime availability are applied, degraded with reason, or refused: never silently ignored.
 7. **Correct copied fallback.** Zero-copy is a fast path, not the only path. The fallback preserves timestamps, color, SAR, channel layout, and ownership.
 8. **Bounded work.** Actor inboxes, queues, caches, subtitle work, Web staging, and retries have explicit budgets and cancellation.
 9. **Generated release truth.** Target support, capabilities, native dependencies, link flags, licenses, source hashes, and tests derive from one machine-readable manifest.
@@ -954,7 +954,7 @@ Do not chase this table as a feature-count contest. The first competitive differ
 
 ## 20. Phased roadmap
 
-### Phase 0 — truth, memory safety, and data integrity
+### Phase 0: truth, memory safety, and data integrity
 
 Complete the safety, data-integrity, truthful-contract, and claim-narrowing portions of the section 17 gate. Freeze broad feature work and keep public pair release blocked; Phase 3 completes the artifact/install portions of that same gate.
 
@@ -969,7 +969,7 @@ Complete the safety, data-integrity, truthful-contract, and claim-narrowing port
 
 Exit criteria: no P0; both C suites green under their full modes; player EOF/transaction/reopen tests adversarially green; common decoder/seek/ownership contracts green on JVM, Native, Wasm Node, and browsers; staged runtime artifacts install from empty caches.
 
-### Phase 1 — consolidate the corrected lifecycle and raise output quality
+### Phase 1: consolidate the corrected lifecycle and raise output quality
 
 - split `PlaybackCore` internally while retaining one serialized state owner;
 - refactor the Phase-0 command outcomes behind a transaction coordinator;
@@ -982,7 +982,7 @@ Exit criteria: no P0; both C suites green under their full modes; player EOF/tra
 
 Exit criteria: deterministic scenario tests prove open/preempt/seek/switch/fallback/device-change/EOF/close; no API reports success before state exists; short and long media lose no audio/video/subtitle tail.
 
-### Phase 2 — KiteCodec common-Kotlin convergence
+### Phase 2: KiteCodec common-Kotlin convergence
 
 - introduce common session/handle state machines and operation leases;
 - centralize send/drain, timestamp, selection, cancellation, error, and progress logic;
@@ -993,7 +993,7 @@ Exit criteria: deterministic scenario tests prove open/preempt/seek/switch/fallb
 
 Exit criteria: actual implementations contain primitives, not orchestration; parity tests use the same fixtures and expected transcripts.
 
-### Phase 3 — artifact and integration parity
+### Phase 3: artifact and integration parity
 
 - split runtime artifacts by OS/arch/ABI;
 - conventional Android AAR and Apple XCFramework/Swift package;
@@ -1005,7 +1005,7 @@ Exit criteria: actual implementations contain primitives, not orchestration; par
 
 Exit criteria: a clean sample outside the repository installs, probes, decodes, and plays on every claimed platform using only public artifacts.
 
-### Phase 4 — product-complete playback baseline
+### Phase 4: product-complete playback baseline
 
 - high-quality cross-platform audio and GPU output tiers with exact layout/color/HDR negotiation;
 - gapless queue/preload/resume, real next-frame stepping, robust track switching, and persistent full subtitles;
@@ -1015,7 +1015,7 @@ Exit criteria: a clean sample outside the repository installs, probes, decodes, 
 
 Exit criteria: synchronized long-form and live playback, discontinuities, seeks, track switches, route/display changes, and recovery pass deterministic and physical-device scenarios within published latency/drop/energy budgets.
 
-### Phase 5 — differentiated supremacy features
+### Phase 5: differentiated supremacy features
 
 - low-latency adaptive streaming and protected-media integration;
 - capture/record, thumbnails/waveforms, filter reconfiguration;
@@ -1036,7 +1036,7 @@ Not every declaration is a player-product target. Apply the gate matching the pu
 2. **Codec-substrate tier:** API/refusal plus shared semantic behavior against a real backend, a runtime/package with manifests/licenses/sources, and isolated installation/probe/decode. A headless Native codec target may stop here.
 3. **Player-product tier:** every substrate gate plus the assembled player has real audio/video/subtitle output where relevant, lifecycle integration, representative open/play/seek/EOF behavior, and target-specific user experience.
 
-A single platform family may publish separate tiers—for example a Node conformance package and a browser player—but coordinates, capability reports, documentation, and tests must make that distinction explicit.
+A single platform family may publish separate tiers: for example a Node conformance package and a browser player: but coordinates, capability reports, documentation, and tests must make that distinction explicit.
 
 ### Required shared behavioral suites
 
@@ -1123,7 +1123,7 @@ The following tasks were executed on the audited macOS arm64 host. Passing resul
 | `./gradlew :kitecodec-core:wasmJsNodeTest :kitecodec-core:jsNodeTest --stacktrace` | Passed on the then-visible worktree | Web source sets compile and common/refusal tests run. Wasm does not inherit `codecContractTest`; no real media module/fixture is exercised. |
 | `javap -verbose` on built core/plugin main classes | Major version 65 for both | Confirms emitted Java 21 bytecode; it does not establish that Java 21 is a necessary floor. |
 | `native/kitecodec-c/scripts/build-host.sh plain && native/kitecodec-c/scripts/run-c-tests.sh plain` | Rebuilt current snapshot; 7/7 suites passed | Strong host correctness/ownership evidence, with the known invalid-format signal incorrectly accepted by its test. |
-| `native/kitecodec-c/scripts/run-c-tests.sh asan` | 7/7 suites passed | ASan/UBSan suite passes, but `test_convert` logs and accepts child signal 6—therefore green is not sufficient for invalid-format safety. |
+| `native/kitecodec-c/scripts/run-c-tests.sh asan` | 7/7 suites passed | ASan/UBSan suite passes, but `test_convert` logs and accepts child signal 6: therefore green is not sufficient for invalid-format safety. |
 | `native/kitecodec-c/scripts/run-c-tests.sh tsan` | 7/7 suites passed | C harness threaded cases pass; it does not exercise Kotlin/Native close-vs-operation races. |
 
 KiteCodec compile warnings include unresolved `kotlinx.cinterop.ExperimentalForeignApi`/`BetaInteropApi` opt-in markers on non-Native compilations, redundant `-Xcontext-parameters`, and many missing `ExperimentalWasmJsInterop` opt-ins. They are not the highest-risk defects, but a clean warning budget should be required before release.

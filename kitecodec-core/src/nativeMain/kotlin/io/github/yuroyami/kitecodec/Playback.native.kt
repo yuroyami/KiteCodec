@@ -327,6 +327,7 @@ public actual class PacketReader internal constructor(
 public actual class StreamDecoder internal constructor(
     public actual val stream: StreamInfo,
     private val codecCtx: CPointer<kc_codec_ctx>,
+    private val corruptData: CorruptData = CorruptData.Skip,
 ) : AutoCloseable {
 
     private val landing: CPointer<kc_frame> = ffkmp_frame_alloc()
@@ -351,6 +352,22 @@ public actual class StreamDecoder internal constructor(
      */
     public actual var isDrained: Boolean = false
         private set
+
+    public actual var corruptDataSkipped: Long = 0L
+        private set
+
+    /**
+     * The one place damaged data is decided about (audit P1-05).
+     *
+     * The tolerance below is still the default and still right: every seek into a stream carrying
+     * its parameter sets in band lands before the next one, so the first packets after it decode
+     * to nothing. What was wrong was doing it in silence, with nothing anywhere recording that the
+     * output is short.
+     */
+    private fun noteCorruptData(rc: Int) {
+        if (corruptData == CorruptData.Fail) throw FFmpegException(avError(rc))
+        corruptDataSkipped++
+    }
 
     /**
      * Offers a packet, or null to begin the end-of-stream drain.
@@ -377,7 +394,10 @@ public actual class StreamDecoder internal constructor(
             // stream that carries its parameter sets in band, MPEG-TS above all, lands before the
             // next parameter set, so the first packets after it decode to nothing. Treating that as
             // fatal would make seeking a broadcast capture impossible.
-            rc == FFmpegError.AVERROR_INVALIDDATA -> true
+            rc == FFmpegError.AVERROR_INVALIDDATA -> {
+                noteCorruptData(rc)
+                true
+            }
             else -> throw FFmpegException(avError(rc))
         }
     }
@@ -400,7 +420,10 @@ public actual class StreamDecoder internal constructor(
         if (rc == FFErrors.EAGAIN) return null
         // Same tolerance as the send side: a frame that could not be reconstructed from the packets
         // seen so far is skipped rather than fatal.
-        if (rc == FFmpegError.AVERROR_INVALIDDATA) return null
+        if (rc == FFmpegError.AVERROR_INVALIDDATA) {
+            noteCorruptData(rc)
+            return null
+        }
         if (rc < 0) throw FFmpegException(avError(rc))
 
         // Decoders fill best_effort_timestamp even for files with missing presentation timestamps.
@@ -428,6 +451,7 @@ public actual class StreamDecoder internal constructor(
     public actual fun flush(): Unit = kotlinx.atomicfu.locks.synchronized(lock) {
         check(!closed) { "StreamDecoder is closed" }
         ffkmp_codecctx_flush(codecCtx)
+        corruptDataSkipped = 0L
         isDrained = false
     }
 
@@ -449,6 +473,7 @@ public actual class StreamDecoder internal constructor(
             decoder: CodecId?,
             options: io.github.yuroyami.kitecodec.dsl.DecoderOptions? = null,
             hardware: HardwareAccel? = null,
+            corruptData: CorruptData = CorruptData.Skip,
         ): StreamDecoder {
             val streamPtr = ffkmp_fmt_stream(ctx, stream.index.toUInt())
                 ?: throw FFmpegException(FFmpegError.Internal("Stream ${stream.index} disappeared"))
@@ -493,7 +518,7 @@ public actual class StreamDecoder internal constructor(
                 check0(ffkmp_codecctx_open(codecCtx, codec), "avcodec_open2")
                 // Construction allocates the landing frame. Keep it inside this ownership guard
                 // so a landing-frame OOM cannot strand an already-open codec context.
-                return StreamDecoder(stream, codecCtx)
+                return StreamDecoder(stream, codecCtx, corruptData)
             } catch (t: Throwable) {
                 ffkmp_codecctx_free(codecCtx)
                 throw t

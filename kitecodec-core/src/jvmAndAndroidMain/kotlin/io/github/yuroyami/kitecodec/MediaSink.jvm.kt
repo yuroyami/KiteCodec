@@ -26,10 +26,42 @@ public actual class MediaSink internal constructor(
     /** Streams declared on this sink; close() owes a real container once this is nonzero. */
     private var declaredStreams = 0
 
+    /**
+     * The failure that made this sink unusable, if one has (audit P1-10).
+     *
+     * `avformat_new_stream` MUTATES the format context, and it runs before the setup that can
+     * still fail. A refused encoder therefore used to leave a real, half-configured stream inside
+     * the muxer and hand the caller back an ordinary-looking sink: adding another stream on top of
+     * it, or writing a header over it, produces a container whose stream table does not describe
+     * its contents. There is no way to take that stream back out, so the sink is finished, and
+     * saying so is the only honest answer.
+     */
+    private var failure: Throwable? = null
+
     private fun checkOpen(): Long {
         check(formatToken != 0L) { "MediaSink is closed" }
         check(!closing) { "MediaSink is closing" }
+        failure?.let {
+            throw IllegalStateException(
+                "This MediaSink failed while a stream was being added and cannot be used again. " +
+                    "Its muxer already holds a stream that could not be configured, and FFmpeg " +
+                    "offers no way to remove one. Close it, delete the output, and open a new " +
+                    "sink. The original failure is attached.",
+                it,
+            )
+        }
         return formatToken
+    }
+
+    /**
+     * Records a failure that struck AFTER the muxer had been mutated, and rethrows it.
+     *
+     * The caller still gets its own typed error; what changes is that the sink stops pretending to
+     * be usable afterwards.
+     */
+    private fun poison(error: Throwable): Nothing {
+        if (failure == null) failure = error
+        throw error
     }
 
     internal fun claimBaseMicros(candidate: Long): Long = synchronized(muxLock) {
@@ -159,8 +191,11 @@ public actual class MediaSink internal constructor(
     private fun newStreamFor(context: Long): Long {
         var stream = 0L
         var parameters = 0L
+        var mutated = false
         try {
             stream = Internals.fmtNewStream(checkOpen())
+            // From here the format context HAS a new stream in it, and nothing can take it back.
+            mutated = true
             parameters = Internals.streamCodecPar(stream)
             check0(Internals.codecParFromContext(parameters, context), "avcodec_parameters_from_context")
             Internals.streamSetTimeBase(stream, Internals.codecCtxTimeBase(context))
@@ -169,6 +204,8 @@ public actual class MediaSink internal constructor(
         } catch (error: Throwable) {
             if (stream != 0L) Internals.borrowedRelease(stream, Internals.KIND_STREAM)
             Internals.codecCtxFree(context)
+            // `parameters` is released by the finally below on every path, this one included.
+            if (mutated) poison(error)
             throw error
         } finally {
             if (parameters != 0L) Internals.borrowedRelease(parameters, Internals.KIND_CODEC_PAR)
@@ -311,6 +348,48 @@ internal class EncoderCore(
     var framesEncoded: Long = 0L
         private set
 
+    /**
+     * Where this encoder is in its one-way life (audit P1-09).
+     *
+     * An encoder that has been driven to its end has flushed its codec and written its last
+     * packet. Offering it a second flow used to look like it worked: every frame was consumed and
+     * closed, `framesEncoded` went up, and NOTHING was written, because the codec was already
+     * drained. The caller got a silent no-op and a file missing everything it thought it had
+     * added.
+     */
+    private var driving = false
+    private var drained = false
+
+    fun beginDrive() = synchronized(lock) {
+        check(codecContext != 0L) { "Encoder is closed" }
+        check(!drained) {
+            "This encoder has already been driven to its end and cannot encode again. An encoder " +
+                "is one-way: it flushes its codec when its input finishes. Add another encoder to " +
+                "the sink for another stream, or collect everything into one flow."
+        }
+        check(!driving) {
+            "This encoder is already being driven. One flow at a time: two concurrent drives " +
+                "interleave their frames into one stream."
+        }
+        driving = true
+    }
+
+    /**
+     * Marks the encoder spent. Called only after a drive REACHED the end of its input and flushed.
+     *
+     * Not in a `finally`: a drive that failed before the codec was ever touched, a refused header
+     * above all, has drained nothing, and marking it spent would replace that real failure with a
+     * misleading "already driven" on the retry. The contract suite pins exactly that.
+     */
+    fun endDrive() = synchronized(lock) {
+        drained = true
+    }
+
+    /** Releases the one-drive-at-a-time guard, on every path including failure. */
+    fun releaseDrive() = synchronized(lock) {
+        driving = false
+    }
+
     // The last frame's own extent is included, mirroring the native side: measuring only its
     // start left successful work finishing below 100 percent.
     val outputMicros: Long
@@ -319,6 +398,7 @@ internal class EncoderCore(
 
     fun encode(packet: Long, frame: Frame): Unit = synchronized(lock) {
         check(codecContext != 0L) { "Encoder is closed" }
+        check(!drained) { "This encoder was already drained; its codec cannot accept more frames" }
         try {
             frame.locked { source ->
                 restampPts(frame, source)
@@ -365,7 +445,7 @@ internal class EncoderCore(
         // A closed core has nothing left to flush: MediaSink.close finishes every core it ever
         // created, including ones the caller already drove to completion and closed, and that
         // must stay a no-op rather than an error mistaken for a lost tail.
-        if (codecContext == 0L) return
+        if (codecContext == 0L || drained) return
         sendAndDrain(packet, 0L)
     }
 
@@ -486,16 +566,22 @@ public actual class VideoEncoder internal constructor(internal val core: Encoder
         progressEveryNFrames: Int,
     ) {
         require(progressEveryNFrames > 0) { "progressEveryNFrames must be positive" }
-        core.ensureHeaderWritten()
-        withPacket { packet ->
-            input.collect { frame ->
-                core.encode(packet, frame)
-                if (onProgress != null && core.framesEncoded % progressEveryNFrames == 0L) {
-                    onProgress(core.framesEncoded)
+        core.beginDrive()
+        try {
+            core.ensureHeaderWritten()
+            withPacket { packet ->
+                input.collect { frame ->
+                    core.encode(packet, frame)
+                    if (onProgress != null && core.framesEncoded % progressEveryNFrames == 0L) {
+                        onProgress(core.framesEncoded)
+                    }
                 }
+                core.finish(packet)
+                onProgress?.invoke(core.framesEncoded)
             }
-            core.finish(packet)
-            onProgress?.invoke(core.framesEncoded)
+            core.endDrive()
+        } finally {
+            core.releaseDrive()
         }
     }
 
@@ -510,10 +596,16 @@ public actual class AudioEncoder internal constructor(
     public actual val channels: Int,
 ) : AutoCloseable {
     public actual suspend fun drive(input: Flow<Frame>) {
-        core.ensureHeaderWritten()
-        withPacket { packet ->
-            input.collect { frame -> core.encode(packet, frame) }
-            core.finish(packet)
+        core.beginDrive()
+        try {
+            core.ensureHeaderWritten()
+            withPacket { packet ->
+                input.collect { frame -> core.encode(packet, frame) }
+                core.finish(packet)
+            }
+            core.endDrive()
+        } finally {
+            core.releaseDrive()
         }
     }
 

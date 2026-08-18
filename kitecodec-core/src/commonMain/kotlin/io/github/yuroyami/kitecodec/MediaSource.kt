@@ -53,6 +53,25 @@ public expect class MediaSource : AutoCloseable {
     public val primaryAudio: StreamInfo?
 
     /**
+     * What the batch decode flows do when FFmpeg reports damaged data. [CorruptData.Skip] by
+     * default, which is what every backend always did, silently (audit P1-05).
+     *
+     * Set it before collecting. Changing it mid-flow applies from the next packet, which is well
+     * defined but rarely what anyone means.
+     */
+    public var corruptData: CorruptData
+
+    /**
+     * Packets and frames this source skipped as damaged since it was opened.
+     *
+     * Zero for a healthy file. Non-zero means the decoded result is INCOMPLETE, which is the fact
+     * that used to be unobservable: a caller could not tell a clean decode from a damaged one.
+     * Meaningless under [CorruptData.Fail], which throws instead of skipping.
+     */
+    public var corruptDataSkipped: Long
+        private set
+
+    /**
      * Decode this stream and emit each decoded frame, owned by the collector.
      *
      * Only one decode flow may collect at a time, because the demuxer is a single cursor.
@@ -128,6 +147,7 @@ public expect class MediaSource : AutoCloseable {
         decoder: CodecId? = null,
         options: io.github.yuroyami.kitecodec.dsl.DecoderOptions? = null,
         hardware: HardwareAccel? = null,
+        corruptData: CorruptData = CorruptData.Skip,
     ): StreamDecoder
 
     override fun close()

@@ -128,6 +128,7 @@ public actual class PacketReader internal constructor(
 public actual class StreamDecoder internal constructor(
     public actual val stream: StreamInfo,
     private var codecContext: Long,
+    private val corruptData: CorruptData = CorruptData.Skip,
 ) : AutoCloseable {
     private var landing = Internals.frameAlloc()
 
@@ -136,6 +137,21 @@ public actual class StreamDecoder internal constructor(
 
     public actual var isDrained: Boolean = false
         private set
+
+    public actual var corruptDataSkipped: Long = 0L
+        private set
+
+    /**
+     * The one place damaged data is decided about (audit P1-05).
+     *
+     * Under [CorruptData.Fail] it throws; otherwise it counts the loss and lets the caller carry
+     * on. What it must never do again is return quietly having recorded nothing, which is what
+     * every backend did.
+     */
+    private fun noteCorruptData(rc: Int) {
+        if (corruptData == CorruptData.Fail) throw FFmpegException(avError(rc))
+        corruptDataSkipped++
+    }
 
     @Throws(FFmpegException::class)
     public actual fun send(packet: Packet?): Boolean = synchronized(lock) {
@@ -147,7 +163,11 @@ public actual class StreamDecoder internal constructor(
             packet.locked { Internals.codecCtxSendPacket(codecContext, it) }
         }
         when (rc) {
-            0, Internals.errorEof, FFmpegError.AVERROR_INVALIDDATA -> true
+            0, Internals.errorEof -> true
+            FFmpegError.AVERROR_INVALIDDATA -> {
+                noteCorruptData(rc)
+                true
+            }
             Internals.errorEagain -> false
             else -> if (rc < 0) throw FFmpegException(avError(rc)) else true
         }
@@ -162,7 +182,11 @@ public actual class StreamDecoder internal constructor(
                 isDrained = true
                 return null
             }
-            Internals.errorEagain, FFmpegError.AVERROR_INVALIDDATA -> return null
+            Internals.errorEagain -> return null
+            FFmpegError.AVERROR_INVALIDDATA -> {
+                noteCorruptData(rc)
+                return null
+            }
         }
         if (rc < 0) throw FFmpegException(avError(rc))
         Internals.frameUseBestEffort(landing)
@@ -177,6 +201,7 @@ public actual class StreamDecoder internal constructor(
 
     public actual fun flush(): Unit = synchronized(lock) {
         check(codecContext != 0L) { "StreamDecoder is closed" }
+        corruptDataSkipped = 0L
         Internals.codecCtxFlush(codecContext)
         isDrained = false
     }
@@ -202,6 +227,7 @@ public actual class StreamDecoder internal constructor(
             requestedDecoder: CodecId?,
             options: io.github.yuroyami.kitecodec.dsl.DecoderOptions? = null,
             hardware: HardwareAccel? = null,
+            corruptData: CorruptData = CorruptData.Skip,
         ): StreamDecoder {
             val streamToken = Internals.fmtStream(formatToken, stream.index)
             var parameters = 0L
@@ -245,7 +271,7 @@ public actual class StreamDecoder internal constructor(
                         null -> Unit
                     }
                     check0(Internals.codecCtxOpen(context, codec), "avcodec_open2")
-                    return StreamDecoder(stream, context)
+                    return StreamDecoder(stream, context, corruptData)
                 } catch (error: Throwable) {
                     Internals.codecCtxFree(context)
                     throw error

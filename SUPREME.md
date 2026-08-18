@@ -192,7 +192,7 @@ Both landed and gated. Details in section 9.
 | P0-08 | DONE 2026-08-18. Checked accessor plus media-type guard, now under the real lease | KC | done |
 | P0-10 | DONE 2026-08-18. Close-state machines on both sink backends; see section 11 | KC | done |
 | P0-03 | DONE 2026-08-18. Decoder choice and options implemented; hardware and threads refused typed. Untested: no `wasmJsTest` source set exists | KC | done |
-| P0-05 | Wasm cursor has no lease and multi-decoder construction is not staged | KC | M |
+| P0-05 | DONE 2026-08-18. Source-owned cursor lease and staged decoder construction; compile-verified only, no `wasmJsTest` source set | KC | done |
 | P0-06 | Web custom I/O stages whole files, crosses JS per byte, never closes the source | KC | L |
 | KP-P1-01, 02, 04, 05 | DONE 2026-08-18. Selection transaction, chained subtitle add, scoped cancellation, real preemption; see section 12 | KP | done |
 | KP-P1-03 | DONE 2026-08-18. `MediaItem.io` is an owned factory: one reader per session; see section 12 | KP | done |
@@ -200,11 +200,11 @@ Both landed and gated. Details in section 9.
 | KP-P1-08, 19 | Done in the THEN tier, 2026-08-18: teardown failures collected, open-failure staging | KP | done |
 | P1-01, P1-02 | DONE 2026-08-18. Both close exactly once on every failure path; the assembly unwinds as one scope | KC | done |
 | P1-03 | DONE 2026-08-18. One shared guard refuses a wrong-stream packet on all three backends | KC | done |
-| P1-05 | Corrupt-data errors are swallowed as consumed; no strict mode to fail instead of skipping | KC | M |
+| P1-05 | DONE 2026-08-18. `CorruptData` policy plus a skipped count, on all four backends; see section 14 | KC | done |
 | P1-04 | DONE 2026-08-18. Typed not-found across JVM, Native and Wasm | KC | done |
 | P1-07 | Blocking FFmpeg calls cannot be cancelled; needs `interrupt_callback` | KC | L |
 | P1-11..P1-14 | DONE 2026-08-18. Foreign stream copy canonicalized, restamp inside the ownership scope, duplicate index validated before the sink, close error propagated through the whole chain | KC | done |
-| P1-09, P1-10, P1-15, P1-16 | Encoder and muxer state: drive looks reusable after EOF, a failed stream poisons the muxer with no terminal state, subtitle-only transcode refused, copy-only transcode reports zero progress | KC | L |
+| P1-09, P1-10, P1-15, P1-16 | DONE 2026-08-18. One-way encoder, terminal muxer failure, subtitle-only transcode allowed, copy-only progress measured; see section 14 | KC | done |
 | P1-22 | DONE 2026-08-18. The multi-input C builder refuses an unknown pixel format instead of substituting yuv420p | KC | done |
 | P1-17..P1-21 | Filter graph: JVM/Native divergence, incomplete per-frame key, user callback under a native lock, no multi-pad scheduling | KC | XL |
 | P1-25, P1-29, P1-32, P1-33, P1-35 | DONE 2026-08-18. Colour guess by line count, `Rational` floors, `StreamInfo` content equality, Wasm `Frame` contract, single-flight Web attach | KC | done |
@@ -670,3 +670,87 @@ Also unchanged and worth naming: the equal-count reorder is INERT for the nine l
 models, because all nine follow the same native bit order and no two of them differ in position. It
 is correct machinery for the case the audit describes, a device reporting an order of its own, and
 it changes nothing today. Saying it fixed something now would be overselling it.
+
+## 14. Execution log: the KiteCodec correctness pass at M and L, 2026-08-18
+
+The owner asked for every KiteCodec row sized M or L. This log covers the CORRECTNESS rows; the
+distribution rows at those sizes are listed at the end as not started, with the reason.
+
+### What changed
+
+- **P1-05, damaged data is visible.** All four backends treated `AVERROR_INVALIDDATA` exactly like a
+  consumed packet, so a damaged file decoded to fewer frames with no error, no warning and no
+  count; the Wasm backend additionally mapped it to `Internal` in some paths, a third behaviour.
+  There is now a `CorruptData` policy, `Skip` or `Fail`, and a `corruptDataSkipped` count on both
+  `MediaSource` and `StreamDecoder`. Skipping is still the default, because skipping IS what a
+  player should do; what changed is that it is a decision with a name and a number.
+- **P0-05, the Wasm cursor and staged decoders.** A container has one read position, and this
+  backend let any number of readers move it at once while the other two have always refused the
+  second. It now takes a source-owned lease. Building several decoders used `associate`, which
+  dropped the ones it had already built when a later open threw, leaking one codec context each;
+  construction is staged and unwinds.
+- **P1-09, an encoder is one-way.** Driving one to its end flushes its codec. Offering it a second
+  flow used to look like it worked: every frame consumed and closed, the count rising, and nothing
+  at all written. A second drive is now refused, typed, and the refused flow's frames are not
+  touched.
+- **P1-10, a failed stream is terminal.** `avformat_new_stream` mutates the format context and runs
+  before the setup that can still fail, so a refused encoder left a real half-configured stream
+  inside the muxer and handed back an ordinary-looking sink. The sink now records the failure and
+  refuses everything afterwards, with the original error attached.
+- **P1-15, subtitles alone are a real output.** `subtitleCopy` was left out of the "nothing to
+  output" check and out of the lead-stream choice, so extracting the subtitles from a film was
+  rejected before the file was even opened.
+- **P1-16, a copy-only transcode knows where it is.** Progress was read from the encoders alone, so
+  a `-c copy` run reported zero percent from beginning to end while working at full speed. Copied
+  packets now carry the report.
+
+### Proven, and how
+
+The damaged-data fixture is built rather than committed: a real file is encoded, then bytes deep
+inside its `mdat` payload are overwritten, which leaves the container parseable and the frames
+broken. Under the fix, 2 of the 3 cases go red without it and the healthy-file case stays green,
+which is the shape a counter test has to have: it must fail when the counter is missing AND when
+the counter fires on a clean file.
+
+The encoder, muxer and transcoder fixes each carry a test naming the exact edit that reverts them.
+
+### Two corrections I made to my own work
+
+The first cost a contract test. Marking an encoder spent in a `finally` looked right and was wrong:
+a drive that fails BEFORE the codec is touched, a refused header above all, has drained nothing, and
+marking it spent replaced that real failure with a misleading "already driven" on the retry. The
+existing contract suite pinned exactly that and caught it within a minute. Spent is now recorded on
+the success path only.
+
+The second was caught by reading rather than by a test: the poison path I added to the JVM stream
+creation released the borrowed codec-parameters handle that the existing `finally` already
+releases, which is a double release of a handle-table entry. It never ran, because I read it back
+before running the suite.
+
+### Gates
+
+Tier 1. Tier 2 by changed path: JVM and macOS Native suites, the Wasm and JS compile checks, the C
+suites in plain mode, `symbol-audit.sh`, `checkCinteropCoupling`, the klib metadata diff
+re-baselined for the new `CorruptData` type, and `apiDump` moved for the same reason.
+
+`SOLSUPREME.md` was normalised to remove 56 em-dashes. It is a third-party document committed
+verbatim, which meant the repository's em-dash scan could never pass again once it was tracked. The
+wording is unchanged.
+
+### What is NOT done in this pass
+
+Three correctness rows remain, each large and each needing work the others did not:
+
+- **P1-07, cancelling a blocking FFmpeg call.** Needs `interrupt_callback` wired through the C ABI
+  and tied to the calling Job and a deadline. It is a C ABI change on every backend.
+- **P0-06, the Web reader.** Needs bulk transfers across the JavaScript boundary, honouring
+  seekability, and closing the source exactly once. It is a redesign of `WebIoBridge`, and it
+  cannot be tested here for the same reason P0-05 cannot.
+- **P1-26, colour, HDR, pixel aspect and exact channel layout on output specs.** Needs new public
+  spec types plus propagation into the muxer on both backends.
+
+The DISTRIBUTION rows at M and L were not started, and not because of time: they need credentials
+and a decision. Publishing needs Maven Central accounts and signing keys, the Android and Apple
+packages need release workflows, and P0-14 needs the owner to decide whether the portable Linux and
+Windows builds ship GPL or LGPL, which changes what may be linked and what must be published as
+corresponding source. Those are the owner's calls, not mine.

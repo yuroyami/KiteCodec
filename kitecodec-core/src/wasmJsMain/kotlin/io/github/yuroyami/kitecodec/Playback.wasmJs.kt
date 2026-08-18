@@ -92,6 +92,8 @@ public actual class PacketReader internal constructor(
     /** The container's own origin, so [seek] can convert the public timeline onto it. */
     private val startTimeMicros: Long,
     private val lifetime: SourceLifetime,
+    /** Returns the source's demux-cursor lease. Called exactly once, from [close]. */
+    private val onClosed: () -> Unit = {},
 ) : AutoCloseable {
 
     private var closed = false
@@ -145,7 +147,11 @@ public actual class PacketReader internal constructor(
     }
 
     actual override fun close() {
+        if (closed) return
         closed = true
+        // Exactly once, and even if the source is already gone: the lease lives on the source
+        // object, not in the container, so returning it is always safe and always owed.
+        onClosed()
     }
 }
 
@@ -153,10 +159,27 @@ public actual class StreamDecoder internal constructor(
     private val context: Int,
     public actual val stream: StreamInfo,
     private val lifetime: SourceLifetime,
+    private val corruptData: CorruptData = CorruptData.Skip,
 ) : AutoCloseable {
 
     public actual var isDrained: Boolean = false
         private set
+
+    public actual var corruptDataSkipped: Long = 0L
+        private set
+
+    /**
+     * The one place damaged data is decided about (audit P1-05).
+     *
+     * This backend used to map damage to `Internal` in some paths and swallow it in others, which
+     * was a third behaviour on top of the two the other backends had. All three now agree.
+     */
+    private fun noteCorruptData(rc: Int) {
+        if (corruptData == CorruptData.Fail) {
+            throw FFmpegException(FFmpegError.InvalidData(rc, "damaged data, and the policy is to fail"))
+        }
+        corruptDataSkipped++
+    }
 
     private var closed = false
     private val frame: Int = ffkmp_frame_alloc(requireModule())
@@ -192,7 +215,10 @@ public actual class StreamDecoder internal constructor(
             rc == ffkmp_averror_eof(m) -> true
             // Same tolerance the JVM and Native backends apply: a packet the decoder cannot use is
             // not a reason to abandon the file, and refusing it here would strand the caller.
-            rc == FFmpegError.AVERROR_INVALIDDATA -> true
+            rc == FFmpegError.AVERROR_INVALIDDATA -> {
+                noteCorruptData(rc)
+                true
+            }
             else -> throw FFmpegException(FFmpegError.Internal("sending a packet failed with $rc"))
         }
     }
@@ -208,7 +234,10 @@ public actual class StreamDecoder internal constructor(
             return null
         }
         if (rc == ffkmp_averror_eagain(m)) return null
-        if (rc == FFmpegError.AVERROR_INVALIDDATA) return null
+        if (rc == FFmpegError.AVERROR_INVALIDDATA) {
+            noteCorruptData(rc)
+            return null
+        }
         if (rc < 0) throw FFmpegException(FFmpegError.Internal("receiving a frame failed with $rc"))
         // The decoder reuses its frame, so the caller gets a clone it owns outright. Handing out
         // the shared one would make the next receive() mutate a frame the caller still holds.
@@ -220,6 +249,7 @@ public actual class StreamDecoder internal constructor(
     public actual fun flush() {
         alive()
         ffkmp_codecctx_flush(requireModule(), context)
+        corruptDataSkipped = 0L
         isDrained = false
     }
 

@@ -96,10 +96,51 @@ public actual class MediaSource internal constructor(
     public actual val primaryVideo: StreamInfo? get() = streams.firstOrNull { it.type == MediaType.Video }
     public actual val primaryAudio: StreamInfo? get() = streams.firstOrNull { it.type == MediaType.Audio }
 
+    /**
+     * True while a packet reader holds the demux cursor (audit P0-05).
+     *
+     * A container has ONE read position. Two readers, or a reader and a batch decode flow, moving
+     * it at the same time interleave each other's packets and each other's seeks, and the caller
+     * sees a stream that jumps about for no reason. The JVM and Native backends have always
+     * refused the second one; this backend let them all through.
+     */
+    private var readerActive = false
+
+    internal fun beginPacketReader() {
+        check(!readerActive) {
+            "This MediaSource already has an open packet reader. A container has one demux cursor, " +
+                "so close the first reader before opening another, or read several streams through " +
+                "one reader with openPacketReader(streams)."
+        }
+        readerActive = true
+    }
+
+    internal fun endPacketReader() {
+        readerActive = false
+    }
+
+    public actual var corruptData: CorruptData = CorruptData.Skip
+
+    /**
+     * Summed from the decoders the batch flows built, because this backend's flows drive real
+     * [StreamDecoder] instances rather than a private decode loop (audit P1-05).
+     */
+    public actual var corruptDataSkipped: Long = 0L
+        private set
+
     public actual fun decodedFrames(stream: StreamInfo): Flow<Frame> = decodeStreams(listOf(stream))
 
     public actual fun decodeStreams(streams: List<StreamInfo>): Flow<Frame> = flow {
-        val decoders = streams.associate { it.index to openDecoder(it) }
+        // Staged, because `associate` built them all and dropped the ones it had already built if
+        // a later open threw, leaking one codec context each (audit P0-05).
+        val decoders = LinkedHashMap<Int, StreamDecoder>()
+        try {
+            streams.forEach { decoders[it.index] = openDecoder(it, corruptData = corruptData) }
+        } catch (failure: Throwable) {
+            decoders.values.forEach { built -> runCatching { built.close() } }
+            throw failure
+        }
+        corruptDataSkipped = 0L
         val reader = openPacketReader(streams)
         try {
             while (true) {
@@ -132,6 +173,9 @@ public actual class MediaSource internal constructor(
                 }
             }
         } finally {
+            // Read the decoders' counts BEFORE closing them: closed decoders answer nothing, and
+            // this total is the only record that the decode was short (audit P1-05).
+            corruptDataSkipped = decoders.values.sumOf { it.corruptDataSkipped }
             reader.close()
             decoders.values.forEach { it.close() }
         }
@@ -197,14 +241,24 @@ public actual class MediaSource internal constructor(
         }
     }
 
-    public actual fun openPacketReader(streams: List<StreamInfo>): PacketReader =
-        PacketReader(
-            context = alive(),
-            timeBases = this.streams.associate { it.index to it.timeBase },
-            wanted = streams.map { it.index }.toSet(),
-            startTimeMicros = startTimeMicros,
-            lifetime = lifetime,
-        )
+    public actual fun openPacketReader(streams: List<StreamInfo>): PacketReader {
+        val context = alive()
+        beginPacketReader()
+        try {
+            return PacketReader(
+                context = context,
+                timeBases = this.streams.associate { it.index to it.timeBase },
+                wanted = streams.map { it.index }.toSet(),
+                startTimeMicros = startTimeMicros,
+                lifetime = lifetime,
+                onClosed = ::endPacketReader,
+            )
+        } catch (failure: Throwable) {
+            // The lease was taken and the reader that would return it never existed.
+            endPacketReader()
+            throw failure
+        }
+    }
 
     public actual fun openDecoder(
         stream: StreamInfo,
@@ -213,6 +267,7 @@ public actual class MediaSource internal constructor(
         decoder: CodecId?,
         options: DecoderOptions?,
         hardware: HardwareAccel?,
+        corruptData: CorruptData,
     ): StreamDecoder {
         val m = requireModule()
         // Applied or refused, never ignored (audit P0-03). Every parameter below used to be
@@ -291,7 +346,7 @@ public actual class MediaSource internal constructor(
             ffkmp_codecctx_free(m, ctx)
             throw failure
         }
-        return StreamDecoder(ctx, stream, lifetime)
+        return StreamDecoder(ctx, stream, lifetime, corruptData)
     }
 
     actual override fun close() {

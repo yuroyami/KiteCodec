@@ -204,6 +204,17 @@ public actual class MediaSource internal constructor(
             ?: streams.firstOrNull { it.type == MediaType.Video }
     public actual val primaryAudio: StreamInfo? get() = streams.firstOrNull { it.type == MediaType.Audio }
 
+    public actual var corruptData: CorruptData = CorruptData.Skip
+
+    public actual var corruptDataSkipped: Long = 0L
+        private set
+
+    /** The one place the batch flows decide about damaged data (audit P1-05). */
+    private fun noteCorruptData(rc: Int) {
+        if (corruptData == CorruptData.Fail) throw FFmpegException(avError(rc))
+        corruptDataSkipped++
+    }
+
     public actual fun decodedFrames(stream: StreamInfo): Flow<Frame> = decodeStreams(listOf(stream))
 
     public actual fun decodeStreams(streams: List<StreamInfo>): Flow<Frame> = flow {
@@ -319,7 +330,11 @@ public actual class MediaSource internal constructor(
                 // capture impossible. Skip the packet and continue, which is what ffmpeg's own
                 // CLI does. If the stream is genuinely broken, no frames arrive and the callers
                 // that need output report it.
-                sendRc == FFmpegError.AVERROR_INVALIDDATA -> { drain(decoder, frame, onFrame); return }
+                sendRc == FFmpegError.AVERROR_INVALIDDATA -> {
+                    noteCorruptData(sendRc)
+                    drain(decoder, frame, onFrame)
+                    return
+                }
                 else -> throw FFmpegException(avError(sendRc))
             }
         }
@@ -333,7 +348,10 @@ public actual class MediaSource internal constructor(
             if (rc == eagain || rc == eof) return
             // Same tolerance as the send side: a frame that could not be reconstructed from the
             // packets seen so far is skipped, not fatal.
-            if (rc == FFmpegError.AVERROR_INVALIDDATA) return
+            if (rc == FFmpegError.AVERROR_INVALIDDATA) {
+                noteCorruptData(rc)
+                return
+            }
             if (rc < 0) throw FFmpegException(avError(rc))
             // Decoders fill best_effort_timestamp even for files with missing pts. Promote it
             // so everything downstream (filters, encoders) sees a usable timestamp.
@@ -499,11 +517,12 @@ public actual class MediaSource internal constructor(
         decoder: CodecId?,
         options: io.github.yuroyami.kitecodec.dsl.DecoderOptions?,
         hardware: HardwareAccel?,
+        corruptData: CorruptData,
     ): StreamDecoder {
         check(!isClosed) { "MediaSource is closed" }
         require(stream.type.isAv) { "Only video and audio streams can be decoded, got ${stream.type}" }
         requireOwnStream(stream)
-        return StreamDecoder.open(ctx, stream, threadCount, lowDelay, decoder, options, hardware)
+        return StreamDecoder.open(ctx, stream, threadCount, lowDelay, decoder, options, hardware, corruptData)
     }
 
     /**

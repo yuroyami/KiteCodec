@@ -202,6 +202,17 @@ final enum class io.github.yuroyami.kitecodec/ColorTransfer : kotlin/Enum<io.git
     }
 }
 
+final enum class io.github.yuroyami.kitecodec/CorruptData : kotlin/Enum<io.github.yuroyami.kitecodec/CorruptData> { // io.github.yuroyami.kitecodec/CorruptData|null[0]
+    enum entry Fail // io.github.yuroyami.kitecodec/CorruptData.Fail|null[0]
+    enum entry Skip // io.github.yuroyami.kitecodec/CorruptData.Skip|null[0]
+
+    final val entries // io.github.yuroyami.kitecodec/CorruptData.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<io.github.yuroyami.kitecodec/CorruptData> // io.github.yuroyami.kitecodec/CorruptData.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): io.github.yuroyami.kitecodec/CorruptData // io.github.yuroyami.kitecodec/CorruptData.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<io.github.yuroyami.kitecodec/CorruptData> // io.github.yuroyami.kitecodec/CorruptData.values|values#static(){}[0]
+}
+
 final enum class io.github.yuroyami.kitecodec/HardwareAccel : kotlin/Enum<io.github.yuroyami.kitecodec/HardwareAccel> { // io.github.yuroyami.kitecodec/HardwareAccel|null[0]
     enum entry VideoToolbox // io.github.yuroyami.kitecodec/HardwareAccel.VideoToolbox|null[0]
 
@@ -1233,10 +1244,16 @@ final class io.github.yuroyami.kitecodec/MediaSource : kotlin/AutoCloseable { //
     final val unusedOpenOptions // io.github.yuroyami.kitecodec/MediaSource.unusedOpenOptions|{}unusedOpenOptions[0]
         final fun <get-unusedOpenOptions>(): kotlin.collections/List<kotlin/String> // io.github.yuroyami.kitecodec/MediaSource.unusedOpenOptions.<get-unusedOpenOptions>|<get-unusedOpenOptions>(){}[0]
 
+    final var corruptData // io.github.yuroyami.kitecodec/MediaSource.corruptData|{}corruptData[0]
+        final fun <get-corruptData>(): io.github.yuroyami.kitecodec/CorruptData // io.github.yuroyami.kitecodec/MediaSource.corruptData.<get-corruptData>|<get-corruptData>(){}[0]
+        final fun <set-corruptData>(io.github.yuroyami.kitecodec/CorruptData) // io.github.yuroyami.kitecodec/MediaSource.corruptData.<set-corruptData>|<set-corruptData>(io.github.yuroyami.kitecodec.CorruptData){}[0]
+    final var corruptDataSkipped // io.github.yuroyami.kitecodec/MediaSource.corruptDataSkipped|{}corruptDataSkipped[0]
+        final fun <get-corruptDataSkipped>(): kotlin/Long // io.github.yuroyami.kitecodec/MediaSource.corruptDataSkipped.<get-corruptDataSkipped>|<get-corruptDataSkipped>(){}[0]
+
     final fun close() // io.github.yuroyami.kitecodec/MediaSource.close|close(){}[0]
     final fun decodeStreams(kotlin.collections/List<io.github.yuroyami.kitecodec/StreamInfo>): kotlinx.coroutines.flow/Flow<io.github.yuroyami.kitecodec/Frame> // io.github.yuroyami.kitecodec/MediaSource.decodeStreams|decodeStreams(kotlin.collections.List<io.github.yuroyami.kitecodec.StreamInfo>){}[0]
     final fun decodedFrames(io.github.yuroyami.kitecodec/StreamInfo): kotlinx.coroutines.flow/Flow<io.github.yuroyami.kitecodec/Frame> // io.github.yuroyami.kitecodec/MediaSource.decodedFrames|decodedFrames(io.github.yuroyami.kitecodec.StreamInfo){}[0]
-    final fun openDecoder(io.github.yuroyami.kitecodec/StreamInfo, kotlin/Int = ..., kotlin/Boolean = ..., io.github.yuroyami.kitecodec/CodecId? = ..., io.github.yuroyami.kitecodec.dsl/DecoderOptions? = ..., io.github.yuroyami.kitecodec/HardwareAccel? = ...): io.github.yuroyami.kitecodec/StreamDecoder // io.github.yuroyami.kitecodec/MediaSource.openDecoder|openDecoder(io.github.yuroyami.kitecodec.StreamInfo;kotlin.Int;kotlin.Boolean;io.github.yuroyami.kitecodec.CodecId?;io.github.yuroyami.kitecodec.dsl.DecoderOptions?;io.github.yuroyami.kitecodec.HardwareAccel?){}[0]
+    final fun openDecoder(io.github.yuroyami.kitecodec/StreamInfo, kotlin/Int = ..., kotlin/Boolean = ..., io.github.yuroyami.kitecodec/CodecId? = ..., io.github.yuroyami.kitecodec.dsl/DecoderOptions? = ..., io.github.yuroyami.kitecodec/HardwareAccel? = ..., io.github.yuroyami.kitecodec/CorruptData = ...): io.github.yuroyami.kitecodec/StreamDecoder // io.github.yuroyami.kitecodec/MediaSource.openDecoder|openDecoder(io.github.yuroyami.kitecodec.StreamInfo;kotlin.Int;kotlin.Boolean;io.github.yuroyami.kitecodec.CodecId?;io.github.yuroyami.kitecodec.dsl.DecoderOptions?;io.github.yuroyami.kitecodec.HardwareAccel?;io.github.yuroyami.kitecodec.CorruptData){}[0]
     final fun openPacketReader(kotlin.collections/List<io.github.yuroyami.kitecodec/StreamInfo>): io.github.yuroyami.kitecodec/PacketReader // io.github.yuroyami.kitecodec/MediaSource.openPacketReader|openPacketReader(kotlin.collections.List<io.github.yuroyami.kitecodec.StreamInfo>){}[0]
     final suspend fun extractFrame(kotlin/Long, io.github.yuroyami.kitecodec/StreamInfo? = ...): io.github.yuroyami.kitecodec/Frame // io.github.yuroyami.kitecodec/MediaSource.extractFrame|extractFrame(kotlin.Long;io.github.yuroyami.kitecodec.StreamInfo?){}[0]
     final suspend fun seekMicros(kotlin/Long) // io.github.yuroyami.kitecodec/MediaSource.seekMicros|seekMicros(kotlin.Long){}[0]
@@ -1334,6 +1351,8 @@ final class io.github.yuroyami.kitecodec/StreamDecoder : kotlin/AutoCloseable { 
     final val stream // io.github.yuroyami.kitecodec/StreamDecoder.stream|{}stream[0]
         final fun <get-stream>(): io.github.yuroyami.kitecodec/StreamInfo // io.github.yuroyami.kitecodec/StreamDecoder.stream.<get-stream>|<get-stream>(){}[0]
 
+    final var corruptDataSkipped // io.github.yuroyami.kitecodec/StreamDecoder.corruptDataSkipped|{}corruptDataSkipped[0]
+        final fun <get-corruptDataSkipped>(): kotlin/Long // io.github.yuroyami.kitecodec/StreamDecoder.corruptDataSkipped.<get-corruptDataSkipped>|<get-corruptDataSkipped>(){}[0]
     final var isDrained // io.github.yuroyami.kitecodec/StreamDecoder.isDrained|{}isDrained[0]
         final fun <get-isDrained>(): kotlin/Boolean // io.github.yuroyami.kitecodec/StreamDecoder.isDrained.<get-isDrained>|<get-isDrained>(){}[0]
 
