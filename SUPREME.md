@@ -158,8 +158,9 @@ Every open item, in the order section 6 recommends. `Repo` is who owns the fix: 
 **KP** is KitePlayer, **Pair** needs both. Size is relative work, not a schedule: **S** is a sitting,
 **M** is a day or so, **L** is a focused week, **XL** is a design plus a week or more.
 
-Counts: 19 of 20 P0s remain open (P0-09 is closed). Roughly 130 further findings sit behind the
-grouped rows below, because one fix usually closes several.
+Counts, as of the 2026-08-18 runs: 6 of 20 P0s are closed (P0-03, P0-07, P0-08, P0-09, P0-10,
+P0-20), and 9 of the 14 still open are distribution rather than correctness. Roughly 130 further
+findings sit behind the grouped rows below, because one fix usually closes several.
 
 ### Done already
 
@@ -190,23 +191,28 @@ Both landed and gated. Details in section 9.
 | P0-07 | DONE 2026-08-18. Operation leases on Frame, Packet, StreamDecoder and FilterGraph; see section 11 | KC | done |
 | P0-08 | DONE 2026-08-18. Checked accessor plus media-type guard, now under the real lease | KC | done |
 | P0-10 | DONE 2026-08-18. Close-state machines on both sink backends; see section 11 | KC | done |
-| P0-03 | Wasm accepts and silently ignores decoder, options and hardware requests | KC | M |
+| P0-03 | DONE 2026-08-18. Decoder choice and options implemented; hardware and threads refused typed. Untested: no `wasmJsTest` source set exists | KC | done |
 | P0-05 | Wasm cursor has no lease and multi-decoder construction is not staged | KC | M |
 | P0-06 | Web custom I/O stages whole files, crosses JS per byte, never closes the source | KC | L |
 | KP-P1-01, 02, 04, 05 | DONE 2026-08-18. Selection transaction, chained subtitle add, scoped cancellation, real preemption; see section 12 | KP | done |
 | KP-P1-03 | DONE 2026-08-18. `MediaItem.io` is an owned factory: one reader per session; see section 12 | KP | done |
 | KP-P1-06, 07, 09, 21 | DONE 2026-08-18. Explicit first-frame outcome, bounded close, counted event loss, monotonic totals; see section 12 | KP | done |
 | KP-P1-08, 19 | Done in the THEN tier, 2026-08-18: teardown failures collected, open-failure staging | KP | done |
-| P1-01, P1-02 | Custom-source and Native assembly failures leak or skip `close()` | KC | M |
-| P1-03, P1-05 | Wrong-stream packets accepted; INVALIDDATA swallowed with no strict mode | KC | M |
-| P1-04 | Decoder/encoder/filter absence collapses to `Internal` instead of typed not-found | KC | M |
+| P1-01, P1-02 | DONE 2026-08-18. Both close exactly once on every failure path; the assembly unwinds as one scope | KC | done |
+| P1-03 | DONE 2026-08-18. One shared guard refuses a wrong-stream packet on all three backends | KC | done |
+| P1-05 | Corrupt-data errors are swallowed as consumed; no strict mode to fail instead of skipping | KC | M |
+| P1-04 | DONE 2026-08-18. Typed not-found across JVM, Native and Wasm | KC | done |
 | P1-07 | Blocking FFmpeg calls cannot be cancelled; needs `interrupt_callback` | KC | L |
-| P1-09..P1-16 | Encoder and muxer state: reusable drive after EOF, poisoned muxer, foreign stream copy, late cleanup, hidden I/O failure, partial remux mutation, refused subtitle-only transcode, zero copy-only progress | KC | L |
-| P1-17..P1-22 | Filter graph: JVM/Native divergence, incomplete per-frame key, close races, user callback under a native lock, no multi-pad scheduling, yuv420p substitution | KC | XL |
-| P1-29, P1-32, P1-33, P1-35 | `Rational` overflow, mutable `StreamInfo`, Wasm `Frame` contract breaks, non-single-flight Web attach | KC | M |
+| P1-11..P1-14 | DONE 2026-08-18. Foreign stream copy canonicalized, restamp inside the ownership scope, duplicate index validated before the sink, close error propagated through the whole chain | KC | done |
+| P1-09, P1-10, P1-15, P1-16 | Encoder and muxer state: drive looks reusable after EOF, a failed stream poisons the muxer with no terminal state, subtitle-only transcode refused, copy-only transcode reports zero progress | KC | L |
+| P1-22 | DONE 2026-08-18. The multi-input C builder refuses an unknown pixel format instead of substituting yuv420p | KC | done |
+| P1-17..P1-21 | Filter graph: JVM/Native divergence, incomplete per-frame key, user callback under a native lock, no multi-pad scheduling | KC | XL |
+| P1-25, P1-29, P1-32, P1-33, P1-35 | DONE 2026-08-18. Colour guess by line count, `Rational` floors, `StreamInfo` content equality, Wasm `Frame` contract, single-flight Web attach | KC | done |
+| P1-26 | Output specs cannot express colour space, HDR signalling, pixel aspect or an exact channel layout, so an encode flattens them silently | KC | L |
 | KP-P1-10 | DONE 2026-08-18. A step presents the next decoded frame; see section 13 | KP | done |
-| KP-P1-12..15, 17 | Track switch rebuilds the source, infinite durations, subtitle lane and EOS, viewport-wrong rasters, raw filter timing | KP | L |
-| FrameQueue | `bufferedUs` measures `last - first`, so one frame reads zero and the last duration is always lost | KP | S |
+| KP-P1-11, 18, 19, 20 | DONE 2026-08-18. Chapter end honoured, real filter diagnostic, open-failure staging, `selectImmediately` unconditional | KP | done |
+| KP-P1-12..15, 17 | Track switch rebuilds the source, infinite durations pass validation, subtitles have no worker lane or EOS, viewport-wrong rasters, raw filter timing | KP | L |
+| FrameQueue | DONE 2026-08-18. `bufferedUs` measures to the end of the last frame | KP | done |
 
 ### Tier LATER: distribution. One program, not piecemeal
 
