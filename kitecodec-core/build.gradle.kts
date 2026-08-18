@@ -1222,10 +1222,24 @@ run {
                     // that enforceable: ELF -shared permits undefined symbols by default, so
                     // omitting them once produced a 137 KB library that linked happily and could
                     // only have failed at load. The flag turns that into a link error.
+                    //
+                    // dav1d follows the same tree-presence truth as every other link (D-7), and
+                    // comes AFTER the libav* group because ld resolves static archives left to
+                    // right and it is libavcodec that draws on it. It was missing here alone: the
+                    // dav1d surge enabled --enable-libdav1d for the linux trees without adding the
+                    // flag to this one link, so --no-undefined did its job and reported every
+                    // dav1d_* symbol undefined from libdav1d.o. It lives in the same lib/ this
+                    // link already searches, so nothing but the name was ever needed.
+                    val jniDav1d = if (ffmpegRoot.resolve("lib/libdav1d.a").exists()) {
+                        listOf("-ldav1d")
+                    } else {
+                        emptyList()
+                    }
                     linkFlags.set(
                         tools.flags + listOf(
                             "-lavformat", "-lavcodec", "-lavfilter",
                             "-lavutil", "-lswscale", "-lswresample",
+                        ) + jniDav1d + listOf(
                             "-lz", "-lm", "-ldl", "-lpthread",
                             "-Wl,--no-undefined",
                         ),

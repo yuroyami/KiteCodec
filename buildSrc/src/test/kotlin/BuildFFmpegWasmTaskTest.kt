@@ -3,7 +3,6 @@ package io.github.yuroyami.kitecodec.buildtools
 import org.gradle.testfixtures.ProjectBuilder
 import java.nio.file.Path
 import kotlin.test.Test
-import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -67,33 +66,89 @@ class BuildFFmpegWasmTaskTest {
     }
 
     /**
+     * What each MustPlay row actually CONTAINS, as `ffprobe` reports it, not as memory recalls it.
+     *
+     * A row is listed here with every codec it needs, so adding a codec to the web tier can never
+     * again mean "the one somebody happened to think of". PAR-4 is why this shape exists: the old
+     * version asserted a flat hand-written list, opus was never on it, and the tier decoded the
+     * picture of `vp9.webm` and `av1.mkv` while dropping their sound with no test going red.
+     */
+    private val matrixRowCodecs: Map<String, List<String>> = mapOf(
+        "sync1080p30.mp4" to listOf("h264", "aac"),
+        "baseline.mkv" to listOf("h264", "aac"),
+        "vp9.webm" to listOf("vp9", "opus"),
+        "av1.mkv" to listOf("av1", "opus"),
+        "hevc4k10.mp4" to listOf("hevc"),
+        "audio-aac.m4a" to listOf("aac"),
+        "audio-mp3.mp3" to listOf("mp3"),
+        "audio-flac.flac" to listOf("flac"),
+        "surround51.mp4" to listOf("aac"),
+    )
+
+    /**
+     * Codecs a MustPlay row needs that this tier KNOWINGLY does not carry, each with its reason.
+     *
+     * Written down rather than omitted: a gap nobody can see in the build is a gap that gets
+     * rediscovered by a user. Silencing a NEW gap means editing this set and its comment, which is
+     * a decision with a name on it rather than a list that quietly never mentioned the codec.
+     */
+    private val knownAbsent: Map<String, String> = mapOf(
+        "av1" to "no dav1d for wasm (it wants pthreads, and the default artifact must run without " +
+            "cross-origin isolation); av1.mkv is a MustPlay row that this tier cannot serve",
+    )
+
+    /**
      * The web tier must serve the 17.5 matrix rows it claims, and this pins the REASON rather than
-     * the literal list.
+     * a list somebody maintains by hand.
      *
      * An earlier version asserted the demuxer string equalled `mov,matroska` exactly. It was right
      * to fail when that changed, but it pinned the wrong thing: what matters is that every codec a
-     * MustPlay row needs is reachable, not that the string never moves. The matrix run found three
-     * gaps this now covers, and each is named with the row that exposed it.
+     * MustPlay row needs is reachable, not that the string never moves.
      */
     @Test
     fun everyCodecTheMatrixRequiresIsReachable() {
         val decoders = args("base").single { it.startsWith("--enable-decoder=") }
-            .substringAfter("=").split(",")
-        val demuxers = args("base").single { it.startsWith("--enable-demuxer=") }
-            .substringAfter("=").split(",")
+            .substringAfter("=").split(",").toSet()
 
-        // Video rows: sync1080p30.mp4 and friends, hevc4k10.mp4, vp9.webm.
-        listOf("h264", "hevc", "vp9").forEach {
-            assertTrue(it in decoders, "$it missing: a MustPlay video row needs it")
+        matrixRowCodecs.forEach { (row, codecs) ->
+            codecs.forEach { codec ->
+                val absentOnPurpose = knownAbsent[codec]
+                if (absentOnPurpose == null) {
+                    assertTrue(codec in decoders, "$codec missing: the MustPlay row $row needs it")
+                } else {
+                    assertFalse(
+                        codec in decoders,
+                        "$codec is enabled but still listed as knownAbsent; delete its entry, " +
+                            "because a stale exemption hides the next real gap",
+                    )
+                }
+            }
         }
-        // Audio rows: audio-aac.m4a, audio-mp3.mp3, audio-flac.flac, the pcm cases.
-        listOf("aac", "mp3", "flac", "pcm_s16le").forEach {
-            assertTrue(it in decoders, "$it missing: a MustPlay audio row needs it")
-        }
-        // A decoder with no demuxer is a codec nobody can reach, which is exactly how
-        // audio-mp3.mp3 and audio-flac.flac failed at open with -29 before this was fixed.
+    }
+
+    /**
+     * A decoder with no demuxer is a codec nobody can reach, which is exactly how audio-mp3.mp3
+     * and audio-flac.flac failed at open with -29 before this was fixed.
+     */
+    @Test
+    fun everyMatrixRowHasSomethingThatCanOpenIt() {
+        val demuxers = args("base").single { it.startsWith("--enable-demuxer=") }
+            .substringAfter("=").split(",").toSet()
         listOf("mov", "matroska", "mp3", "flac").forEach {
             assertTrue(it in demuxers, "$it demuxer missing: its MustPlay row cannot be opened")
+        }
+    }
+
+    /**
+     * A decoder the tier carries with no parser to feed it is the silent half of the same bug, and
+     * webm's audio is where it bites: matroska hands opus packets to a decoder that needs framing.
+     */
+    @Test
+    fun everyAudioDecoderTheWebTierCarriesHasItsParser() {
+        val parsers = args("base").single { it.startsWith("--enable-parser=") }
+            .substringAfter("=").split(",").toSet()
+        listOf("opus", "vorbis", "aac", "flac").forEach {
+            assertTrue(it in parsers, "$it parser missing: its decoder cannot be framed")
         }
     }
 

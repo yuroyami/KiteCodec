@@ -191,8 +191,14 @@ abstract class BuildFFmpegWasmTask @Inject constructor() : DefaultTask() {
          * vp9 was NOT in the first draft, and the 17.5 matrix run caught it: `vp9.webm` is a
          * MustPlay row and the web build could not decode it. The tier serves the matrix or the
          * matrix stops being the one definition of playing all formats, so vp9 is in.
+         *
+         * opus and vorbis are the same lesson one layer down (PAR-4). `ffprobe` says `vp9.webm`
+         * and `av1.mkv` both carry an opus track, so the tier decoded the picture of two MustPlay
+         * rows and silently dropped their sound. vorbis rides along because it is webm's other
+         * audio codec and a file using it would fail the same inaudible way.
          */
         const val DECODERS = "h264,hevc,vp9,aac,aac_latm,aac_fixed,mp3,mp3float,mp3adu,mp3adufloat,flac," +
+            "opus,vorbis," +
             "pcm_s16le,pcm_s16be,pcm_s24le,pcm_s24be,pcm_s32le,pcm_s32be,pcm_u8,pcm_s8," +
             "pcm_f32le,pcm_f64le,pcm_alaw,pcm_mulaw"
 
@@ -206,7 +212,7 @@ abstract class BuildFFmpegWasmTask @Inject constructor() : DefaultTask() {
          */
         const val DEMUXERS = "mov,matroska,mp3,flac"
 
-        const val PARSERS = "h264,hevc,vp9,aac,aac_latm,mpegaudio,flac"
+        const val PARSERS = "h264,hevc,vp9,aac,aac_latm,mpegaudio,flac,opus,vorbis"
 
         const val BSFS = "h264_mp4toannexb,hevc_mp4toannexb,aac_adtstoasc,extract_extradata,null"
 

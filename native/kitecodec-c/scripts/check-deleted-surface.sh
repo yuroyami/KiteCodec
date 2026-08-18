@@ -59,22 +59,29 @@ RESURRECTED=""
 
 # Files allowed to mention a deleted name in prose, each because it is part of the record of the
 # deletion rather than a use of it: the data file that IS the list, the two test files that record
-# why their cases went, the tree's own README, and KPKMP.md, which is the project's Execution log
-# and so is the primary record of the deletion: its B1.4 entry names all 15 so a later reader can
-# check the list without re-deriving it. This script itself is deliberately NOT on the list any
-# more: since I-14 it reads the names instead of containing them, so a mention appearing in it
-# again would be a regression worth failing on. Paths are relative to the KiteCodec repository
-# root; a path starting with ../ lives in KitePlayer.
+# why their cases went, the tree's own README, and KPKMP-PAST.md, which holds the project's
+# Execution log and so is the primary record of the deletion: its B1.4 entry names all 15 so a
+# later reader can check the list without re-deriving it. This script itself is deliberately NOT on
+# the list any more: since I-14 it reads the names instead of containing them, so a mention
+# appearing in it again would be a regression worth failing on. Paths are relative to the KiteCodec
+# repository root; a path starting with ../ lives in KitePlayer.
 #
-# KPKMP.md was added by the B1.4 to B1.6 gate run, which this check FAILED on the gate's own log
+# The entry was added by the B1.4 to B1.6 gate run, which this check FAILED on the gate's own log
 # entry. That is the check working rather than the check being wrong: it refused a new prose mention
 # until someone gave a reason, and the reason is the line above.
+#
+# It named ../KitePlayer/KPKMP.md until 2026-08-18. That file was split by tense into KPKMP-PAST.md
+# and KPKMP-FUTURE.md, and the execution log went to PAST, so this check went red at the split and
+# stayed red: the allowlist pointed at a path that no longer existed while the prose it excused had
+# moved to one that was not listed. Worth naming rather than quietly repointing, because it is the
+# failure mode a cross-repository allowlist has: the split's own verifier proved no LINE was lost
+# and could not know that a tool in the other repository named the file by path.
 ALLOWED_PROSE="
 native/kitecodec-c/deleted-surface.txt
 native/kitecodec-c/tests/test_ownership.c
 native/kitecodec-c/tests/test_rescale.c
 native/kitecodec-c/README.md
-../KitePlayer/KPKMP.md
+../KitePlayer/KPKMP-PAST.md
 "
 
 # Every excluded directory is gitignored in one repository or the other: build output, the Gradle
