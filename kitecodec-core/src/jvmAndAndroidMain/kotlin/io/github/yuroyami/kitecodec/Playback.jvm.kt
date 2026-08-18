@@ -140,6 +140,7 @@ public actual class StreamDecoder internal constructor(
     @Throws(FFmpegException::class)
     public actual fun send(packet: Packet?): Boolean = synchronized(lock) {
         check(codecContext != 0L) { "StreamDecoder is closed" }
+        requireOwnStream(packet, stream)
         val rc = if (packet == null) {
             Internals.codecCtxSendPacket(codecContext, 0L)
         } else {
@@ -215,7 +216,7 @@ public actual class StreamDecoder internal constructor(
                 }
                 if (codec == 0L) {
                     val what = requestedDecoder?.let { "named '${it.name}'" } ?: "for codec id $codecId"
-                    throw FFmpegException(FFmpegError.Internal("No decoder $what"))
+                    throw FFmpegException(FFmpegError.DecoderNotFound(0, "No decoder $what"))
                 }
                 if (requestedDecoder != null && Internals.codecId(codec) != codecId) {
                     throw FFmpegException(
@@ -233,7 +234,7 @@ public actual class StreamDecoder internal constructor(
                     // KD-2 (KPKMP 17.10): typed options through the existing av_opt_set funnel,
                     // between context creation and open, exactly where FFmpeg wants them.
                     options?.compile()?.forEach { (key, value) ->
-                        check0(Internals.codecCtxSetOpt(context, key, value), "av_opt_set ('${'$'}key')")
+                        check0(Internals.codecCtxSetOpt(context, key, value), "av_opt_set ('$key')")
                     }
                     // Window 3 (S2.a): the HWACCEL attach, in the same pre-open moment. On macOS
                     // JVM this works, because the C archive links VideoToolbox there; elsewhere

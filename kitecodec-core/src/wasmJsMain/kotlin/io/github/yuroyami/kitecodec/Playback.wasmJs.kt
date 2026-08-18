@@ -89,6 +89,8 @@ public actual class PacketReader internal constructor(
     private val context: Int,
     private val timeBases: Map<Int, Rational>,
     private val wanted: Set<Int>,
+    /** The container's own origin, so [seek] can convert the public timeline onto it. */
+    private val startTimeMicros: Long,
     private val lifetime: SourceLifetime,
 ) : AutoCloseable {
 
@@ -127,8 +129,18 @@ public actual class PacketReader internal constructor(
             SeekDirection.Any -> ffkmp_avseek_flag_any(m)
             SeekDirection.Forward -> 0
         }
-        val floor = notEarlierThan ?: Long.MIN_VALUE
-        val rc = ffkmp_fmt_seek_file(m, context, -1, floor, micros, Long.MAX_VALUE, flags)
+        // Content-relative in, container-absolute out. The public timeline starts at zero and the
+        // container's may not, so a file whose first timestamp is not zero was seeking to the wrong
+        // place by exactly its start time: MPEG-TS captures above all (audit P0-04).
+        val target = micros + startTimeMicros
+        val min = notEarlierThan?.let { it + startTimeMicros } ?: Long.MIN_VALUE
+        // Backward promises never to land after the target, so the target IS the ceiling. Forward
+        // and Any may overshoot by contract. Same bound rule as the JVM and Native actuals.
+        val max = when (direction) {
+            SeekDirection.Backward -> target
+            SeekDirection.Forward, SeekDirection.Any -> Long.MAX_VALUE
+        }
+        val rc = ffkmp_fmt_seek_file(m, context, -1, min, target, max, flags)
         if (rc < 0) throw FFmpegException(FFmpegError.Internal("seek to ${micros}us failed with $rc"))
     }
 
@@ -157,20 +169,46 @@ public actual class StreamDecoder internal constructor(
     public actual fun send(packet: Packet?): Boolean {
         alive()
         val m = requireModule()
-        // A null packet is the drain signal, and the C side spells that as a null pointer.
-        val rc = ffkmp_codecctx_send_packet(m, context, packet?.pointer ?: 0)
-        if (packet == null) isDrained = true
-        if (rc == 0) return true
-        if (rc == ffkmp_averror_eagain(m)) return false
-        if (rc == ffkmp_averror_eof(m)) return false
-        throw FFmpegException(FFmpegError.Internal("sending a packet failed with $rc"))
+        // A null packet is the drain signal. A CLOSED packet is a caller mistake, and reading its
+        // raw pointer turned the second into the first: closing a packet and sending it began the
+        // drain instead of failing, so a stream could end early and silently (audit P0-02).
+        val pointer = if (packet == null) {
+            0
+        } else {
+            packet.pointer.takeIf { it != 0 }
+                ?: throw FFmpegException(FFmpegError.Internal("this packet is closed"))
+        }
+        // After the liveness check, because reading the index of a closed packet is the worse
+        // failure of the two and deserves its own message.
+        requireOwnStream(packet, stream)
+        val rc = ffkmp_codecctx_send_packet(m, context, pointer)
+        return when {
+            rc == 0 -> true
+            // Not consumed. The caller must drain and offer this SAME input again, which is why
+            // nothing here may record progress: marking the decoder drained on an EAGAIN drain
+            // signal ended the stream while the decoder still held frames (audit P0-02).
+            rc == ffkmp_averror_eagain(m) -> false
+            // Already flushed. Nothing more to send, so the input is not owed another attempt.
+            rc == ffkmp_averror_eof(m) -> true
+            // Same tolerance the JVM and Native backends apply: a packet the decoder cannot use is
+            // not a reason to abandon the file, and refusing it here would strand the caller.
+            rc == FFmpegError.AVERROR_INVALIDDATA -> true
+            else -> throw FFmpegException(FFmpegError.Internal("sending a packet failed with $rc"))
+        }
     }
 
     public actual fun receive(): Frame? {
         alive()
         val m = requireModule()
         val rc = ffkmp_codecctx_receive_frame(m, context, frame)
-        if (rc == ffkmp_averror_eagain(m) || rc == ffkmp_averror_eof(m)) return null
+        // Only the codec's own EOF ends the stream, and only here. EAGAIN means "not yet", which
+        // is the opposite answer and used to be indistinguishable from it.
+        if (rc == ffkmp_averror_eof(m)) {
+            isDrained = true
+            return null
+        }
+        if (rc == ffkmp_averror_eagain(m)) return null
+        if (rc == FFmpegError.AVERROR_INVALIDDATA) return null
         if (rc < 0) throw FFmpegException(FFmpegError.Internal("receiving a frame failed with $rc"))
         // The decoder reuses its frame, so the caller gets a clone it owns outright. Handing out
         // the shared one would make the next receive() mutate a frame the caller still holds.
@@ -190,8 +228,10 @@ public actual class StreamDecoder internal constructor(
         closed = true
         val m = requireModule()
         if (frame != 0) ffkmp_frame_free(m, frame)
-        // Only if the container still stands: closing it already tore the decoder's context down.
-        if (lifetime.isOpen) ffkmp_codecctx_free(m, context)
+        // Unconditional: this context was allocated here with avcodec_alloc_context3, and closing
+        // the container frees the format context and its streams, never a caller's codec context.
+        // Skipping it when the source went first leaked one context per decoder (audit P0-05).
+        ffkmp_codecctx_free(m, context)
     }
 }
 

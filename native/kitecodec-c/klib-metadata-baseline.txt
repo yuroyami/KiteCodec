@@ -718,7 +718,7 @@ library {
 
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_fmt_free_output")
       @kotlinx/cinterop/ExperimentalForeignApi
-      public final external fun ffkmp_fmt_free_output(ctx: kotlinx/cinterop/CValuesRef<kotlinx/cinterop/CPointerVarOf<kotlinx/cinterop/CPointer<cnames/structs/AVFormatContext /* = ffmpeg/kc_fmt_ctx^ */>> /* = kotlinx/cinterop/CPointerVar^<cnames/structs/AVFormatContext /* = ffmpeg/kc_fmt_ctx^ */> */>?): kotlin/Unit
+      public final external fun ffkmp_fmt_free_output(ctx: kotlinx/cinterop/CValuesRef<kotlinx/cinterop/CPointerVarOf<kotlinx/cinterop/CPointer<cnames/structs/AVFormatContext /* = ffmpeg/kc_fmt_ctx^ */>> /* = kotlinx/cinterop/CPointerVar^<cnames/structs/AVFormatContext /* = ffmpeg/kc_fmt_ctx^ */> */>?): kotlin/Int
 
       @kotlinx/cinterop/internal/CCall.Direct(name = "_ffkmp_fmt_new_stream")
       @kotlinx/cinterop/ExperimentalForeignApi

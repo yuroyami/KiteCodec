@@ -85,7 +85,7 @@ internal object Internals {
     private external fun nativeFmtSeekFile(token: Long, stream: Int, min: Long, target: Long, max: Long, flags: Int): Int
     private external fun nativeFmtMetadata(token: Long): Long
     private external fun nativeFmtAllocOutput(path: String?, format: String?): Long
-    private external fun nativeFmtFreeOutput(token: Long)
+    private external fun nativeFmtFreeOutput(token: Long): Int
     private external fun nativeFmtNewStream(format: Long, codec: Long): Long
     private external fun nativeFmtIoOpen(token: Long, path: String): Int
     private external fun nativeFmtAvoidNegativeTs(token: Long)
@@ -334,7 +334,8 @@ internal object Internals {
     internal fun fmtSeekFile(token: Long, stream: Int, min: Long, target: Long, max: Long, flags: Int) = checked { nativeFmtSeekFile(token, stream, min, target, max, flags) }
     internal fun fmtMetadata(token: Long) = checked { nativeFmtMetadata(token) }
     internal fun fmtAllocOutput(path: String?, format: String?) = token("output allocation") { nativeFmtAllocOutput(path, format) }
-    internal fun fmtFreeOutput(token: Long) = checked { nativeFmtFreeOutput(token) }
+    /** Returns the close result: negative when the final flush or file close failed (P1-13). */
+    internal fun fmtFreeOutput(token: Long): Int = checked { nativeFmtFreeOutput(token) }
     internal fun fmtNewStream(format: Long, codec: Long = 0) = token("output stream allocation") { nativeFmtNewStream(format, codec) }
     internal fun fmtIoOpen(token: Long, path: String) = checked { nativeFmtIoOpen(token, path) }
     internal fun fmtAvoidNegativeTs(token: Long) = checked { nativeFmtAvoidNegativeTs(token) }

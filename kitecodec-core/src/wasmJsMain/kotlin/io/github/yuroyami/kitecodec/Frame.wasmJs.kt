@@ -73,7 +73,12 @@ public actual class Frame internal constructor(
         } else {
             ffkmp_samples_get_buffer_size(m, p)
         }
-        if (size <= 0) throw FFmpegException(FFmpegError.Internal("this frame reports no copyable bytes ($size)"))
+        // An empty answer for a frame that genuinely carries nothing, which is what the common
+        // contract promises and what the other backends do. Throwing here made an unreferenced
+        // frame a failure on this backend alone (audit P1-33). A NEGATIVE size is still an error:
+        // that is FFmpeg refusing to describe the frame, not a frame with no bytes.
+        if (size == 0) return ByteArray(0)
+        if (size < 0) throw FFmpegException(FFmpegError.Internal("this frame reports no copyable bytes ($size)"))
         val buffer = wasmAlloc(m, size)
         try {
             val written = if (video) {
@@ -95,8 +100,21 @@ public actual class Frame internal constructor(
         return Frame(cloned, streamIndex, type, timeBase)
     }
 
-    /** No hardware frames exist on this backend: the wasm decoder is software by construction. */
-    public actual fun downloadFromHardware(): Frame = copy()
+    /**
+     * Refused, because no hardware frame exists on this backend: the wasm decoder is software by
+     * construction, so every frame here is already the software one this would produce.
+     *
+     * It used to answer with a copy, which contradicts the shared contract that a non-hardware
+     * source is refused rather than copied. A caller reaching this has bookkeeping that is wrong
+     * somewhere else, and telling them so is the point (audit P1-33).
+     */
+    public actual fun downloadFromHardware(): Frame = throw FFmpegException(
+        FFmpegError.InvalidArgument(
+            0,
+            "this frame is not a hardware frame: the web backend decodes in software, so there is " +
+                "nothing to download. Use copy() to take an owned snapshot.",
+        ),
+    )
 
     public actual fun encodeImage(codec: CodecId): ByteArray =
         throw FFmpegException(FFmpegError.Unsupported(

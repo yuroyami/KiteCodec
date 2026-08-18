@@ -16,7 +16,14 @@ import io.github.yuroyami.kitecodec.wasm.ffkmp_codecpar_sample_aspect_ratio
 import io.github.yuroyami.kitecodec.wasm.ffkmp_codecpar_sample_rate
 import io.github.yuroyami.kitecodec.wasm.ffkmp_codecpar_width
 import io.github.yuroyami.kitecodec.wasm.ffkmp_codec_id_name
+import io.github.yuroyami.kitecodec.wasm.ffkmp_codec_id
+import io.github.yuroyami.kitecodec.wasm.ffkmp_codecctx_set_opt
+import io.github.yuroyami.kitecodec.wasm.ffkmp_codecctx_set_threads
+import io.github.yuroyami.kitecodec.wasm.ffkmp_dict_entry_key
+import io.github.yuroyami.kitecodec.wasm.ffkmp_dict_free
+import io.github.yuroyami.kitecodec.wasm.ffkmp_dict_get
 import io.github.yuroyami.kitecodec.wasm.ffkmp_find_decoder_by_id
+import io.github.yuroyami.kitecodec.wasm.ffkmp_find_decoder_by_name
 import io.github.yuroyami.kitecodec.wasm.ffkmp_fmt_close_input_io
 import io.github.yuroyami.kitecodec.wasm.ffkmp_fmt_duration
 import io.github.yuroyami.kitecodec.wasm.ffkmp_fmt_find_stream_info
@@ -100,14 +107,26 @@ public actual class MediaSource internal constructor(
                 if (packet == null) {
                     // Drain every decoder before finishing: frames can still be queued inside them.
                     decoders.values.forEach { decoder ->
-                        decoder.send(null)
+                        // The drain signal is an input like any other and can be refused. Sending it
+                        // once and assuming it landed ended the stream while the decoder was still
+                        // full, which on a buffered codec is its whole tail (audit P0-01).
+                        while (!decoder.send(null)) {
+                            while (true) emit(decoder.receive() ?: break)
+                        }
                         while (true) emit(decoder.receive() ?: break)
                     }
                     return@flow
                 }
                 packet.use { p ->
                     val decoder = decoders[p.streamIndex]
-                    if (decoder != null && decoder.send(p)) {
+                    if (decoder != null) {
+                        // Send, drain, retry the SAME packet: false means the decoder did not take
+                        // it, and the old code dropped it instead of offering it again. Every
+                        // B-frame codec loses frames that way. FFmpeg guarantees a send is accepted
+                        // once its output has been drained, which is what ends this loop.
+                        while (!decoder.send(p)) {
+                            while (true) emit(decoder.receive() ?: break)
+                        }
                         while (true) emit(decoder.receive() ?: break)
                     }
                 }
@@ -125,17 +144,53 @@ public actual class MediaSource internal constructor(
     public actual suspend fun extractFrame(atMicros: Long, stream: StreamInfo?): Frame {
         val target = stream ?: primaryVideo
             ?: throw FFmpegException(FFmpegError.Internal("this media has no video stream to extract from"))
-        seekMicros(atMicros)
+        // Back off to a safe earlier point and decode forward. A seek lands on a keyframe at or
+        // before the target, so the first frame that comes out of it is the KEYFRAME, not the frame
+        // asked for: returning it answered a sparse-keyframe file with a picture seconds early
+        // (audit P0-04). Backward, so the target is never overshot before the walk begins.
+        val landing = (atMicros - DECODE_SEEK_BACKOFF_MICROS).coerceAtLeast(0L)
+        openPacketReader(emptyList()).use { it.seek(landing, SeekDirection.Backward, null) }
         val reader = openPacketReader(listOf(target))
         val decoder = openDecoder(target)
         try {
+            // The first frame whose own timestamp reaches the target. An untimed frame cannot be
+            // compared, so it is passed over rather than guessed at.
+            fun Frame.reachesTarget(): Boolean {
+                val pts = info.takeIf { it.hasPts }?.pts ?: return false
+                return rescaleQ(pts, target.timeBase, Rational.Tb_us) - startTimeMicros >= atMicros
+            }
             while (true) {
                 val packet = reader.read() ?: break
-                packet.use { if (decoder.send(it)) decoder.receive()?.let { frame -> return frame } }
+                packet.use { p ->
+                    while (!decoder.send(p)) {
+                        while (true) {
+                            val frame = decoder.receive() ?: break
+                            if (frame.reachesTarget()) return frame
+                            frame.close()
+                        }
+                    }
+                    while (true) {
+                        val frame = decoder.receive() ?: break
+                        if (frame.reachesTarget()) return frame
+                        frame.close()
+                    }
+                }
             }
-            decoder.send(null)
-            return decoder.receive()
-                ?: throw FFmpegException(FFmpegError.Internal("no frame decoded at ${atMicros}us"))
+            while (!decoder.send(null)) {
+                while (true) {
+                    val frame = decoder.receive() ?: break
+                    if (frame.reachesTarget()) return frame
+                    frame.close()
+                }
+            }
+            while (true) {
+                val frame = decoder.receive() ?: break
+                if (frame.reachesTarget()) return frame
+                frame.close()
+            }
+            throw FFmpegException(
+                FFmpegError.Internal("no frame at ${atMicros}us (beyond the end of the stream?)"),
+            )
         } finally {
             reader.close()
             decoder.close()
@@ -147,6 +202,7 @@ public actual class MediaSource internal constructor(
             context = alive(),
             timeBases = this.streams.associate { it.index to it.timeBase },
             wanted = streams.map { it.index }.toSet(),
+            startTimeMicros = startTimeMicros,
             lifetime = lifetime,
         )
 
@@ -159,26 +215,81 @@ public actual class MediaSource internal constructor(
         hardware: HardwareAccel?,
     ): StreamDecoder {
         val m = requireModule()
+        // Applied or refused, never ignored (audit P0-03). Every parameter below used to be
+        // accepted and dropped, so a caller who asked for a particular decoder, a particular
+        // option, or hardware decoding ran something else and was never told.
+        if (hardware != null) {
+            throw FFmpegException(
+                FFmpegError.Unsupported(
+                    0,
+                    "the web backend has no hardware decoding, so $hardware cannot be honoured. " +
+                        "Open the decoder without one, or ask the browser to decode instead.",
+                ),
+            )
+        }
+        // Zero is FFmpeg's own "decide for me" and one is what this artifact can actually do.
+        // Anything above that is a request for threads the default web build has no pthreads for.
+        if (threadCount > 1) {
+            throw FFmpegException(
+                FFmpegError.Unsupported(
+                    0,
+                    "the web artifact is built without pthreads, so $threadCount decoding threads " +
+                        "cannot be honoured. Pass 0 to let FFmpeg decide, or 1 for single threaded.",
+                ),
+            )
+        }
         val native = ffkmp_fmt_stream(m, alive(), stream.index)
         val par = ffkmp_stream_codecpar(m, native)
-        val codec = ffkmp_find_decoder_by_id(m, ffkmp_codecpar_codec_id(m, par))
+        val codecId = ffkmp_codecpar_codec_id(m, par)
+        // The exact decoder seam the common contract describes, implemented rather than skipped.
+        val codec = if (decoder == null) {
+            ffkmp_find_decoder_by_id(m, codecId)
+        } else {
+            val named = withCString(m, decoder.name) { ffkmp_find_decoder_by_name(m, it) }
+            if (named == 0) {
+                throw FFmpegException(
+                    FFmpegError.DecoderNotFound(0, "no decoder named '${decoder.name}' in the web build"),
+                )
+            }
+            if (ffkmp_codec_id(m, named) != codecId) {
+                throw FFmpegException(
+                    FFmpegError.InvalidArgument(
+                        0,
+                        "decoder '${decoder.name}' cannot decode ${stream.codec.name}",
+                    ),
+                )
+            }
+            named
+        }
         if (codec == 0) {
             throw FFmpegException(
-                FFmpegError.Unsupported(0, "no decoder for ${stream.codec.name} in the web build"),
+                FFmpegError.DecoderNotFound(0, "no decoder for ${stream.codec.name} in the web build"),
             )
         }
         val ctx = ffkmp_codecctx_alloc(m, codec)
         if (ctx == 0) throw FFmpegException(FFmpegError.Internal("allocating a decoder failed"))
-        if (ffkmp_codecctx_from_par(m, ctx, par) < 0) {
+        try {
+            if (ffkmp_codecctx_from_par(m, ctx, par) < 0) {
+                throw FFmpegException(FFmpegError.Internal("copying codec parameters failed"))
+            }
+            if (lowDelay) ffkmp_codecctx_set_low_delay(m, ctx, 1)
+            if (threadCount == 1) ffkmp_codecctx_set_threads(m, ctx, 1, 0)
+            // Typed options through the same av_opt_set funnel the other backends use, between
+            // context creation and open, which is where FFmpeg wants them.
+            options?.compile()?.forEach { (key, value) ->
+                val rc = withCString(m, key) { k -> withCString(m, value) { v -> ffkmp_codecctx_set_opt(m, ctx, k, v) } }
+                if (rc < 0) {
+                    throw FFmpegException(
+                        FFmpegError.InvalidArgument(rc, "av_opt_set ('$key') was refused with $rc"),
+                    )
+                }
+            }
+            if (ffkmp_codecctx_open(m, ctx, codec) < 0) {
+                throw FFmpegException(FFmpegError.Internal("opening the decoder failed"))
+            }
+        } catch (failure: Throwable) {
             ffkmp_codecctx_free(m, ctx)
-            throw FFmpegException(FFmpegError.Internal("copying codec parameters failed"))
-        }
-        if (lowDelay) ffkmp_codecctx_set_low_delay(m, ctx, 1)
-        // Thread count is deliberately not set: the default web artifact has no pthreads, so any
-        // value above one would be a request the runtime silently ignores.
-        if (ffkmp_codecctx_open(m, ctx, codec) < 0) {
-            ffkmp_codecctx_free(m, ctx)
-            throw FFmpegException(FFmpegError.Internal("opening the decoder failed"))
+            throw failure
         }
         return StreamDecoder(ctx, stream, lifetime)
     }
@@ -204,23 +315,35 @@ public actual class MediaSource internal constructor(
             val m = requireModule()
             val bridge = WebIoBridge.install(io)
             val slot = wasmAlloc(m, 4)
+            // The unused-option dictionary FFmpeg hands back, as its own out-slot. The binding
+            // used to pass a null pointer here and then guess the answer from the key array, which
+            // the C side never writes to, so every option was reported unused on every open
+            // (audit S-W1). Ask for the dictionary and read it instead.
+            val unusedSlot = wasmAlloc(m, 4)
+            writeInt32(m, unusedSlot, 0)
             val opts = CStringArrays.of(m, options)
             val rc = try {
                 openInputIo(
                     m, slot, bridge.readPointer, bridge.seekPointer, io.size ?: 0L,
-                    opts.keys, opts.values, options.size,
+                    opts.keys, opts.values, options.size, unusedSlot,
                 )
             } catch (failure: Throwable) {
-                opts.free(m); wasmFree(m, slot); bridge.release(); throw failure
+                // The option arrays are released by the finally below on this path too, so they
+                // are deliberately absent here: freeing them twice corrupts the module's heap.
+                wasmFree(m, unusedSlot); wasmFree(m, slot); bridge.release(); throw failure
+            } finally {
+                // Input only, and consumed by the call: FFmpeg copied what it wanted into its own
+                // dictionary, so these go back whatever the outcome was.
+                opts.free(m)
             }
             if (rc < 0) {
-                opts.free(m); wasmFree(m, slot); bridge.release()
+                // Nothing to release: on failure the C side frees the dictionary it built and
+                // leaves the out-slot at the NULL it wrote on entry.
+                wasmFree(m, unusedSlot); wasmFree(m, slot); bridge.release()
                 throw FFmpegException(FFmpegError.InvalidData(rc, "could not open this media ($rc)"))
             }
-            // Read the leftovers BEFORE freeing: the C side rewrites the key array in place,
-            // NULLing the entries it consumed, so a freed array answers nothing.
-            val leftover = opts.survivingKeys(m, options)
-            opts.free(m)
+            val leftover = drainUnusedKeys(m, unusedSlot)
+            wasmFree(m, unusedSlot)
             val ctx = readInt32(m, slot)
             if (ffkmp_fmt_find_stream_info(m, ctx) < 0) {
                 ffkmp_fmt_close_input_io(m, slot)
@@ -230,6 +353,15 @@ public actual class MediaSource internal constructor(
             }
             return MediaSource(slot, ctx, bridge, leftover)
         }
+
+        /**
+         * How far before the wanted position an extraction seek aims.
+         *
+         * The same figure the JVM and Native backends use, for the same reason: a seek lands on a
+         * keyframe at or before its target, and a file whose keyframes are seconds apart needs the
+         * walk to start before the one that covers the target.
+         */
+        private const val DECODE_SEEK_BACKOFF_MICROS = 5_000_000L
 
         private fun noFilesystem(path: String) = FFmpegException(
             FFmpegError.Unsupported(
@@ -322,7 +454,10 @@ private inline fun readRational(
 }
 
 @OptIn(kotlin.js.ExperimentalWasmJsInterop::class)
-@JsFun("(m, out, readFn, seekFn, size, keys, values, n) => m._ffkmp_fmt_open_input_io(out, 0, readFn, seekFn, BigInt(size), keys, values, n, 0)")
+@JsFun(
+    "(m, out, readFn, seekFn, size, keys, values, n, unused) => " +
+        "m._ffkmp_fmt_open_input_io(out, 0, readFn, seekFn, BigInt(size), keys, values, n, unused)",
+)
 private external fun openInputIo(
     module: kotlin.js.JsAny,
     out: Int,
@@ -332,21 +467,49 @@ private external fun openInputIo(
     keys: Int,
     values: Int,
     count: Int,
+    unused: Int,
 ): Int
 
 /**
- * Two NULL-terminated `char *` arrays in codec memory, which is how the C surface takes options.
+ * Runs [block] with [text] staged as a NUL-terminated C string, and frees it afterwards.
  *
- * The key array is an OUT parameter as well as an in one: `ffkmp_fmt_open_input_io` NULLs the entry
- * for every option FFmpeg consumed, so what survives is exactly the unused set. That is why
- * [survivingKeys] must run before [free].
+ * Every string crossing into the module needs codec memory of its own, and every one of them has
+ * to come back whether the call succeeded or not.
  */
-private class CStringArrays(val keys: Int, val values: Int, private val strings: List<Int>) {
-
-    fun survivingKeys(m: kotlin.js.JsAny, options: Map<String, String>): List<String> {
-        if (options.isEmpty()) return emptyList()
-        return options.keys.filterIndexed { index, _ -> readInt32(m, keys + index * 4) != 0 }
+private inline fun <T> withCString(m: kotlin.js.JsAny, text: String, block: (Int) -> T): T {
+    val pointer = allocCString(m, text)
+    try {
+        return block(pointer)
+    } finally {
+        wasmFree(m, pointer)
     }
+}
+
+/**
+ * Walks the unused-option dictionary at [slot] into its key names, then frees it.
+ *
+ * The dictionary is FFmpeg's own answer about which options it did not consume, and this is the
+ * only place that answer exists: the key array the caller passed in is input only. Empty when the
+ * slot holds NULL, which is what an open with no options or a failed open leaves behind.
+ */
+@OptIn(kotlin.js.ExperimentalWasmJsInterop::class)
+private fun drainUnusedKeys(m: kotlin.js.JsAny, slot: Int): List<String> {
+    val dict = readInt32(m, slot)
+    if (dict == 0) return emptyList()
+    val keys = mutableListOf<String>()
+    var entry = 0
+    while (true) {
+        entry = ffkmp_dict_get(m, dict, entry)
+        if (entry == 0) break
+        utf8OrNull(m, ffkmp_dict_entry_key(m, entry))?.let { keys += it }
+    }
+    // Takes the slot, not the value: the helper NULLs the caller's pointer as it frees.
+    ffkmp_dict_free(m, slot)
+    return keys
+}
+
+/** Two NULL-terminated `char *` arrays in codec memory, which is how the C surface takes options. */
+private class CStringArrays(val keys: Int, val values: Int, private val strings: List<Int>) {
 
     fun free(m: kotlin.js.JsAny) {
         strings.forEach { wasmFree(m, it) }

@@ -135,7 +135,15 @@ public expect class StreamDecoder : AutoCloseable {
     /**
      * Offers [packet], or null to start the decoder drain.
      *
+     * A packet belonging to a different stream is REFUSED rather than decoded. Feeding one used to
+     * reach FFmpeg, which answered INVALIDDATA, which every backend swallowed as consumed, so the
+     * input vanished and nothing said why (audit P1-03). The check is by stream index, which
+     * catches the ordinary mistake of routing a packet to the wrong decoder; it cannot catch a
+     * packet from a DIFFERENT source that happens to share the index, which needs source-scoped
+     * packet handles and is a later change.
+     *
      * @return true when consumed; false when output must be drained before retrying the same packet
+     * @throws FFmpegException when [packet] is closed or belongs to another stream
      */
     @Throws(FFmpegException::class)
     public fun send(packet: Packet?): Boolean
@@ -156,4 +164,26 @@ public expect class StreamDecoder : AutoCloseable {
     public fun flush()
 
     override fun close()
+}
+
+/**
+ * Refuses a packet that does not belong to [stream], for every backend's [StreamDecoder.send].
+ *
+ * Null is the drain signal and always belongs. Everything else is checked by stream index: a packet
+ * routed to the wrong decoder used to reach FFmpeg, come back as INVALIDDATA, and be swallowed as
+ * consumed, so the input disappeared silently (audit P1-03).
+ */
+@OptIn(KiteCodecLowLevelApi::class)
+internal fun requireOwnStream(packet: Packet?, stream: StreamInfo) {
+    if (packet == null) return
+    val index = packet.streamIndex
+    if (index != stream.index) {
+        throw FFmpegException(
+            FFmpegError.InvalidArgument(
+                0,
+                "this packet belongs to stream $index and this decoder decodes stream " +
+                    "${stream.index}. Route packets to the decoder for their own stream.",
+            ),
+        )
+    }
 }

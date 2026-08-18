@@ -227,8 +227,12 @@ KC_API int ffkmp_graph_build_video_multi(
     if (!src || !sink) { avfilter_graph_free(&graph); return AVERROR_FILTER_NOT_FOUND; }
 
     for (int i = 0; i < n; i++) {
+        /* The same refusal the single-input builder makes, for the same reason (audit P1-22):
+           substituting yuv420p for a format FFmpeg does not know builds a graph for a layout the
+           caller's frames are not in, and every plane is then read at the wrong stride and depth.
+           An unknown format is an argument error. */
         const char *pf = av_get_pix_fmt_name((enum AVPixelFormat)pix_fmts[i]);
-        if (!pf) pf = "yuv420p";
+        if (!pf) { avfilter_graph_free(&graph); return AVERROR(EINVAL); }
         char args[512], name[16];
         snprintf(args, sizeof(args),
             "video_size=%dx%d:pix_fmt=%s:time_base=%d/%d:pixel_aspect=%d/%d:frame_rate=%d/%d",

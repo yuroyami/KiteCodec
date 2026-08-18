@@ -72,6 +72,54 @@ class PipelineRoundTripTest {
         }
     }
 
+    /** One container carrying BOTH a video and an audio stream, for the routing tests. */
+    private fun writeTestVideoWithAudio(path: String, frames: Int = 10, width: Int = 32, height: Int = 32) {
+        val sampleRate = 44_100
+        val samplesPerFrame = 1024
+        MediaSink.open(path).use { sink ->
+            val video = sink.addVideoEncoder(
+                VideoEncoderSpec(
+                    codec = CodecId("mpeg4"),
+                    width = width, height = height,
+                    frameRate = Rational(30, 1),
+                    bitrateBps = 200_000,
+                )
+            )
+            val audio = sink.addAudioEncoder(
+                AudioEncoderSpec(
+                    codec = CodecId.PcmS16,
+                    sampleRate = sampleRate,
+                    channels = 1,
+                    sampleFormat = SampleFormat.S16,
+                )
+            )
+            runBlocking {
+                video.drive(
+                    (0 until frames).asFlow().map { i ->
+                        Frame.ofVideo(
+                            bytes = yuvFrame(width, height, i),
+                            width = width, height = height,
+                            pixelFormat = PixelFormat.Yuv420p,
+                            ptsMicros = i * 1_000_000L / 30,
+                        )
+                    }
+                )
+                audio.drive(
+                    (0 until frames).asFlow().map { i ->
+                        Frame.ofAudio(
+                            bytes = ByteArray(samplesPerFrame * 2) { (it % 97).toByte() },
+                            sampleCount = samplesPerFrame,
+                            sampleRate = sampleRate,
+                            channels = 1,
+                            sampleFormat = SampleFormat.S16,
+                            ptsMicros = i * samplesPerFrame * 1_000_000L / sampleRate,
+                        )
+                    }
+                )
+            }
+        }
+    }
+
     @Test
     fun synthesizedFramesSurviveEncodeDecodeRoundTrip() {
         val path = tmp("roundtrip.mp4")
@@ -163,6 +211,136 @@ class PipelineRoundTripTest {
         MediaSource.open(dst).use { s ->
             assertEquals(1, s.streams.size)
             assertTrue(s.formatName.contains("matroska"), "expected mkv, got ${s.formatName}")
+        }
+    }
+
+    /**
+     * P1-14. A duplicated stream index is refused before the output container is touched. It used
+     * to be caught only by the demuxer, which sees the mapping after a stream has been created in
+     * the sink for every entry, so the caller got a half built file and then the refusal.
+     */
+    @Test
+    fun remuxRefusesADuplicatedStreamIndexBeforeWritingAnything() {
+        val src = tmp("remux-dup-src.mp4")
+        val dst = tmp("remux-dup-dst.mkv")
+        writeTestVideo(src)
+        assertFailsWith<FFmpegException> {
+            runBlocking { Remuxer.remux(src, dst, streamIndices = listOf(0, 0)) }
+        }
+        // Nothing was written: the refusal came before the sink was opened.
+        assertFailsWith<FFmpegException> { MediaSource.open(dst).close() }
+    }
+
+    /**
+     * P1-11. A StreamInfo is a public data class, so one from another file has a perfectly valid
+     * index here. The copy path used to accept it and describe THIS file's packets with the other
+     * file's time base and metadata; every other entry point already refused it.
+     */
+    @Test
+    fun copyingAStreamFromAnotherSourceIsRefused() {
+        val a = tmp("foreign-a.mp4")
+        val b = tmp("foreign-b.mp4")
+        val out = tmp("foreign-out.mkv")
+        writeTestVideo(a)
+        // A second file with different timing, so its stream zero is a genuinely different stream.
+        writeTestVideo(b, frames = 5, width = 32, height = 32)
+        MediaSource.open(a).use { sourceA ->
+            MediaSource.open(b).use { sourceB ->
+                val foreign = sourceB.streams.first()
+                MediaSink.open(out).use { sink ->
+                    assertFailsWith<IllegalArgumentException> { sink.addCopyStream(sourceA, foreign) }
+                }
+            }
+        }
+    }
+
+    /**
+     * P1-03. A packet routed to the wrong decoder used to reach FFmpeg, come back as INVALIDDATA,
+     * and be swallowed as consumed, so the input vanished and nothing said why.
+     */
+    @OptIn(KiteCodecLowLevelApi::class)
+    @Test
+    fun aDecoderRefusesAPacketFromAnotherStream() {
+        val path = tmp("wrong-stream.mkv")
+        writeTestVideoWithAudio(path)
+        MediaSource.open(path).use { src ->
+            val video = src.primaryVideo ?: error("no video stream")
+            val audio = src.primaryAudio ?: error("no audio stream")
+            val reader = src.openPacketReader(listOf(video, audio))
+            val decoder = src.openDecoder(video)
+            try {
+                // The first packet belonging to the OTHER stream.
+                var foreign: Packet? = null
+                while (foreign == null) {
+                    val packet = reader.read() ?: break
+                    if (packet.streamIndex == audio.index) foreign = packet else packet.close()
+                }
+                val wrong = foreign ?: error("the fixture produced no audio packet")
+                wrong.use {
+                    assertFailsWith<FFmpegException> { decoder.send(it) }
+                }
+            } finally {
+                decoder.close()
+                reader.close()
+            }
+        }
+    }
+
+    /**
+     * P0-08. The encoder reached into a frame's raw pointer instead of the checked accessor its own
+     * contract demands, so a CLOSED frame's freed AVFrame reached FFmpeg. The media-type guard is
+     * the other half: a video frame handed to an audio encoder was read as samples, not refused.
+     *
+     * The sink is closed with runCatching because nothing is ever encoded here: a sink that
+     * declared streams and wrote no packets fails its own close, which is a different contract and
+     * not what this test is about.
+     */
+    @Test
+    fun anEncoderRefusesAClosedFrame() {
+        val sink = MediaSink.open(tmp("closed-frame.mkv"))
+        try {
+            val video = sink.addVideoEncoder(
+                VideoEncoderSpec(
+                    codec = CodecId("mpeg4"),
+                    width = 32, height = 32,
+                    frameRate = Rational(30, 1),
+                    bitrateBps = 200_000,
+                )
+            )
+            val closed = Frame.ofVideo(
+                bytes = yuvFrame(32, 32, 0),
+                width = 32, height = 32,
+                pixelFormat = PixelFormat.Yuv420p,
+                ptsMicros = 0,
+            )
+            closed.close()
+            assertFailsWith<IllegalStateException> { runBlocking { video.drive(flowOf(closed)) } }
+        } finally {
+            runCatching { sink.close() }
+        }
+    }
+
+    @Test
+    fun anAudioEncoderRefusesAVideoFrame() {
+        val sink = MediaSink.open(tmp("wrong-media-type.mka"))
+        try {
+            val audio = sink.addAudioEncoder(
+                AudioEncoderSpec(
+                    codec = CodecId.PcmS16,
+                    sampleRate = 44_100,
+                    channels = 1,
+                    sampleFormat = SampleFormat.S16,
+                )
+            )
+            val videoFrame = Frame.ofVideo(
+                bytes = yuvFrame(32, 32, 1),
+                width = 32, height = 32,
+                pixelFormat = PixelFormat.Yuv420p,
+                ptsMicros = 0,
+            )
+            assertFailsWith<IllegalArgumentException> { runBlocking { audio.drive(flowOf(videoFrame)) } }
+        } finally {
+            runCatching { sink.close() }
         }
     }
 

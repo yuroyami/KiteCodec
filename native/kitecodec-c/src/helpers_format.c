@@ -138,14 +138,20 @@ KC_API int  ffkmp_fmt_set_opt(AVFormatContext *c, const char *k, const char *v) 
     if (!c || !k) return AVERROR(EINVAL);
     return av_opt_set(c, k, v, AV_OPT_SEARCH_CHILDREN);
 }
-KC_API void ffkmp_fmt_free_output(AVFormatContext **ctx) {
+KC_API int ffkmp_fmt_free_output(AVFormatContext **ctx) {
+    int rc = 0;
     if (ctx && *ctx) {
+        /* The close result is the LAST thing that can fail about an output file, and it is where a
+           full disk, a broken pipe or a failed final flush announces itself. Discarding it reported
+           a truncated file as a written one (audit P1-13). The context is still freed on every
+           path: the caller gets the error, not a leak. */
         if (!((*ctx)->oformat && ((*ctx)->oformat->flags & AVFMT_NOFILE)) && (*ctx)->pb) {
-            avio_closep(&(*ctx)->pb);
+            rc = avio_closep(&(*ctx)->pb);
         }
         avformat_free_context(*ctx);
         *ctx = NULL;
     }
+    return rc;
 }
 KC_API AVStream* ffkmp_fmt_new_stream(AVFormatContext *ctx, const AVCodec *codec) {
     return ctx ? avformat_new_stream(ctx, codec) : NULL;

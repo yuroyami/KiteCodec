@@ -109,4 +109,29 @@ class RationalEdgeCaseTest {
     fun scalarTimesOverflowThrowsInsteadOfWrapping() {
         assertFailsWith<ArithmeticException> { Rational(1_000_000, 1) * Long.MAX_VALUE }
     }
+
+    /**
+     * P1-29. The floors, which 32-bit and 64-bit negation both map onto themselves. Every case
+     * below used to return a wrong answer silently rather than refuse.
+     */
+    @Test
+    fun theMinimumValuesRefuseInsteadOfWrapping() {
+        // -Int.MIN_VALUE is Int.MIN_VALUE again, so this used to answer with its own input.
+        assertFailsWith<ArithmeticException> { -Rational(Int.MIN_VALUE, 1) }
+
+        // Long.MIN_VALUE * -1 wraps to Long.MIN_VALUE, and so does dividing it back by -1, so the
+        // overflow check compared equal and passed the wrapped product off as the answer.
+        assertFailsWith<ArithmeticException> { Rational(-1, 1) * Long.MIN_VALUE }
+
+        // The magnitude of the scalar is no longer taken by negating it, so a floor scalar that
+        // reduces exactly is answered rather than mangled.
+        assertEquals(Long.MIN_VALUE / 2, Rational(1, 2) * Long.MIN_VALUE)
+    }
+
+    @Test
+    fun negationStillRoundTripsEverywhereElse() {
+        assertEquals(Rational(-1, 2), -Rational(1, 2))
+        assertEquals(Rational(1, 2), -(-Rational(1, 2)))
+        assertEquals(Rational(Int.MAX_VALUE, 1), -Rational(-Int.MAX_VALUE, 1))
+    }
 }

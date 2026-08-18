@@ -175,4 +175,48 @@ class AvioBridgeTest {
             assertFailsWith<FFmpegException> { runBlocking { src.seekMicros(500_000) } }
         }
     }
+
+    /**
+     * P1-01. Ownership of the byte source transfers at the adapter, so an open that FAILS still
+     * owes the caller a close. Both failure paths used to release only the internal reference and
+     * leave the source open for ever.
+     */
+    @Test
+    fun aByteSourceIsClosedExactlyOnceWhenTheOpenFails() {
+        // Not media, so FFmpeg refuses it after reading: the failure happens inside the open.
+        val source = CountingCloseSource(ByteArray(4096) { 0x7A })
+        assertFailsWith<FFmpegException> { MediaSource.open(source) }
+        assertEquals(1, source.closes, "a failed open must close the source it took ownership of, once")
+    }
+
+    @Test
+    fun aByteSourceThatCannotBeReadIsStillClosed() {
+        val source = object : MediaByteSource {
+            var closes = 0
+            override val size: Long get() = 1024
+            override val seekable: Boolean = true
+            override fun read(into: ByteArray, offset: Int, length: Int): Int = error("this source always fails")
+            override fun seek(position: Long) = Unit
+            override fun close() { closes++ }
+        }
+        assertFailsWith<FFmpegException> { MediaSource.open(source) }
+        assertEquals(1, source.closes, "a source that throws on read must still be closed once")
+    }
+
+    /** Counts closes rather than recording a flag, so a double close is a failure too. */
+    private class CountingCloseSource(private val bytes: ByteArray) : MediaByteSource {
+        private var position = 0
+        var closes = 0
+        override val size: Long get() = bytes.size.toLong()
+        override val seekable: Boolean = true
+        override fun read(into: ByteArray, offset: Int, length: Int): Int {
+            if (position >= bytes.size) return -1
+            val count = minOf(length, bytes.size - position)
+            bytes.copyInto(into, offset, position, position + count)
+            position += count
+            return count
+        }
+        override fun seek(position: Long) { this.position = position.toInt() }
+        override fun close() { closes++ }
+    }
 }

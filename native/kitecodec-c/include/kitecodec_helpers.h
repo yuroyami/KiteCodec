@@ -99,10 +99,12 @@ KC_API void     ffkmp_frame_use_best_effort_ts(kc_frame *f);
 KC_API kc_frame* ffkmp_frame_clone(const kc_frame *f);
 
 /* Ownership. Returns a new caller-owned kc_frame with its own buffers, or NULL. Release it
- * with ffkmp_frame_free. The SwsContext is allocated and freed inside this call on every
- * path, including every failure path, so nothing about it reaches the caller. That per call
- * cost is register item B1-23: it is the current behaviour on purpose, and
- * tests/test_convert.c records the measured numbers as the baseline B2's caching must beat.
+ * with ffkmp_frame_free. The SwsContext is CACHED per calling thread and reused while the
+ * geometry and formats match, so it outlives the call and nothing about it reaches the caller
+ * either way. Both pixel formats are validated before swscale sees them: a value outside the
+ * enum, a hardware format, or one swscale cannot read or write returns NULL rather than
+ * asserting inside libswscale (audit P0-09). The colour tags on the result describe the OUTPUT,
+ * not the source: an RGB destination is full range with an RGB matrix (audit P1-23).
  */
 KC_API kc_frame* ffkmp_frame_convert_pixfmt(const kc_frame *src, int dst_fmt);
 KC_API int ffkmp_image_get_buffer_size(int fmt, int w, int h, int align);
@@ -428,8 +430,13 @@ KC_API int  ffkmp_fmt_set_opt(kc_fmt_ctx *c, const char *k, const char *v);
 /* Ownership. Closes ctx->pb when the format uses a file and pb is open, then frees the
  * context with every stream in it, then writes NULL through ctx. Safe on a pointer that is
  * already NULL. It must not be used on a context from ffkmp_fmt_open_input.
+ *
+ * Returns the CLOSE result: 0 on success, a negative AVERROR when the final flush or the close
+ * of the output file failed. That is where a full disk announces itself, and discarding it
+ * reported a truncated file as a written one (audit P1-13). The context is freed on every path,
+ * so a caller that ignores the result leaks nothing; it only loses the error.
  */
-KC_API void ffkmp_fmt_free_output(kc_fmt_ctx **ctx);
+KC_API int ffkmp_fmt_free_output(kc_fmt_ctx **ctx);
 
 /* Ownership. The returned kc_stream belongs to the format context and not to the caller.
  * There is no per stream free, so the pairing rule is different from every other allocating

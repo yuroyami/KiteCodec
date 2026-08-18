@@ -698,8 +698,8 @@ static void case_video_multi_args_at_the_widest_inputs(void)
     const int fmts[2] = { 999999, AV_PIX_FMT_YUV420P };
     /* src 641 renders the same string per input from parallel arrays. Feeding it INT_MIN and
      * INT_MAX in the same call covers both signs of every field, and an unknown format in the
-     * first slot covers the fallback name. Refusal is the expected answer; the row exists so
-     * the widest render happens under the sanitizers. */
+     * first slot is refused outright since P1-22. Refusal is the expected answer; the row exists
+     * so the widest render happens under the sanitizers. */
     KC_CHECKF(ffkmp_graph_build_video_multi(&graph, srcs, &sink, "[in0][in1]overlay=0:0[out]", 2,
                                             extremes, extremes, fmts, extremes, extremes,
                                             extremes, extremes, extremes, extremes) < 0,
@@ -710,6 +710,23 @@ static void case_video_multi_args_at_the_widest_inputs(void)
                                             extremes, extremes, extremes, extremes) < 0,
               "zero inputs were accepted");
     KC_NULL(graph);
+
+    /* P1-22: everything else VALID, one unknown pixel format. The multi input builder used to
+     * substitute yuv420p here, which builds the graph for a layout the caller's frames are not in
+     * and misreads every plane. The single input builder has always refused; this is the same
+     * answer, and the row above cannot see it because INT_MIN dimensions refuse on their own. */
+    {
+        const int ok_dims[2] = { 64, 64 };
+        const int ok_ones[2] = { 1, 1 };
+        const int ok_rates[2] = { 25, 25 };
+        const int bad_fmts[2] = { 999999, AV_PIX_FMT_YUV420P };
+        KC_EQ_INT(ffkmp_graph_build_video_multi(&graph, srcs, &sink, "[in0][in1]overlay=0:0[out]", 2,
+                                                ok_dims, ok_dims, bad_fmts, ok_ones, ok_rates,
+                                                ok_rates, ok_ones, ok_ones, ok_ones),
+                  AVERROR(EINVAL));
+        KC_NULL(graph);
+        kc_note("an unknown pixel format in a multi input graph is refused, never substituted");
+    }
 }
 
 /* ---- args[512] and layout_str[128] and lay_str[128], the two audio builders ---- */

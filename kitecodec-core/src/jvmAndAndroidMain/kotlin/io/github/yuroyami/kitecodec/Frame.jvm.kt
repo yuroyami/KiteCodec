@@ -126,7 +126,7 @@ public actual class Frame internal constructor(
 
         val encoder = Internals.findEncoderByName(codec.name)
         if (encoder == 0L) {
-            throw FFmpegException(FFmpegError.Internal("No encoder named '${codec.name}'"))
+            throw FFmpegException(FFmpegError.EncoderNotFound(0, "No encoder named '${codec.name}'"))
         }
         var converted = 0L
         try {

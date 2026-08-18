@@ -44,6 +44,40 @@ public actual class FilterGraph internal constructor(
 
     private val closed = atomic(false)
 
+    /**
+     * The graph's operation ledger (audit P0-07, P1-19). [opLock] serializes the non-suspending
+     * operations against each other and against [close]; [operationDepth] counts operations in
+     * flight so a close that arrives DURING one, from another thread or reentrantly from an
+     * [feedInput] callback, marks the graph closed and lets the outermost operation free it on the
+     * way out instead of freeing it under the running FFI call. [process] cannot hold a lock across
+     * its suspending emits, so it holds only the ledger, which is exactly the part that keeps the
+     * pointers alive.
+     */
+    private val opLock = kotlinx.atomicfu.locks.SynchronizedObject()
+    private var operationDepth = 0
+    private var freed = false
+
+    private fun enterOperation() = kotlinx.atomicfu.locks.synchronized(opLock) {
+        check(!closed.value) { "FilterGraph is closed" }
+        operationDepth++
+    }
+
+    private fun exitOperation() = kotlinx.atomicfu.locks.synchronized(opLock) {
+        operationDepth--
+        if (closed.value && operationDepth == 0) freeNow()
+    }
+
+    /** Runs [block] as one ledgered operation, serialized against other non-suspending ones. */
+    private inline fun <R> operation(block: () -> R): R =
+        kotlinx.atomicfu.locks.synchronized(opLock) {
+            enterOperation()
+            try {
+                block()
+            } finally {
+                exitOperation()
+            }
+        }
+
     public actual val inputCount: Int get() = srcs.size
 
     public actual val outputTimeBase: Rational = memScoped {
@@ -63,29 +97,31 @@ public actual class FilterGraph internal constructor(
 
     @Throws(FFmpegException::class)
     public actual fun setOutputFrameSize(samples: Int) {
-        check(!closed.value) { "FilterGraph is closed" }
         require(samples > 0) { "frame size must be positive" }
-        ffkmp_buffersink_set_frame_size(sink, samples.toUInt())
+        operation { ffkmp_buffersink_set_frame_size(sink, samples.toUInt()) }
     }
 
     @Throws(FFmpegException::class)
     public actual fun feedInput(index: Int, frame: Frame, onOutput: (Frame) -> Unit) {
         try {
-            check(!closed.value) { "FilterGraph is closed" }
-            val src = srcs.getOrNull(index)
-                ?: throw IllegalArgumentException("Input $index out of range (graph has ${srcs.size} inputs)")
-            sendUntilAccepted(index, eofIsDone = false, onOutput = onOutput) {
-                ffkmp_graph_send(src, frame.nativeFrame)
+            operation {
+                val src = srcs.getOrNull(index)
+                    ?: throw IllegalArgumentException("Input $index out of range (graph has ${srcs.size} inputs)")
+                sendUntilAccepted(index, eofIsDone = false, onOutput = onOutput) {
+                    // The frame lease covers only the send, never the drain: the drain runs user
+                    // callbacks, and user code under another object's lock is how deadlocks are
+                    // built. Same shape as the JVM actual.
+                    frame.withNative { native -> ffkmp_graph_send(src, native) }
+                }
+                drainTo(onOutput)
             }
-            drainTo(onOutput)
         } finally {
             frame.close()
         }
     }
 
     @Throws(FFmpegException::class)
-    public actual fun flushInput(index: Int, onOutput: (Frame) -> Unit) {
-        check(!closed.value) { "FilterGraph is closed" }
+    public actual fun flushInput(index: Int, onOutput: (Frame) -> Unit): Unit = operation {
         val src = srcs.getOrNull(index)
             ?: throw IllegalArgumentException("Input $index out of range (graph has ${srcs.size} inputs)")
         // A pad already at EOF is done, not broken, so a second flush is a no-op.
@@ -182,11 +218,14 @@ public actual class FilterGraph internal constructor(
     }
 
     public actual fun process(input: Flow<Frame>): Flow<Frame> = flow {
-        check(!closed.value) { "FilterGraph is closed" }
         check(srcs.size == 1) { "process() drives single-input graphs; use feedInput for multi-input" }
         val eagain = FFErrors.EAGAIN
         val eof    = FFErrors.EOF
         val src = srcs[0]
+        // The ledger without the lock: emits suspend, and a lock held across a suspension is a
+        // deadlock waiting for a dispatcher. The ledger alone is what keeps a concurrent close
+        // from freeing the graph mid-collection; it defers the free to the finally below.
+        enterOperation()
         try {
             val landing = outFrame()
             // Emissions are owned clones (O(1) refcount bumps). See Frame for the ownership
@@ -207,7 +246,7 @@ public actual class FilterGraph internal constructor(
             input.collect { srcFrame ->
                 try {
                     while (true) {
-                        val sendRc = ffkmp_graph_send(src, srcFrame.nativeFrame)
+                        val sendRc = srcFrame.withNative { native -> ffkmp_graph_send(src, native) }
                         if (sendRc >= 0) break
                         if (sendRc == eagain) { drainEmit(); continue }  // not consumed, retry
                         throw FFmpegException(avError(sendRc))
@@ -226,12 +265,27 @@ public actual class FilterGraph internal constructor(
             }
             drainEmit()
         } finally {
+            exitOperation()
             close()  // The graph cannot be reused after EOF, so release it with the flow.
         }
     }
 
     actual override fun close() {
-        if (!closed.compareAndSet(expect = false, update = true)) return
+        kotlinx.atomicfu.locks.synchronized(opLock) {
+            if (!closed.compareAndSet(expect = false, update = true)) return
+            // An operation is still inside native code, on this thread (a callback closing its own
+            // graph) or another (which will block on opLock only for the non-suspending ops; a
+            // running process() holds no lock). Mark closed so nothing new starts, and let the
+            // outermost operation free the graph on its way out (audit P0-07, P1-19).
+            if (operationDepth > 0) return
+            freeNow()
+        }
+    }
+
+    /** The one place the graph is actually freed. Only under [opLock], only once. */
+    private fun freeNow() {
+        if (freed) return
+        freed = true
         outFrameHolder?.close()
         outFrameHolder = null
         val a = Arena()

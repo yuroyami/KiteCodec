@@ -36,7 +36,17 @@ public class Rational private constructor(public val num: Int, public val den: I
     public operator fun minus(other: Rational): Rational =
         of(num.toLong() * other.den - other.num.toLong() * den, den.toLong() * other.den)
 
-    public operator fun unaryMinus(): Rational = invoke(-num, den)
+    /**
+     * Negation, widened before it negates.
+     *
+     * `-Int.MIN_VALUE` is `Int.MIN_VALUE` again in 32-bit arithmetic, so negating a rational whose
+     * numerator sat at the floor used to return the SAME rational and call it the opposite sign
+     * (audit P1-29). Widening first makes that case a value that does not fit, which [of] refuses
+     * out loud rather than answering wrongly.
+     *
+     * @throws ArithmeticException when the negated numerator does not fit 32 bits
+     */
+    public operator fun unaryMinus(): Rational = of(-num.toLong(), den.toLong())
 
     /**
      * `scalar * num / den` with a Long intermediate. Multiplies after reducing
@@ -47,13 +57,36 @@ public class Rational private constructor(public val num: Int, public val den: I
      * @throws ArithmeticException when the product overflows Long even after reduction
      */
     public operator fun times(scalar: Long): Long {
-        val g = gcd(if (scalar < 0) -scalar else scalar, den.toLong())
+        if (num == 0) return 0L
+        // gcd against the DENOMINATOR's residue rather than the scalar's magnitude. Taking
+        // `-scalar` first wrapped Long.MIN_VALUE straight back to itself, so the reduction ran on a
+        // negative magnitude and answered nonsense (audit P1-29). A remainder by a positive
+        // denominator is safe for every input, including the floor.
+        val d = den.toLong()
+        var a = scalar % d
+        if (a < 0) a = -a
+        var x = d
+        var y = a
+        while (y != 0L) {
+            val t = x % y
+            x = y
+            y = t
+        }
+        val g = if (x == 0L) 1L else x
         val reduced = scalar / g
+        // The one product whose overflow the division check below cannot see: Long.MIN_VALUE * -1
+        // wraps to Long.MIN_VALUE, and dividing it back by -1 wraps to the same value again, so the
+        // check compares equal and the wrap passes for the answer.
+        if (reduced == Long.MIN_VALUE && num == -1) {
+            throw ArithmeticException(
+                "$scalar * $this overflows Long. Use av_rescale_q-backed APIs for timestamp math",
+            )
+        }
         val product = reduced * num
-        if (num != 0 && product / num != reduced) {
+        if (product / num != reduced) {
             throw ArithmeticException("$scalar * $this overflows Long. Use av_rescale_q-backed APIs for timestamp math")
         }
-        return product / (den / g)
+        return product / (d / g)
     }
 
     /** Exact comparison: `Rational(1, 30) < Rational(1, 25)`. */

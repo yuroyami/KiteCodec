@@ -14,11 +14,12 @@
  *   to print. A flat colour is the right fixture: source and destination are the same size, so
  *   SWS_BILINEAR does no filtering and the case measures colour conversion alone.
  *
- *   The metadata the helper carries, and the metadata it drops. It sets width, height, format and
- *   pts, and nothing else. Sample aspect ratio, colour range, colour space and duration are left
- *   at their defaults, measured. That is asserted rather than described, because a caller reading
- *   dst->color_range would get 0 (unspecified) and B2 must either keep that or change it on
- *   purpose.
+ *   The metadata the helper carries, and the two tags it deliberately overwrites. Width, height,
+ *   format and pts are its own; sample aspect ratio, duration, primaries and transfer travel from
+ *   the source through av_frame_copy_props. Colour range and colour space do NOT travel when the
+ *   conversion changed them: an RGB destination is written full range with an RGB matrix, so the
+ *   result carries those rather than the source's YUV tags (audit P1-23). A caller reading
+ *   dst->color_range gets what the pixels are, which is the only reading worth trusting.
  *
  *   Allocation cost per call, which is the actual subject of B1-23. Measured under the interposer
  *   in the plain variant: an even-height frame costs 9 allocating calls per conversion and an
@@ -29,16 +30,19 @@
  *   what they were.
  *
  *   Leak freedom on the failure paths, which is the half a caching change is most likely to
- *   break. Every refusal returns NULL with a net-zero allocation window, including the two that
- *   fail late: a source frame with no data pointers gets as far as sws_scale and has to unwind an
- *   already allocated destination frame, and an unsupported destination format is refused by
- *   sws_getContext before the destination frame exists.
+ *   break. Every refusal returns NULL and leaves no block behind. One fails late: a source frame
+ *   with no data pointers gets as far as sws_scale and has to unwind an already allocated
+ *   destination frame. Every unusable format now fails EARLY instead, at the descriptor gate in
+ *   front of swscale, so pal8, hardware formats and values outside the enum all refuse before a
+ *   context or a destination frame exists.
  *
- * One hazard found while writing this file, and recorded here because a caller cannot discover it
- * any other way: a destination format outside the enum, AV_PIX_FMT_NONE included, does not return
- * NULL. It aborts the process from inside libswscale, at an assertion in swscale_internal.h. The
- * case named "a destination format outside the enum never yields a frame" makes that call in a
- * child process for exactly that reason.
+ * One hazard, found while writing this file and FIXED since: a destination format outside the enum,
+ * AV_PIX_FMT_NONE included, used to reach libswscale and abort the process at an assertion in
+ * swscale_internal.h rather than returning NULL. The helper now validates both formats before
+ * swscale sees them (audit P0-09). The case named "a destination format outside the enum never
+ * yields a frame" still makes that call in a child process, because that is the only way to tell a
+ * refusal from a crash: the child must exit, and any signal is now a failure of this suite rather
+ * than a documented outcome of it.
  */
 
 #include "harness.h"
@@ -237,15 +241,23 @@ static void case_metadata_carried_and_dropped(void)
     kc_detail("w=%d h=%d fmt=%d pts=%lld", ffkmp_frame_width(dst), ffkmp_frame_height(dst),
               ffkmp_frame_format(dst), (long long)ffkmp_frame_pts(dst));
 
-    kc_case("and it carries the rest too: sar, range, space and duration travel with the picture");
+    kc_case("sar and duration travel with the picture");
     KC_EQ_INT(dst->sample_aspect_ratio.num, 4);
     KC_EQ_INT(dst->sample_aspect_ratio.den, 3);
-    KC_EQ_INT((int)dst->color_range, (int)AVCOL_RANGE_MPEG);
-    KC_EQ_INT((int)dst->colorspace, (int)AVCOL_SPC_BT470BG);
     KC_EQ_I64(dst->duration, 4242);
-    kc_note("the source declared 4/3, MPEG range, BT470BG and a duration of 4242, and all four");
-    kc_note("reach the result: the helper runs av_frame_copy_props, which is what lets a colour");
-    kc_note("aware consumer trust the converted frame's tags instead of re-deriving them.");
+    kc_note("the source declared 4/3 and a duration of 4242, and both reach the result: the helper");
+    kc_note("runs av_frame_copy_props, so nothing about the picture's timing or shape is lost.");
+
+    kc_case("but the colour tags describe the OUTPUT, not the source it was converted from");
+    KC_EQ_INT((int)dst->color_range, (int)AVCOL_RANGE_JPEG);
+    KC_EQ_INT((int)dst->colorspace, (int)AVCOL_SPC_RGB);
+    kc_note("the source declared MPEG range and BT470BG, and copying those onto an RGBA result");
+    kc_note("would be a lie about the pixels: the conversion above produces RGB full range through");
+    kc_note("sws_setColorspaceDetails, and RGB has no YUV matrix. A consumer trusting the copied");
+    kc_note("tags would convert a second time and crush the range (audit P1-23). Primaries and");
+    kc_note("transfer are NOT overwritten: they describe the light, not the encoding.");
+    KC_EQ_INT((int)dst->color_primaries, (int)src->color_primaries);
+    KC_EQ_INT((int)dst->color_trc, (int)src->color_trc);
     kc_detail("sar=%d/%d range=%d space=%d duration=%lld",
               dst->sample_aspect_ratio.num, dst->sample_aspect_ratio.den,
               (int)dst->color_range, (int)dst->colorspace, (long long)dst->duration);
@@ -496,7 +508,7 @@ static void case_guard_paths(void)
         { "pal8 as the destination", 16, 16, AV_PIX_FMT_YUV420P, 1, AV_PIX_FMT_PAL8,
           "a real format swscale cannot write" },
         { "videotoolbox as the destination", 16, 16, AV_PIX_FMT_YUV420P, 1,
-          AV_PIX_FMT_VIDEOTOOLBOX, "a hardware format, refused by sws_getContext" }
+          AV_PIX_FMT_VIDEOTOOLBOX, "a hardware format, refused by the descriptor gate" }
     };
     size_t i;
 
@@ -528,13 +540,14 @@ static void case_guard_paths(void)
     }
 }
 
-/* ---- The one refusal that is not a refusal ---- */
+/* ---- The refusal that used to be a crash ---- */
 
-/* Run in a child process. A destination format outside the pixel format enum reaches
- * av_pix_fmt_desc_get inside swscale, which returns NULL, and swscale asserts rather than
- * returning an error. The child exits 0 if the call came back with NULL and 3 if it came back with
- * a frame; if it aborts, the parent sees the signal. Only the third of those is a failure, because
- * a frame built from a format that does not exist is the one outcome no consumer could survive. */
+/* Run in a child process. A destination format outside the pixel format enum is refused by the
+ * helper's own descriptor gate now, so the call returns NULL and the child exits normally. The
+ * child exits 0 if the call came back with NULL and 3 if it came back with a frame; if it dies
+ * with a signal, libswscale asserted, which means the gate is gone. All three outcomes other than
+ * a clean NULL are failures. The fork stays because a returned NULL and an aborted process are
+ * indistinguishable in-process, and only the fork can tell them apart. */
 static int child_convert_invalid_format(void)
 {
     AVFrame *src = flat_yuv420p(16, 16, 81, 90, 240, 1);
@@ -557,7 +570,7 @@ static void case_invalid_destination_format(void)
     pid_t child;
     int status = 0;
 
-    kc_case("a destination format outside the enum never yields a frame");
+    kc_case("a destination format outside the enum is refused, without a signal");
     KC_NOT_NULL(self_path);
     KC_CHECKF(access(self_path, X_OK) == 0,
               "cannot re-run this binary as a child: %s is not executable", self_path);
@@ -569,8 +582,8 @@ static void case_invalid_destination_format(void)
         argv[0] = (char *)self_path;
         argv[1] = (char *)KC_CHILD_ARG;
         argv[2] = NULL;
-        /* The child is expected to abort, and libswscale plus any sanitizer runtime would print
-         * pages of it into the middle of this suite's one-line-per-case output. */
+        /* Silenced because a REGRESSION here aborts, and libswscale plus any sanitizer runtime
+         * would print pages of it into the middle of this suite's one-line-per-case output. */
         if (freopen("/dev/null", "w", stderr) == NULL)
             _exit(126);
         if (freopen("/dev/null", "w", stdout) == NULL)
@@ -581,15 +594,11 @@ static void case_invalid_destination_format(void)
     KC_CHECKF(waitpid(child, &status, 0) == child, "waitpid failed");
 
     if (WIFSIGNALED(status)) {
-        int signal_number = WTERMSIG(status);
-        kc_detail("the child died with signal %d", signal_number);
-        KC_CHECKF(signal_number == SIGABRT || signal_number == SIGSEGV || signal_number == SIGBUS,
-                  "the child died with signal %d, which is not the libswscale assertion this case "
-                  "documents", signal_number);
-        kc_note("measured: libswscale asserts in swscale_internal.h rather than refusing, so this");
-        kc_note("call takes the process down. The helper's own guards cover a NULL source and a");
-        kc_note("non-positive size, and nothing validates the destination format. A Kotlin caller");
-        kc_note("passing an enum cannot reach this; a C caller can.");
+        /* No signal is acceptable here. This case exists to prove the format gate stands in front
+         * of libswscale's assertion, and a signal is that gate being gone (audit P0-09). */
+        KC_FAIL("the child died with signal %d: the destination format reached libswscale and it "
+                "asserted, so ffkmp_frame_convert_pixfmt is no longer validating its formats",
+                WTERMSIG(status));
     } else if (WIFEXITED(status)) {
         int code = WEXITSTATUS(status);
         kc_detail("the child exited %d", code);
@@ -597,8 +606,8 @@ static void case_invalid_destination_format(void)
                   "the helper built a frame from a destination format that does not exist");
         KC_CHECKF(code == KC_CHILD_RETURNED_NULL,
                   "the child could not run the case, exit %d", code);
-        kc_note("this FFmpeg refused the format instead of asserting, which is the kinder of the");
-        kc_note("two behaviours and is recorded rather than required");
+        kc_note("the helper's own descriptor gate refused the format and returned NULL, so the");
+        kc_note("process survived a call that used to abort it from inside libswscale");
     } else {
         KC_FAIL("the child neither exited nor was signalled, status %d", status);
     }

@@ -83,30 +83,49 @@ public actual class Frame internal constructor(
     internal val streamTimeBase: Rational,
 ) : AutoCloseable {
 
+    /**
+     * Excludes [close] while an operation is inside native code, exactly as the JVM backend's
+     * per-object locks do. A closed check alone was check-then-use: a concurrent close between the
+     * check and the FFI call freed the AVFrame under the running operation (audit P0-07). The lock
+     * is reentrant, so a helper under [withNative] may read [checkedNative] again freely.
+     */
+    private val lock = kotlinx.atomicfu.locks.SynchronizedObject()
+
     private var closed = false
 
     private fun checkOpen() = check(!closed) { "Frame is closed, its native buffers are gone" }
 
     /**
-     * The native pointer, gated on the open state. Every access outside this class must go through
-     * this accessor: a cached [FrameInfo] proves nothing about whether the native frame is still
-     * alive, so the open check has to run at the moment of the dereference, not before it.
+     * The operation lease: runs [block] with the live pointer while holding the frame's lock, so a
+     * concurrent [close] waits for the operation instead of freeing the buffers under it. Every
+     * native operation in this class and every zero-copy hand-off outside it goes through this.
+     */
+    internal inline fun <R> withNative(block: (CPointer<kc_frame>) -> R): R =
+        kotlinx.atomicfu.locks.synchronized(lock) {
+            checkOpen()
+            block(nativeFrame)
+        }
+
+    /**
+     * The native pointer, gated on the open state at the moment of the read.
+     *
+     * This alone is not a lease: the pointer outlives the check the instant it is returned. It
+     * exists for code already running under [withNative], where the reentrant lock makes the second
+     * check cheap and the pointer provably live. Code NOT under the lease uses [withNative].
      */
     internal val checkedNative: CPointer<kc_frame>
-        get() {
+        get() = kotlinx.atomicfu.locks.synchronized(lock) {
             checkOpen()
-            return nativeFrame
+            nativeFrame
         }
 
     private var cachedInfo: FrameInfo? = null
 
     public actual val info: FrameInfo
-        get() {
+        get() = withNative {
             // The metadata snapshot may be cached, but the open check must run on every read:
             // a warm cache must never stand in for proof that the native frame is still alive.
-            checkOpen()
-            cachedInfo?.let { return it }
-            return buildInfo().also { cachedInfo = it }
+            cachedInfo ?: buildInfo().also { cachedInfo = it }
         }
 
     private fun buildInfo(): FrameInfo =
@@ -164,9 +183,8 @@ public actual class Frame internal constructor(
     }
 
     @Throws(FFmpegException::class)
-    public actual fun copyPlanesToByteArray(): ByteArray {
-        checkOpen()
-        return when (streamType) {
+    public actual fun copyPlanesToByteArray(): ByteArray = withNative {
+        when (streamType) {
             MediaType.Video -> copyVideoPlanes()
             MediaType.Audio -> copyAudioSamples()
             else -> ByteArray(0)
@@ -198,16 +216,14 @@ public actual class Frame internal constructor(
     }
 
     @Throws(FFmpegException::class)
-    public actual fun copy(): Frame {
-        checkOpen()
+    public actual fun copy(): Frame = withNative {
         val cloned = ffkmp_frame_clone(nativeFrame)
             ?: throw FFmpegException(FFmpegError.Internal("av_frame_clone returned NULL"))
-        return Frame(cloned, ownsPointer = true, streamIndex = streamIndex, streamType = streamType, streamTimeBase = streamTimeBase)
+        Frame(cloned, ownsPointer = true, streamIndex = streamIndex, streamType = streamType, streamTimeBase = streamTimeBase)
     }
 
     @Throws(FFmpegException::class)
-    public actual fun downloadFromHardware(): Frame {
-        checkOpen()
+    public actual fun downloadFromHardware(): Frame = withNative {
         val downloaded = ffkmp_frame_alloc()
             ?: throw FFmpegException(FFmpegError.Internal("av_frame_alloc returned NULL"))
         val rc = ffkmp_frame_hw_download(nativeFrame, downloaded)
@@ -215,12 +231,11 @@ public actual class Frame internal constructor(
             ffkmp_frame_free(downloaded)
             throw FFmpegException(avError(rc))
         }
-        return Frame(downloaded, ownsPointer = true, streamIndex = streamIndex, streamType = streamType, streamTimeBase = streamTimeBase)
+        Frame(downloaded, ownsPointer = true, streamIndex = streamIndex, streamType = streamType, streamTimeBase = streamTimeBase)
     }
 
     @Throws(FFmpegException::class)
-    public actual fun encodeImage(codec: CodecId): ByteArray {
-        checkOpen()
+    public actual fun encodeImage(codec: CodecId): ByteArray = withNative {
         if (streamType != MediaType.Video) {
             throw FFmpegException(FFmpegError.Internal("encodeImage works on video frames, this is a $streamType frame"))
         }
@@ -231,7 +246,7 @@ public actual class Frame internal constructor(
             throw FFmpegException(FFmpegError.Internal("Frame carries no image data"))
         }
         val encoder = ffkmp_find_encoder_by_name(codec.name)
-            ?: throw FFmpegException(FFmpegError.Internal("No encoder named '${codec.name}'"))
+            ?: throw FFmpegException(FFmpegError.EncoderNotFound(0, "No encoder named '${codec.name}'"))
 
         // Image codecs are picky about input pixel format (png: rgb*, mjpeg: yuvj*), so
         // convert when the frame's own format isn't accepted.
@@ -298,7 +313,7 @@ public actual class Frame internal constructor(
                         check0(rc, "avcodec_send_frame (image flush)")
                     }
                     drainAll()
-                    return bytes
+                    return@withNative bytes
                         ?: throw FFmpegException(FFmpegError.Internal("Image encoder produced no packet"))
                 } finally {
                     ffkmp_frame_set_pts(sendFrame, originalPts)
@@ -312,7 +327,9 @@ public actual class Frame internal constructor(
         }
     }
 
-    actual override fun close() {
+    actual override fun close(): Unit = kotlinx.atomicfu.locks.synchronized(lock) {
+        // Under the same lock every operation holds, so a close arriving mid-operation WAITS for
+        // it instead of freeing the buffers under it. Idempotent, exactly as before.
         if (closed) return
         closed = true
         if (ownsPointer) {

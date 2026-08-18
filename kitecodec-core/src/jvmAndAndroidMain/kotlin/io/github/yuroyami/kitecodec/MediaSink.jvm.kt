@@ -13,11 +13,22 @@ public actual class MediaSink internal constructor(
     private var headerState = HeaderState.NotWritten
     private var sharedBaseMicros = Long.MIN_VALUE
 
+    /**
+     * True from the moment a close begins until the sink dies, read and written under [muxLock].
+     *
+     * The close flushes its encoders OUTSIDE the lock, because the flush takes each encoder's own
+     * lock and holding both invites an inversion. That leaves a window where the sink looks open:
+     * a second close could start its own trailer, and an add could append an encoder the snapshot
+     * had already passed, leaking it (audit P0-10). This flag is what the window checks.
+     */
+    private var closing = false
+
     /** Streams declared on this sink; close() owes a real container once this is nonzero. */
     private var declaredStreams = 0
 
     private fun checkOpen(): Long {
         check(formatToken != 0L) { "MediaSink is closed" }
+        check(!closing) { "MediaSink is closing" }
         return formatToken
     }
 
@@ -128,7 +139,7 @@ public actual class MediaSink internal constructor(
         check(!headerWritten) { "Cannot add encoders after the muxer has started writing." }
         checkOpen()
         val codec = Internals.findEncoderByName(codecName)
-        if (codec == 0L) throw FFmpegException(FFmpegError.Internal("No encoder named '$codecName'"))
+        if (codec == 0L) throw FFmpegException(FFmpegError.EncoderNotFound(0, "No encoder named '$codecName'"))
         try {
             val context = Internals.codecCtxAlloc(codec)
             try {
@@ -174,6 +185,9 @@ public actual class MediaSink internal constructor(
     }
 
     internal fun ensureHeaderWritten(): Unit = synchronized(muxLock) {
+        // Deliberately NOT checkOpen(): the closer itself calls this to write a header it still
+        // owes, after closing is already true. The token check alone is the right gate here.
+        check(formatToken != 0L) { "MediaSink is closed" }
         when (headerState) {
             HeaderState.Written -> return
             HeaderState.Failed -> throw FFmpegException(
@@ -182,15 +196,19 @@ public actual class MediaSink internal constructor(
             HeaderState.NotWritten -> Unit
         }
         headerState = HeaderState.Failed
-        val format = checkOpen()
+        val format = formatToken
         check0(Internals.fmtIoOpen(format, outputPath), "avio_open")
         check0(Internals.fmtWriteHeader(format), "avformat_write_header")
         headerState = HeaderState.Written
     }
 
     internal fun writePacket(packet: Long): Unit = synchronized(muxLock) {
+        // The token gate, not checkOpen: writes stay legal while the sink is CLOSING, because the
+        // close's own encoder flush is writes, through this very function. What a write may never
+        // do is run after the trailer section zeroed the token, and that is what this refuses.
+        check(formatToken != 0L) { "MediaSink is closed" }
         ensureHeaderWritten()
-        val rc = Internals.fmtWriteFrame(checkOpen(), packet)
+        val rc = Internals.fmtWriteFrame(formatToken, packet)
         if (rc < 0) throw FFmpegException(avError(rc))
     }
 
@@ -200,7 +218,11 @@ public actual class MediaSink internal constructor(
         // cores from inside muxLock would invert that order and deadlock. finish/close below take
         // each core's own lock, which also serializes against any in-flight encode.
         val cores = synchronized(muxLock) {
-            if (formatToken == 0L) return
+            // One closer only. The first close owns the flush and the trailer; a second, from any
+            // thread, returns and lets it finish rather than writing a second trailer or freeing
+            // the muxer under the first one's flush (audit P0-10).
+            if (formatToken == 0L || closing) return
+            closing = true
             encoderCores.toList().also { encoderCores.clear() }
         }
         // The FIRST flush error is retained and thrown after cleanup (audit P1-6): tail frames
@@ -221,6 +243,7 @@ public actual class MediaSink internal constructor(
         } finally {
             cores.forEach { runCatching { it.close() } }
         }
+        var closeRc = 0
         val trailerRc = synchronized(muxLock) {
             val format = formatToken
             if (format == 0L) return
@@ -237,12 +260,16 @@ public actual class MediaSink internal constructor(
                 if (headerState == HeaderState.Written) result = Internals.fmtWriteTrailer(format)
             } finally {
                 formatToken = 0L
-                Internals.fmtFreeOutput(format)
+                // The output file's own close, which is the last thing that can fail and the place
+                // a full disk reports itself. Kept and raised below rather than discarded, so a
+                // truncated file is not reported as a written one (audit P1-13).
+                closeRc = Internals.fmtFreeOutput(format)
             }
             result
         }
         firstFailure?.let { throw it }
         if (trailerRc < 0) throw FFmpegException(avError(trailerRc))
+        if (closeRc < 0) throw FFmpegException(avError(closeRc))
     }
 
     public actual companion object {

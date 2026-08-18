@@ -161,10 +161,14 @@ JNIEXPORT void JNICALL kj_fmt_close_input(JNIEnv *env, jclass cls, jlong token)
     if (ctx != NULL) ffkmp_fmt_close_input(&ctx);
 }
 
-JNIEXPORT void JNICALL kj_fmt_free_output(JNIEnv *env, jclass cls, jlong token)
+/* Returns the CLOSE result so the caller can fail a write that only failed at the very end, such
+   as a full disk discovered while the final buffer was flushed (audit P1-13). Zero when there was
+   nothing to close, which is also what success looks like. */
+JNIEXPORT jint JNICALL kj_fmt_free_output(JNIEnv *env, jclass cls, jlong token)
 {
     kc_fmt_ctx *ctx = (kc_fmt_ctx *)kj_handle_close(token, KJ_KIND_FMT_CTX);
-    (void)env; (void)cls; if (ctx != NULL) ffkmp_fmt_free_output(&ctx);
+    (void)env; (void)cls;
+    return ctx != NULL ? (jint)ffkmp_fmt_free_output(&ctx) : 0;
 }
 
 JNIEXPORT jint JNICALL kj_fmt_find_stream_info(JNIEnv *env, jclass cls, jlong token)

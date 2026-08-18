@@ -44,14 +44,35 @@ public data class ColorInfo(
         /**
          * The conventional reading when a container declares nothing, which is common.
          *
-         * Standard definition content is BT.601 and high definition is BT.709, split at 576 lines.
-         * Every player applies this rule. Using one default for both visibly wrongs half the
-         * world's video.
+         * Standard definition is BT.601 and high definition is BT.709, and every player applies
+         * that rule because using one default for both visibly wrongs half the world's video. Two
+         * refinements over a single 576-line split (audit P1-25):
+         *
+         * - the two standard definition families do not share primaries. 525-line content (NTSC,
+         *   480 lines and below) is SMPTE 170M; 625-line content (PAL and SECAM, up to 576 lines)
+         *   is BT.470BG. Both use the same BT.601 matrix coefficients, which is why the matrix is
+         *   the same for the pair and only the primaries move.
+         * - a height that is zero or negative describes nothing, so it is answered with
+         *   [Unspecified] rather than being swept into the high definition branch. A guess made
+         *   from a size that does not exist is not a guess, it is noise.
+         *
+         * This stays a heuristic over one input. A caller that knows the frame rate, the container
+         * or the origin of the media can do better, and should: nothing here overrides a real
+         * declaration, it only fills a silence.
          */
-        public fun guessFor(height: Int): ColorInfo = if (height in 1..576) {
-            ColorInfo(ColorMatrix.Bt470bg, ColorPrimaries.Bt470bg, ColorTransfer.Bt709)
-        } else {
-            ColorInfo(ColorMatrix.Bt709, ColorPrimaries.Bt709, ColorTransfer.Bt709)
+        public fun guessFor(height: Int): ColorInfo = when {
+            height <= 0 -> Unspecified
+            height <= 480 -> ColorInfo(
+                ColorMatrix.Smpte170m,
+                ColorPrimaries.Smpte170m,
+                ColorTransfer.Bt709,
+            )
+            height <= 576 -> ColorInfo(
+                ColorMatrix.Bt470bg,
+                ColorPrimaries.Bt470bg,
+                ColorTransfer.Bt709,
+            )
+            else -> ColorInfo(ColorMatrix.Bt709, ColorPrimaries.Bt709, ColorTransfer.Bt709)
         }
     }
 }

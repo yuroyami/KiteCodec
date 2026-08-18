@@ -47,9 +47,22 @@ public object KiteCodecWeb {
      * and its handle table, so a second one would be a second registry and a second set of handles.
      */
     public fun attach(codecModule: JsAny) {
+        // The established module answers FIRST, before validation. Re-attaching the same module is
+        // the common case under a bundler that runs a setup block twice, and validating it again
+        // was pointless work; validating a DIFFERENT one and then dropping it silently was worse,
+        // because the caller's module never became the one in use and nothing said so (P1-35).
+        val established = module
+        if (established != null) {
+            if (established === codecModule) return
+            throw IllegalStateException(
+                "a different codec module is already attached. The module owns FFmpeg's global " +
+                    "codec registry and this backend's handle table, so a second one would be a " +
+                    "second registry and a second set of handles. Attach once per page.",
+            )
+        }
         val missing = missingRuntimeMethods(codecModule)
         if (missing.isNotEmpty()) throw IncompleteModule(missing)
-        if (module == null) module = codecModule
+        module = codecModule
     }
 
     /**
@@ -60,7 +73,14 @@ public object KiteCodecWeb {
      */
     public suspend fun load(url: String = DEFAULT_URL) {
         if (module != null) return
-        attach(awaitModule(loadModule(url)))
+        val loaded = awaitModule(loadModule(url))
+        // Checked again after the await: two concurrent loads both saw no module before suspending,
+        // and the second one arriving would otherwise throw at [attach] for being a different
+        // module than the first one that landed. The instance that got there first wins and the
+        // other is simply not adopted, which is what "calling twice is a no-op" has to mean when
+        // the two calls overlap (audit P1-35).
+        if (module != null) return
+        attach(loaded)
     }
 
     /** The conventional name emscripten writes beside the wasm, resolved against the page. */

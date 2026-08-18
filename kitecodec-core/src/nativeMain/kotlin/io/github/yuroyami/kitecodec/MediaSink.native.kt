@@ -83,6 +83,16 @@ public actual class MediaSink internal constructor(
     /** Streams declared on this sink; close() owes a real container once this is nonzero. */
     private var declaredStreams = 0
     private var headerState = HeaderState.NotWritten
+
+    /**
+     * Two flags because the close WRITES on its way out (audit P0-10). [closeBegun] flips at the
+     * top of close, under [muxLock], and is what a second close and every add checks: nothing new
+     * may start once a close exists. [closed] flips only after the muxer is freed, and is what the
+     * write path checks: the close's own flush writes are legal, and an outside writer that was
+     * blocked on [muxLock] resumes only after the whole close released it, when this flag already
+     * refuses the freed muxer for it.
+     */
+    private var closeBegun = false
     private var closed = false
 
     /**
@@ -111,7 +121,8 @@ public actual class MediaSink internal constructor(
     private val headerWritten: Boolean get() = synchronized(muxLock) { headerState == HeaderState.Written }
 
     @Throws(FFmpegException::class)
-    public actual fun addVideoEncoder(spec: VideoEncoderSpec): VideoEncoder {
+    public actual fun addVideoEncoder(spec: VideoEncoderSpec): VideoEncoder = synchronized(muxLock) {
+        check(!closeBegun) { "MediaSink is closed" }
         val codecCtx = newEncoderContext(spec.codec.name) { codec, cc ->
             ffkmp_codecctx_set_video(
                 cc,
@@ -137,13 +148,13 @@ public actual class MediaSink internal constructor(
             isAudio = false,
         )
         encoderCores += core
-        return VideoEncoder(core)
+        VideoEncoder(core)
     }
 
     @Throws(FFmpegException::class)
-    public actual fun addCopyStream(source: MediaSource, stream: StreamInfo): CopyStream {
+    public actual fun addCopyStream(source: MediaSource, stream: StreamInfo): CopyStream = synchronized(muxLock) {
+        check(!closeBegun) { "MediaSink is closed" }
         check(!headerWritten) { "Cannot add streams after the muxer has started writing." }
-        check(!closed) { "MediaSink is closed" }
 
         val sourcePar = source.codecparOf(stream)
             ?: throw FFmpegException(FFmpegError.Internal("Stream ${stream.index} has no codec parameters"))
@@ -157,11 +168,12 @@ public actual class MediaSink internal constructor(
         ffkmp_stream_set_time_base(outStream, stream.timeBase.num, stream.timeBase.den)
 
         declaredStreams += 1
-        return CopyStream(sink = this, stream = outStream, sourceTimeBase = stream.timeBase, sourceIndex = stream.index)
+        CopyStream(sink = this, stream = outStream, sourceTimeBase = stream.timeBase, sourceIndex = stream.index)
     }
 
     @Throws(FFmpegException::class)
-    public actual fun addAudioEncoder(spec: AudioEncoderSpec): AudioEncoder {
+    public actual fun addAudioEncoder(spec: AudioEncoderSpec): AudioEncoder = synchronized(muxLock) {
+        check(!closeBegun) { "MediaSink is closed" }
         var negotiatedFormat = spec.sampleFormat
         val codecCtx = newEncoderContext(spec.codec.name) { codec, cc ->
             if (negotiatedFormat == SampleFormat.None) {
@@ -189,7 +201,7 @@ public actual class MediaSink internal constructor(
             isAudio = true,
         )
         encoderCores += core
-        return AudioEncoder(
+        AudioEncoder(
             core = core,
             frameSize = ffkmp_codecctx_frame_size(codecCtx),
             sampleFormat = negotiatedFormat,
@@ -260,6 +272,7 @@ public actual class MediaSink internal constructor(
     }
 
     internal fun ensureHeaderWritten(): Unit = synchronized(muxLock) {
+        check(!closed) { "MediaSink is closed" }
         when (headerState) {
             HeaderState.Written -> return
             HeaderState.Failed -> throw FFmpegException(
@@ -277,6 +290,11 @@ public actual class MediaSink internal constructor(
     }
 
     internal fun writePacket(packet: CPointer<kc_packet>): Unit = synchronized(muxLock) {
+        // The close-vs-write race (audit P0-10): a writer that blocked on this lock while close ran
+        // used to resume and hand the packet to a FREED muxer, because nothing here re-read the
+        // closed flag after the wait. close() holds this same lock for its entire flush, trailer
+        // and free, so the flag is the whole fix: a late writer now fails typed instead.
+        check(!closed) { "MediaSink is closed" }
         ensureHeaderWritten()
         val rc = ffkmp_fmt_write_frame(ctx, packet)
         if (rc < 0) throw FFmpegException(avError(rc))
@@ -285,8 +303,8 @@ public actual class MediaSink internal constructor(
     actual override fun close() {
         var firstFailure: Throwable? = null
         val trailerRc = synchronized(muxLock) {
-            if (closed) return
-            closed = true
+            if (closeBegun) return
+            closeBegun = true
             var rc = 0
             try {
                 // Flush BEFORE freeing the contexts. Encoders buffer (libx264's lookahead holds
@@ -322,8 +340,14 @@ public actual class MediaSink internal constructor(
             } finally {
                 memScoped {
                     val pp = alloc<CPointerVar<kc_fmt_ctx>>().also { it.value = ctx }
-                    ffkmp_fmt_free_output(pp.ptr)
+                    // The output file's own close. A trailer that wrote fine can still be lost
+                    // when the final flush hits a full disk, and discarding this reported that
+                    // file as written (audit P1-13). The trailer's own error wins when both fail:
+                    // it happened first and describes the container, not the medium.
+                    val closeRc = ffkmp_fmt_free_output(pp.ptr)
+                    if (rc >= 0 && closeRc < 0) rc = closeRc
                 }
+                closed = true
             }
             rc
         }
@@ -403,18 +427,33 @@ internal class EncoderCore(
     /** Encode one frame, converting its pixel format to the encoder's if needed. Closes [frame]. */
     fun encode(packet: CPointer<kc_packet>, frame: Frame) {
         check(!closed) { "Encoder is closed" }
-        restampPts(frame)
         try {
-            val native = frame.nativeFrame
-            val converted = if (isAudio) null else conversionFor(native)
-            if (converted != null) {
-                try {
-                    sendAndDrain(packet, converted)
-                } finally {
-                    ffkmp_frame_free(converted)
+            // Inside the ownership scope, not before it. This function consumes the frame on every
+            // path, and a restamp that threw used to escape before the `finally` existed, leaking
+            // the frame it had promised to close (audit P1-12).
+            // The media type this encoder was built for. A video frame handed to an audio encoder
+            // reached FFmpeg and was interpreted as samples, which is a wrong answer rather than a
+            // refusal (audit P0-08).
+            val wanted = if (isAudio) MediaType.Audio else MediaType.Video
+            require(frame.info.type == wanted) {
+                "this encoder encodes $wanted and was given a ${frame.info.type} frame"
+            }
+            // The frame's lease spans the restamp, the conversion and the whole send/drain, so a
+            // concurrent close waits at the frame's lock instead of freeing the AVFrame under the
+            // encoder (audit P0-07, P0-08). Lock order is frame, then the mux lock inside the
+            // drain's writes; nothing takes them the other way round.
+            frame.withNative { native ->
+                restampPts(frame)
+                val converted = if (isAudio) null else conversionFor(native)
+                if (converted != null) {
+                    try {
+                        sendAndDrain(packet, converted)
+                    } finally {
+                        ffkmp_frame_free(converted)
+                    }
+                } else {
+                    sendAndDrain(packet, native)
                 }
-            } else {
-                sendAndDrain(packet, native)
             }
         } finally {
             frame.close()
@@ -483,9 +522,9 @@ internal class EncoderCore(
      * strictly monotonic because both libx264 and muxers reject non-increasing pts.
      */
     private fun restampPts(frame: Frame) {
-        val raw = ffkmp_frame_pts(frame.nativeFrame)
+        val raw = ffkmp_frame_pts(frame.checkedNative)
         val sourceTb = frame.streamTimeBase
-        val sampleCount = if (isAudio) ffkmp_frame_nb_samples(frame.nativeFrame) else 0
+        val sampleCount = if (isAudio) ffkmp_frame_nb_samples(frame.checkedNative) else 0
         var pts = if (raw == FrameInfo.NOPTS) {
             if (lastPts == Long.MIN_VALUE) 0
             else lastPts + stepPastLastPts()
@@ -507,7 +546,7 @@ internal class EncoderCore(
         }
         lastPts = pts
         lastSampleCount = sampleCount
-        ffkmp_frame_set_pts(frame.nativeFrame, pts)
+        ffkmp_frame_set_pts(frame.checkedNative, pts)
     }
 
     /**

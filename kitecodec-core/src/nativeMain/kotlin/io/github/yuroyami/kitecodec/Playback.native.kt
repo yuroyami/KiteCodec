@@ -78,6 +78,12 @@ public actual class Packet internal constructor(
     public actual val timeBase: Rational,
 ) : AutoCloseable {
 
+    /**
+     * Excludes [close] while a read is inside native code, the same per-object rule the JVM actual
+     * has always had. The closed check alone was check-then-use (audit P0-07).
+     */
+    private val lock = kotlinx.atomicfu.locks.SynchronizedObject()
+
     private var closed = false
 
     /**
@@ -93,22 +99,29 @@ public actual class Packet internal constructor(
         check(!closed) { "Packet is closed" }
     }
 
-    public actual val streamIndex: Int get() { checkOpen(); return ffkmp_packet_stream_index(native) }
+    /** The operation lease: the pointer stays live for exactly the duration of [block]. */
+    internal inline fun <R> locked(block: (CPointer<kc_packet>) -> R): R =
+        kotlinx.atomicfu.locks.synchronized(lock) {
+            checkOpen()
+            block(native)
+        }
+
+    public actual val streamIndex: Int get() = locked { ffkmp_packet_stream_index(it) }
 
     /** Presentation timestamp in [timeBase] units, or [FrameInfo.NOPTS] when the container gave none. */
-    public actual val pts: Long get() { checkOpen(); return ffkmp_packet_pts(native) }
+    public actual val pts: Long get() = locked { ffkmp_packet_pts(it) }
 
-    public actual val dts: Long get() { checkOpen(); return ffkmp_packet_dts(native) }
+    public actual val dts: Long get() = locked { ffkmp_packet_dts(it) }
 
     /** Duration in [timeBase] units. 0 when unknown, which is common and not an error. */
-    public actual val duration: Long get() { checkOpen(); return ffkmp_packet_duration(native) }
+    public actual val duration: Long get() = locked { ffkmp_packet_duration(it) }
 
-    public actual val isKeyframe: Boolean get() { checkOpen(); return ffkmp_packet_is_keyframe(native) != 0 }
+    public actual val isKeyframe: Boolean get() = locked { ffkmp_packet_is_keyframe(it) != 0 }
 
-    public actual val sizeBytes: Int get() { checkOpen(); return ffkmp_packet_size(native) }
+    public actual val sizeBytes: Int get() = locked { ffkmp_packet_size(it) }
 
     /** Byte offset in the container, or -1. Useful for progress when timestamps are broken. */
-    public actual val bytePosition: Long get() { checkOpen(); return ffkmp_packet_pos(native) }
+    public actual val bytePosition: Long get() = locked { ffkmp_packet_pos(it) }
 
     public actual val hasPts: Boolean get() = pts != FrameInfo.NOPTS
 
@@ -148,22 +161,20 @@ public actual class Packet internal constructor(
 
     @KiteCodecLowLevelApi
     @Throws(FFmpegException::class)
-    public actual fun copy(): Packet {
-        checkOpen()
-        val cloned = ffkmp_packet_clone(native)
+    public actual fun copy(): Packet = locked { live ->
+        val cloned = ffkmp_packet_clone(live)
             ?: throw FFmpegException(FFmpegError.Internal("packet clone failed"))
-        return Packet(cloned, timeBase)
+        Packet(cloned, timeBase)
     }
 
-    public actual fun copyBytes(): ByteArray {
-        checkOpen()
-        val size = ffkmp_packet_size(native)
-        if (size <= 0) return ByteArray(0)
-        val data = ffkmp_packet_data(native) ?: return ByteArray(0)
-        return data.readBytes(size)
+    public actual fun copyBytes(): ByteArray = locked { live ->
+        val size = ffkmp_packet_size(live)
+        if (size <= 0) return@locked ByteArray(0)
+        val data = ffkmp_packet_data(live) ?: return@locked ByteArray(0)
+        data.readBytes(size)
     }
 
-    actual override fun close() {
+    actual override fun close(): Unit = kotlinx.atomicfu.locks.synchronized(lock) {
         if (closed) return
         closed = true
         ffkmp_packet_free(native)
@@ -323,6 +334,13 @@ public actual class StreamDecoder internal constructor(
     private var closed = false
 
     /**
+     * Excludes [close] while a decode call is inside native code, mirroring the JVM actual: the
+     * closed check alone was check-then-use, and a concurrent close freed the codec context under
+     * a running send or receive (audit P0-07). Lock order is decoder then packet.
+     */
+    private val lock = kotlinx.atomicfu.locks.SynchronizedObject()
+
+    /**
      * True once this decoder has emitted its last frame and will emit no more without a [flush].
      *
      * [receive] returns null for two different reasons and a player must tell them apart: the
@@ -345,10 +363,12 @@ public actual class StreamDecoder internal constructor(
      *         call [receive] until it returns null, then offer this same packet again.
      */
     @Throws(FFmpegException::class)
-    public actual fun send(packet: Packet?): Boolean {
+    public actual fun send(packet: Packet?): Boolean = kotlinx.atomicfu.locks.synchronized(lock) {
         check(!closed) { "StreamDecoder is closed" }
-        packet?.checkOpen()
-        val rc = ffkmp_codecctx_send_packet(codecCtx, packet?.native)
+        requireOwnStream(packet, stream)
+        // The packet's own lease spans the native call, so ITS close waits too.
+        val rc = packet?.locked { live -> ffkmp_codecctx_send_packet(codecCtx, live) }
+            ?: ffkmp_codecctx_send_packet(codecCtx, null)
         return when {
             rc == 0 -> true
             rc == FFErrors.EOF -> true
@@ -370,7 +390,7 @@ public actual class StreamDecoder internal constructor(
      *         the decoder will reuse, and the caller may queue it. Close it exactly once.
      */
     @Throws(FFmpegException::class)
-    public actual fun receive(): Frame? {
+    public actual fun receive(): Frame? = kotlinx.atomicfu.locks.synchronized(lock) {
         check(!closed) { "StreamDecoder is closed" }
         val rc = ffkmp_codecctx_receive_frame(codecCtx, landing)
         if (rc == FFErrors.EOF) {
@@ -405,13 +425,15 @@ public actual class StreamDecoder internal constructor(
      *
      * Clears [isDrained]: the decoder is ready for input again, wherever the caller seeks to.
      */
-    public actual fun flush() {
+    public actual fun flush(): Unit = kotlinx.atomicfu.locks.synchronized(lock) {
         check(!closed) { "StreamDecoder is closed" }
         ffkmp_codecctx_flush(codecCtx)
         isDrained = false
     }
 
-    actual override fun close() {
+    actual override fun close(): Unit = kotlinx.atomicfu.locks.synchronized(lock) {
+        // Under the operation lock, so a close arriving during a send or receive waits for the
+        // call to leave native code before freeing the context it is using (audit P0-07).
         if (closed) return
         closed = true
         ffkmp_frame_free(landing)
@@ -435,10 +457,10 @@ public actual class StreamDecoder internal constructor(
             val codecId = ffkmp_codecpar_codec_id(codecpar)
             val codec = if (decoder == null) {
                 ffkmp_find_decoder_by_id(codecId)
-                    ?: throw FFmpegException(FFmpegError.Internal("No decoder for codec id $codecId"))
+                    ?: throw FFmpegException(FFmpegError.DecoderNotFound(0, "No decoder for codec id $codecId"))
             } else {
                 ffkmp_find_decoder_by_name(decoder.name)
-                    ?: throw FFmpegException(FFmpegError.Internal("No decoder named ${decoder.name}"))
+                    ?: throw FFmpegException(FFmpegError.DecoderNotFound(0, "No decoder named ${decoder.name}"))
             }
             if (decoder != null && ffkmp_codec_id(codec) != codecId) {
                 throw FFmpegException(
@@ -459,7 +481,7 @@ public actual class StreamDecoder internal constructor(
                 // KD-2 (KPKMP 17.10): typed options through the existing av_opt_set funnel,
                 // between context creation and open, exactly where FFmpeg wants them.
                 options?.compile()?.forEach { (key, value) ->
-                    check0(ffkmp_codecctx_set_opt(codecCtx, key, value), "av_opt_set ('${'$'}key')")
+                    check0(ffkmp_codecctx_set_opt(codecCtx, key, value), "av_opt_set ('$key')")
                 }
                 // Window 3 (S2.a): the HWACCEL attach, in the same pre-open moment. A build
                 // without the framework answers ENOSYS here, the typed capability refusal.

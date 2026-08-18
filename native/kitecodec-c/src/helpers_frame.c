@@ -72,6 +72,25 @@ static int kc_sws_cs_for(enum AVColorSpace spc, int height) {
     }
 }
 
+/* Is this format one swscale can actually take on the named side?
+
+   libswscale ASSERTS on a format outside the enum rather than returning an error, so an arbitrary
+   integer arriving through the exported C ABI took the whole process down (audit P0-09). Three
+   gates, in this order: av_pix_fmt_desc_get answers NULL for anything outside the enum, the
+   HWACCEL flag marks a format whose planes are opaque handles rather than pixels, and the
+   sws_isSupported pair is swscale's own verdict on everything that survives. The order matters:
+   the sws predicates take an enum, so nothing reaches them until the descriptor proves the value
+   names a real one. */
+static int kc_pixfmt_convertible(int fmt, int as_output) {
+    const AVPixFmtDescriptor *desc;
+    if (fmt == AV_PIX_FMT_NONE) return 0;
+    desc = av_pix_fmt_desc_get((enum AVPixelFormat)fmt);
+    if (!desc) return 0;
+    if (desc->flags & AV_PIX_FMT_FLAG_HWACCEL) return 0;
+    return as_output ? sws_isSupportedOutput((enum AVPixelFormat)fmt)
+                     : sws_isSupportedInput((enum AVPixelFormat)fmt);
+}
+
 /* Pixel format conversion (e.g. yuv420p → rgb24). Returns a freshly allocated frame the caller
    must av_frame_free, or NULL on failure.
 
@@ -91,16 +110,20 @@ KC_API AVFrame* ffkmp_frame_convert_pixfmt(const AVFrame *src, int dst_fmt) {
     static _Thread_local struct SwsContext *kc_sws_cache = NULL;
     if (!src || src->width <= 0 || src->height <= 0) return NULL;
     if (src->hw_frames_ctx) return NULL;
+    /* Both sides, before anything allocates: an unusable source format asserts inside swscale
+       exactly as an unusable destination one does. */
+    if (!kc_pixfmt_convertible(src->format, 0)) return NULL;
+    if (!kc_pixfmt_convertible(dst_fmt, 1)) return NULL;
+    const AVPixFmtDescriptor *dst_desc = av_pix_fmt_desc_get((enum AVPixelFormat)dst_fmt);
+    int src_full = src->color_range == AVCOL_RANGE_JPEG;
+    int dst_rgb = (dst_desc->flags & AV_PIX_FMT_FLAG_RGB) != 0;
+    int dst_full = dst_rgb ? 1 : src_full;
     kc_sws_cache = sws_getCachedContext(kc_sws_cache,
         src->width, src->height, (enum AVPixelFormat)src->format,
         src->width, src->height, (enum AVPixelFormat)dst_fmt,
         SWS_BILINEAR, NULL, NULL, NULL);
     if (!kc_sws_cache) return NULL;
     {
-        const AVPixFmtDescriptor *dst_desc = av_pix_fmt_desc_get((enum AVPixelFormat)dst_fmt);
-        int src_full = src->color_range == AVCOL_RANGE_JPEG;
-        int dst_rgb = dst_desc != NULL && (dst_desc->flags & AV_PIX_FMT_FLAG_RGB) != 0;
-        int dst_full = dst_rgb ? 1 : src_full;
         const int *coeffs = sws_getCoefficients(kc_sws_cs_for(src->colorspace, src->height));
         /* Refuses (-1) for pure RGB<->RGB conversions, where there is nothing to configure. */
         (void)sws_setColorspaceDetails(kc_sws_cache, coeffs, src_full, coeffs, dst_full,
@@ -118,6 +141,13 @@ KC_API AVFrame* ffkmp_frame_convert_pixfmt(const AVFrame *src, int dst_fmt) {
     /* SAR, colour tags, pts, duration and the rest travel with the picture. copy_props does not
        touch width/height/format/data, so the conversion's own fields stand. */
     if (av_frame_copy_props(dst, src) < 0) { av_frame_free(&dst); return NULL; }
+    /* Then the two tags copy_props gets WRONG for a converted frame, because they describe the
+       source's encoding rather than this output's (audit P1-23). The pixels above were produced
+       full range for an RGB destination, and their matrix is RGB, not the source's YUV one; a
+       consumer trusting the copied tags would convert a second time and crush the range.
+       Primaries and transfer describe the light itself, not the encoding, so they stay. */
+    dst->color_range = dst_full ? AVCOL_RANGE_JPEG : src->color_range;
+    if (dst_rgb) dst->colorspace = AVCOL_SPC_RGB;
     return dst;
 }
 

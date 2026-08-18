@@ -398,6 +398,11 @@ public actual class MediaSource internal constructor(
     /** Native codec parameters of a stream, for stream-copy setups ([MediaSink.addCopyStream]). */
     internal fun codecparOf(stream: StreamInfo): CPointer<kc_codec_par>? {
         check(!isClosed) { "MediaSource is closed" }
+        // The copy path reached this with any index at all, so a StreamInfo belonging to ANOTHER
+        // source with a valid index here copied this file's codec parameters under that file's
+        // time base and metadata (audit P1-11). Every other entry point already canonicalizes; the
+        // one the muxer uses did not.
+        requireOwnStream(stream)
         return ffkmp_fmt_stream(ctx, stream.index.toUInt())?.let { ffkmp_stream_codecpar(it) }
     }
 
@@ -589,7 +594,7 @@ private class DecoderState(
                 ?: throw FFmpegException(FFmpegError.Internal("Stream ${stream.index} missing codecpar"))
             val codecId = ffkmp_codecpar_codec_id(codecpar)
             val codec = ffkmp_find_decoder_by_id(codecId)
-                ?: throw FFmpegException(FFmpegError.Internal("No decoder for codec id $codecId"))
+                ?: throw FFmpegException(FFmpegError.DecoderNotFound(0, "No decoder for codec id $codecId"))
 
             val codecCtx = ffkmp_codecctx_alloc(codec)
                 ?: throw FFmpegException(FFmpegError.Internal("avcodec_alloc_context3 returned NULL"))
@@ -654,24 +659,45 @@ private fun assembleMediaSource(
     unusedKeys: List<String>,
     ioCleanup: (() -> Unit)?,
 ): MediaSource {
-    val infoRc = ffkmp_fmt_find_stream_info(ctx)
-    if (infoRc < 0) {
+    /** Closes the container and the caller's byte source, in that order. */
+    fun unwind() {
         memScoped {
             val pp = alloc<CPointerVar<kc_fmt_ctx>>().also { it.value = ctx }
             if (ioCleanup != null) ffkmp_fmt_close_input_io(pp.ptr) else ffkmp_fmt_close_input(pp.ptr)
         }
         ioCleanup?.invoke()
+    }
+
+    val infoRc = ffkmp_fmt_find_stream_info(ctx)
+    if (infoRc < 0) {
+        unwind()
         throw FFmpegException(avError(infoRc))
     }
 
-    val streams = buildStreams(ctx)
-    val durationFromHeader = ffkmp_fmt_duration(ctx).takeIf { it > 0L }
-    val formatName = ffkmp_fmt_iformat_name(ctx)?.toKString() ?: "unknown"
-    val metadata = readMetadata(ffkmp_fmt_metadata(ctx))
+    // Everything from here to the constructor can throw, and until it was wrapped a probe that had
+    // ALREADY succeeded left the format context and the caller's byte source stranded when reading
+    // the streams, the metadata or the chapters failed (audit P1-02).
+    val streams: List<StreamInfo>
+    val durationFromHeader: Long?
+    val formatName: String
+    val metadata: Map<String, String>
+    val startTime: Long
+    val chapters: List<Chapter>
+    try {
+        streams = buildStreams(ctx)
+        durationFromHeader = ffkmp_fmt_duration(ctx).takeIf { it > 0L }
+        formatName = ffkmp_fmt_iformat_name(ctx)?.toKString() ?: "unknown"
+        metadata = readMetadata(ffkmp_fmt_metadata(ctx))
+        startTime = ffkmp_fmt_start_time(ctx)
+        chapters = readChapters(ctx)
+    } catch (failure: Throwable) {
+        unwind()
+        throw failure
+    }
 
     return MediaSource(
-        ctx, streams, durationFromHeader, formatName, metadata, ffkmp_fmt_start_time(ctx),
-        chapters = readChapters(ctx),
+        ctx, streams, durationFromHeader, formatName, metadata, startTime,
+        chapters = chapters,
         unusedOpenOptions = unusedKeys,
         ioCleanup = ioCleanup,
     )
@@ -756,7 +782,11 @@ internal fun openMediaSourceIo(io: MediaByteSource, options: Map<String, String>
             keys, values, n, unusedVar.ptr,
         )
         if (rc < 0) {
-            stableRef.dispose()
+            // The FULL cleanup, not just the reference: ownership of the byte source transfers to
+            // this function the moment the adapter is built, so an open that fails still owes the
+            // caller a close. Disposing the StableRef alone left the source open for ever
+            // (audit P1-01).
+            cleanup()
             // The byte source's own exception is the truer diagnosis than FFmpeg's EIO shell.
             state.failure?.let { throw FFmpegException(FFmpegError.Internal("custom io failed: ${it.message}")) }
             throw FFmpegException(avError(rc))
@@ -773,7 +803,7 @@ internal fun openMediaSourceIo(io: MediaByteSource, options: Map<String, String>
             ffkmp_dict_free(unusedVar.ptr)
         }
         ctxVar.value ?: run {
-            stableRef.dispose()
+            cleanup()
             throw FFmpegException(FFmpegError.Internal("open_input_io returned NULL"))
         }
     }

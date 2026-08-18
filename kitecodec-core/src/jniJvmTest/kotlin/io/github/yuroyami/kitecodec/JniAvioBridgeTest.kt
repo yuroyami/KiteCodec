@@ -110,4 +110,3 @@ class JniAvioBridgeTest {
         }
         assertTrue(source.closed, "MediaSource.close must close the byte source it owns")
     }
-}

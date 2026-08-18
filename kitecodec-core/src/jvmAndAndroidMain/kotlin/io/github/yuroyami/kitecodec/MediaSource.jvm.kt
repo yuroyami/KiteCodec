@@ -378,7 +378,7 @@ private class DecoderState(val stream: StreamInfo, var context: Long) {
                 val codecId = Internals.codecParId(parameters)
                 codec = Internals.findDecoderById(codecId)
                 if (codec == 0L) {
-                    throw FFmpegException(FFmpegError.Internal("No decoder for codec id $codecId"))
+                    throw FFmpegException(FFmpegError.DecoderNotFound(0, "No decoder for codec id $codecId"))
                 }
                 val context = Internals.codecCtxAlloc(codec)
                 try {
@@ -438,14 +438,22 @@ private fun openMediaSourceIo(io: MediaByteSource, options: Map<String, String>)
     val adapter = JniByteIo(io)
     var unusedKeys: List<String> = emptyList()
     val unusedSlot = arrayOfNulls<String>(1)
-    val context = Internals.fmtOpenInputIo(
-        adapter,
-        io.seekable,
-        io.size ?: -1L,
-        options.keys.toTypedArray().takeIf { it.isNotEmpty() },
-        options.values.toTypedArray().takeIf { it.isNotEmpty() },
-        unusedSlot,
-    )
+    // Ownership of the byte source transfers here, at the adapter, so the open ITSELF has to sit
+    // inside a scope that closes it. A throw from fmtOpenInputIo escaped before the try below
+    // began and left the caller's source open for ever (audit P1-01).
+    val context = try {
+        Internals.fmtOpenInputIo(
+            adapter,
+            io.seekable,
+            io.size ?: -1L,
+            options.keys.toTypedArray().takeIf { it.isNotEmpty() },
+            options.values.toTypedArray().takeIf { it.isNotEmpty() },
+            unusedSlot,
+        )
+    } catch (error: Throwable) {
+        adapter.closeSource()
+        throw error
+    }
     unusedKeys = unusedSlot[0]?.takeIf { it.isNotEmpty() }?.split('\u001f') ?: emptyList()
     try {
         check0(Internals.fmtFindStreamInfo(context), "avformat_find_stream_info")

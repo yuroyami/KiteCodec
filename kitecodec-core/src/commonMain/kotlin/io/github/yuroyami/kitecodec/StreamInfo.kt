@@ -33,6 +33,62 @@ public data class StreamInfo(
     val language: String? get() = metadata["language"]
 
     val title: String? get() = metadata["title"]
+
+    /**
+     * Content equality, including [codecExtradata].
+     *
+     * A data class compares a `ByteArray` by REFERENCE, so two descriptions of the same stream from
+     * two probes of the same file compared unequal purely because each held its own copy of the
+     * same bytes. Anything keyed on a stream, cached by one, or checking that a stream belongs to
+     * a source inherited that instability (audit P1-32).
+     *
+     * The array itself is still the caller's to leave alone: it is exposed directly rather than
+     * copied on every read, and mutating it after construction changes what this compares. Making
+     * the bytes structurally immutable is an API change and belongs with the immutable-descriptor
+     * work, not here.
+     */
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is StreamInfo) return false
+        return index == other.index &&
+            type == other.type &&
+            codec == other.codec &&
+            timeBase == other.timeBase &&
+            durationMicros == other.durationMicros &&
+            bitrateBps == other.bitrateBps &&
+            video == other.video &&
+            audio == other.audio &&
+            metadata == other.metadata &&
+            disposition == other.disposition &&
+            rotationDegrees == other.rotationDegrees &&
+            startTimeMicros == other.startTimeMicros &&
+            extradataEquals(codecExtradata, other.codecExtradata)
+    }
+
+    override fun hashCode(): Int {
+        var result = index
+        result = 31 * result + type.hashCode()
+        result = 31 * result + codec.hashCode()
+        result = 31 * result + timeBase.hashCode()
+        result = 31 * result + durationMicros.hashCode()
+        result = 31 * result + bitrateBps.hashCode()
+        result = 31 * result + video.hashCode()
+        result = 31 * result + audio.hashCode()
+        result = 31 * result + metadata.hashCode()
+        result = 31 * result + disposition.hashCode()
+        result = 31 * result + rotationDegrees
+        result = 31 * result + startTimeMicros.hashCode()
+        result = 31 * result + (codecExtradata?.contentHashCode() ?: 0)
+        return result
+    }
+
+    private companion object {
+        fun extradataEquals(a: ByteArray?, b: ByteArray?): Boolean = when {
+            a === b -> true
+            a == null || b == null -> false
+            else -> a.contentEquals(b)
+        }
+    }
 }
 
 public data class VideoStreamInfo(

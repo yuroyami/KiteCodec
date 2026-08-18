@@ -101,7 +101,7 @@ KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeFmtIsSeekable",     "
 KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeFmtSeekFile",       "(JIJJJI)I",              kj_fmt_seek_file)
 KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeFmtMetadata",       "(J)J",                   kj_fmt_metadata)
 KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeFmtAllocOutput",    "(Ljava/lang/String;Ljava/lang/String;)J", kj_fmt_alloc_output)
-KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeFmtFreeOutput",     "(J)V",                   kj_fmt_free_output)
+KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeFmtFreeOutput",     "(J)I",                   kj_fmt_free_output)
 KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeFmtNewStream",      "(JJ)J",                  kj_fmt_new_stream)
 KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeFmtIoOpen",         "(JLjava/lang/String;)I", kj_fmt_io_open)
 KJ_METHOD("io/github/yuroyami/kitecodec/Internals", "nativeFmtAvoidNegativeTs","(J)V",                  kj_fmt_avoid_negative_ts)
