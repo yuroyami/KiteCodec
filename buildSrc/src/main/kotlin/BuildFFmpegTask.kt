@@ -513,8 +513,29 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
      * treats as one more fallback cause.
      */
     private fun appleHwaccelDecodeArgs(): List<String> = listOf(
-        "--enable-hwaccel=h264_videotoolbox,hevc_videotoolbox",
+        "--enable-hwaccel=h264_videotoolbox,hevc_videotoolbox,av1_videotoolbox",
     )
+
+    /*
+     * AV1 note, and it is a warning as much as a pin (register row PAR-6, and the new row it
+     * opened).
+     *
+     * `av1_videotoolbox` is pinned above so the hwaccel exists on every Apple target that has AV1
+     * silicon (A17 Pro, M3 and newer). configure's `av1_videotoolbox_hwaccel_select="av1_decoder"`
+     * means this also compiles FFmpeg's NATIVE av1 decoder into every Apple build, which is the
+     * cost: hwaccels attach to a decoder, and libdav1d is an external decoder that carries none.
+     *
+     * PINNING IT IS NOT ENOUGH TO GET HARDWARE AV1, and nothing here should be read as claiming
+     * otherwise. `avcodec_find_decoder(AV_CODEC_ID_AV1)` walks `codec_list` in the order
+     * `allcodecs.c` declares, where `ff_libdav1d_decoder` sits ahead of `ff_av1_decoder`. So on
+     * any build that also carries dav1d, which is every KitePlayer consumer build, the lookup
+     * returns libdav1d and VideoToolbox is never offered a format to negotiate.
+     *
+     * The missing half is a decoder chosen BY NAME plus a policy: open native `av1` with
+     * VideoToolbox attached, and fall back to `libdav1d` in software when the hardware refuses.
+     * KiteCodec has no by-name decoder path today. Until it does, this pin only guarantees the
+     * hwaccel is present for that work to use.
+     */
 
     /**
      * One Kotlin/Native cross toolchain: konan's clang, its binutils, the triple and the sysroot.
