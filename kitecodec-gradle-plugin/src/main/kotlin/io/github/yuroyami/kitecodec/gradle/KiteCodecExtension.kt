@@ -12,11 +12,12 @@ import javax.inject.Inject
  *
  * ```kotlin
  * kitecodec {
+ *     cleanCacheOnClean = true         // optional: `clean` also drops the downloaded FFmpeg cache
  *     ffmpeg {
  *         version = "n8.0"
  *         source  = FFmpegSource.Prebuilt
  *         license = FFmpegLicense.LGPL // mandatory: the build fails without an explicit choice
- *         dav1d   = true               // optional: link the dav1d AV1 software decoder
+ *         dav1d   = true               // contract: must MATCH what the FFmpeg tree carries
  *     }
  * }
  * ```
@@ -24,6 +25,17 @@ import javax.inject.Inject
 abstract class KiteCodecExtension @Inject constructor(objects: ObjectFactory) {
 
     val ffmpeg: FFmpegSpec = objects.newInstance(FFmpegSpec::class.java)
+
+    /**
+     * When true, this project's `clean` also runs [the `kitecodecCleanCache` task], dropping every
+     * FFmpeg archive the plugin has downloaded and unpacked into the shared Gradle cache
+     * (`<gradle-user-home>/caches/kitecodec`). Default false, because that cache is shared by
+     * every project on the machine and an ordinary `clean` should not force re-downloads.
+     *
+     * `ffmpeg.localRoot` is NEVER touched either way: that tree belongs to the user, the plugin
+     * only reads it, and a plugin must not delete what it did not create.
+     */
+    abstract val cleanCacheOnClean: Property<Boolean>
 
     fun ffmpeg(action: Action<FFmpegSpec>) {
         action.execute(ffmpeg)
@@ -59,14 +71,21 @@ abstract class FFmpegSpec {
     abstract val repo: Property<String>
 
     /**
-     * Opt into FFmpeg's libdav1d AV1 software decoder (default false). dav1d is an OPTIONAL
-     * native library by owner decision D-7: a build that never asks for it ships not one extra
-     * byte. Asking for it requires an FFmpeg tree that was built with it, today meaning
-     * [FFmpegSource.Local] pointed at a tree produced by KiteCodec's own
-     * `:kitecodec-core:buildFFmpegFor<Target>` with `-Pkitecodec.ffmpeg.dav1d=true` (which
-     * itself wants `buildDav1dFor<Target>` first). [FFmpegSource.Prebuilt] has no dav1d
-     * flavour published yet and fails with exactly that message; [FFmpegSource.System] ignores
-     * the toggle, because a system FFmpeg decides its own decoders.
+     * States whether this build carries FFmpeg's libdav1d AV1 software decoder (default false).
+     *
+     * THIS IS A CONTRACT, NOT A SWITCH, and it is enforced in BOTH directions since 0.0.11.
+     * dav1d is compiled into `libavcodec` when FFmpeg itself is built, so a consumer's link
+     * cannot add it to a tree without it, and cannot subtract it from a tree that carries it.
+     * What the toggle does is refuse a mismatch loudly at configuration time:
+     *
+     * - `true` against a tree WITHOUT dav1d fails, naming the build task that produces one.
+     * - `false` (or unset) against a tree WITH dav1d fails, because linking a decoder the build
+     *   script says it does not want is a silent lie; the fix is one line either way.
+     * - A match links (or omits) `-ldav1d` accordingly.
+     *
+     * [FFmpegSource.Prebuilt] has no dav1d flavour published yet and says so; [FFmpegSource.System]
+     * ignores the toggle, because a system FFmpeg decides its own decoders. dav1d stays an OPTIONAL
+     * library by owner decision D-7: a tree built without it ships not one extra byte.
      */
     abstract val dav1d: Property<Boolean>
 

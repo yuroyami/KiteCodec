@@ -642,6 +642,178 @@ class KiteCodecPluginFunctionalTest {
         }
     }
 
+    /**
+     * The dav1d contract is authoritative BOTH ways since 0.0.11 (owner decision 2026-08-19).
+     * Before it, `if (archive.exists()) linkerOpts("-ldav1d")` meant the tree decided and the
+     * toggle only validated one direction: Synkplay linked dav1d for two releases without one
+     * line of its build saying so, and `dav1d = false` silently linked it anyway.
+     */
+    @Test
+    fun dav1dToggleIsAuthoritativeBothWays() {
+        val repo = requireNotNull(System.getProperty("kitecodec.test.repo"))
+        val pluginVersion = requireNotNull(System.getProperty("kitecodec.test.pluginVersion"))
+        val kotlinVersion = requireNotNull(System.getProperty("kitecodec.test.kotlinVersion"))
+        val projectDir = Files.createTempDirectory("kitecodec-dav1d-contract").toFile()
+        try {
+            writeSettings(projectDir, repo)
+            writeCompleteLocalTree(projectDir, dav1d = true)
+            fun buildFile(dav1dLine: String) = projectDir.resolve("build.gradle.kts").writeText(
+                """
+                import io.github.yuroyami.kitecodec.gradle.FFmpegLicense
+                import io.github.yuroyami.kitecodec.gradle.FFmpegSource
+
+                plugins {
+                    id("org.jetbrains.kotlin.multiplatform") version "$kotlinVersion"
+                    id("io.github.yuroyami.kitecodec") version "$pluginVersion"
+                }
+                kotlin {
+                    macosArm64 { binaries.executable() }
+                }
+                kitecodec {
+                    ffmpeg {
+                        source = FFmpegSource.Local
+                        license = FFmpegLicense.LGPL
+                        localRoot = layout.projectDirectory.dir("local-ffmpeg")
+                        $dav1dLine
+                    }
+                }
+                tasks.register("printLinkerOpts") {
+                    doLast {
+                        tasks.getByName("linkDebugExecutableMacosArm64")
+                        val binary = kotlin.macosArm64().binaries.first { it.name == "debugExecutable" }
+                        println("linkerOpts=" + binary.linkerOpts.joinToString(" "))
+                    }
+                }
+                """.trimIndent(),
+            )
+
+            // Direction one: the tree carries dav1d and the build script does not say so. That
+            // used to link dav1d silently; it must now refuse with the one-line fix in the text.
+            buildFile(dav1dLine = "")
+            val refused = GradleRunner.create()
+                .withProjectDir(projectDir)
+                .withArguments("printLinkerOpts", "--offline", "--stacktrace")
+                .buildAndFail()
+            assertTrue(
+                "carries dav1d" in refused.output &&
+                    "cannot be dropped at link time" in refused.output &&
+                    "dav1d = true" in refused.output,
+                "A dav1d tree with the toggle unset must refuse and name the fix. Output:\n" +
+                    refused.output,
+            )
+
+            // Direction two: stating the truth links it, and kitecodecInfo reports the whole
+            // provisioning decision per target.
+            buildFile(dav1dLine = "dav1d = true")
+            val linked = GradleRunner.create()
+                .withProjectDir(projectDir)
+                .withArguments("printLinkerOpts", "kitecodecInfo", "--offline", "--stacktrace")
+                .build()
+            val opts = linked.output.lineSequence().firstOrNull { it.startsWith("linkerOpts=") }
+            assertTrue(
+                opts != null && "-ldav1d" in opts,
+                "dav1d = true against a dav1d tree must link -ldav1d. Output:\n${linked.output}",
+            )
+            val info = linked.output.lineSequence().firstOrNull { it.startsWith("macos-arm64:") }
+            assertTrue(
+                info != null && "source=Local" in info && "license=lgpl" in info &&
+                    "dav1d=true (links -ldav1d)" in info,
+                "kitecodecInfo must print the per-target provisioning. Output:\n${linked.output}",
+            )
+        } finally {
+            projectDir.deleteRecursively()
+        }
+    }
+
+    /**
+     * The clean lifecycle. `clean` wipes build/ but never touched what the plugin GRABBED into
+     * the shared Gradle cache, so a cleared project silently kept its provisioning. The task is
+     * the visible handle; the opt-in property hooks it into `clean`; and plain `clean` without
+     * the opt-in must NOT delete a cache other projects share.
+     */
+    @Test
+    fun cleanCacheTaskDeletesTheDownloadCacheAndCleanHooksInOnlyWhenAsked() {
+        val repo = requireNotNull(System.getProperty("kitecodec.test.repo"))
+        val pluginVersion = requireNotNull(System.getProperty("kitecodec.test.pluginVersion"))
+        val kotlinVersion = requireNotNull(System.getProperty("kitecodec.test.kotlinVersion"))
+        val projectDir = Files.createTempDirectory("kitecodec-clean-cache").toFile()
+        try {
+            writeSettings(projectDir, repo)
+            writeCompleteLocalTree(projectDir, dav1d = false)
+            projectDir.resolve("build.gradle.kts").writeText(
+                """
+                import io.github.yuroyami.kitecodec.gradle.FFmpegLicense
+                import io.github.yuroyami.kitecodec.gradle.FFmpegSource
+
+                plugins {
+                    id("org.jetbrains.kotlin.multiplatform") version "$kotlinVersion"
+                    id("io.github.yuroyami.kitecodec") version "$pluginVersion"
+                }
+                kotlin { macosArm64() }
+                kitecodec {
+                    cleanCacheOnClean = providers.gradleProperty("hookClean")
+                        .map(String::toBoolean).orElse(false).get()
+                    ffmpeg {
+                        source = FFmpegSource.Local
+                        license = FFmpegLicense.LGPL
+                        localRoot = layout.projectDirectory.dir("local-ffmpeg")
+                    }
+                }
+                val marker = File(gradle.gradleUserHomeDir, "caches/kitecodec/functional-marker.txt")
+                tasks.register("seedCache") {
+                    doLast {
+                        marker.parentFile.mkdirs()
+                        marker.writeText("grabbed")
+                        println("marker=" + marker.absolutePath)
+                    }
+                }
+                tasks.register("assertMarker") {
+                    doLast { println("markerExists=" + marker.exists()) }
+                }
+                """.trimIndent(),
+            )
+            fun run(vararg tasks: String) = GradleRunner.create()
+                .withProjectDir(projectDir)
+                .withArguments(*tasks, "--offline")
+                .build()
+
+            run("seedCache")
+            // Plain clean, no opt-in: the shared cache must survive.
+            run("clean")
+            assertTrue(
+                "markerExists=true" in run("assertMarker").output,
+                "clean without cleanCacheOnClean must not touch the shared cache",
+            )
+            // The explicit task deletes it.
+            run("kitecodecCleanCache")
+            assertTrue(
+                "markerExists=false" in run("assertMarker").output,
+                "kitecodecCleanCache must delete the downloaded-FFmpeg cache",
+            )
+            // Opted in, clean carries it.
+            run("seedCache")
+            run("clean", "-PhookClean=true")
+            assertTrue(
+                "markerExists=false" in run("assertMarker").output,
+                "clean with cleanCacheOnClean = true must also drop the cache",
+            )
+        } finally {
+            projectDir.deleteRecursively()
+        }
+    }
+
+    /** A complete fake Local tree for macos-arm64: the layout check wants the header and six archives. */
+    private fun writeCompleteLocalTree(projectDir: java.io.File, dav1d: Boolean) {
+        val lib = projectDir.resolve("local-ffmpeg/lgpl/macos-arm64/lib").apply { mkdirs() }
+        projectDir.resolve("local-ffmpeg/lgpl/macos-arm64/include/libavformat").apply { mkdirs() }
+            .resolve("avformat.h").writeText("fixture")
+        listOf(
+            "libavcodec.a", "libavformat.a", "libavutil.a",
+            "libavfilter.a", "libswscale.a", "libswresample.a",
+        ).forEach { lib.resolve(it).writeText("fixture") }
+        if (dav1d) lib.resolve("libdav1d.a").writeText("fixture")
+    }
+
     private fun writeSettings(projectDir: java.io.File, repo: String) {
         projectDir.resolve("settings.gradle.kts").writeText(
             """

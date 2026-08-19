@@ -1,6 +1,7 @@
 package io.github.yuroyami.kitecodec.gradle
 
 import org.gradle.api.GradleException
+import org.gradle.api.tasks.Delete
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.provider.Provider
@@ -48,6 +49,47 @@ class KiteCodecPlugin : Plugin<Project> {
         // so they must pick one themselves. Validated in validateLicenseChoice() after evaluation.
         ext.ffmpeg.repo.convention(DEFAULT_RELEASE_REPO)
         ext.ffmpeg.pinnedSha256.convention(emptyMap())
+        ext.cleanCacheOnClean.convention(false)
+
+        // The clean lifecycle. `clean` wipes build/, but nothing ever wiped what this plugin
+        // GRABBED: the downloaded FFmpeg archives live in the shared Gradle cache and outlived
+        // every project clean invisibly. The task below is the visible handle; the extension
+        // property hooks it into `clean` for consumers who want a cleared project to mean
+        // cleared provisioning too. `ffmpeg.localRoot` is deliberately out of reach: the plugin
+        // only reads that tree and must not delete what it did not create.
+        val cleanCache = project.tasks.register("kitecodecCleanCache", Delete::class.java) { task ->
+            task.group = "kitecodec"
+            task.description =
+                "Deletes every FFmpeg archive this plugin downloaded and unpacked " +
+                    "(<gradle-user-home>/caches/kitecodec). Never touches ffmpeg.localRoot."
+            task.delete(project.gradle.gradleUserHomeDir.resolve("caches/kitecodec"))
+        }
+        val cleanCacheOnClean = ext.cleanCacheOnClean
+        project.tasks.matching { it.name == "clean" }.configureEach { clean ->
+            // A provider over the captured Property, so the value is read after the consumer's
+            // kitecodec { } block ran and no extension object rides into the task graph.
+            clean.dependsOn(
+                project.provider {
+                    if (cleanCacheOnClean.get()) listOf(cleanCache) else emptyList()
+                },
+            )
+        }
+
+        // What gets grabbed, built against and linked, per target, on demand. The provisioning
+        // decisions all happen at configuration time across lazy providers, which makes them
+        // invisible; this prints them as one line per target so a consumer can SEE the answer
+        // instead of reverse-engineering it from link failures.
+        val infoLines = mutableListOf<Provider<String>>()
+        project.tasks.register("kitecodecInfo") { task ->
+            task.group = "kitecodec"
+            task.description = "Prints the FFmpeg provisioning per wired Kotlin/Native target."
+            task.doLast {
+                if (infoLines.isEmpty()) {
+                    println("kitecodec: no Kotlin/Native target this plugin recognises is wired.")
+                }
+                infoLines.forEach { line -> println(line.get()) }
+            }
+        }
 
         val wiredTriples = mutableSetOf<KiteCodecTarget>()
         project.plugins.withId("org.jetbrains.kotlin.multiplatform") {
@@ -55,7 +97,7 @@ class KiteCodecPlugin : Plugin<Project> {
             kotlin.targets.withType(KotlinNativeTarget::class.java).configureEach { knTarget ->
                 val triple = KiteCodecTarget.forKonan(knTarget.konanTarget.name) ?: return@configureEach
                 wiredTriples += triple
-                wireTarget(project, ext, knTarget, triple)
+                wireTarget(project, ext, knTarget, triple, infoLines)
             }
         }
 
@@ -311,6 +353,7 @@ class KiteCodecPlugin : Plugin<Project> {
         ext: KiteCodecExtension,
         knTarget: KotlinNativeTarget,
         triple: KiteCodecTarget,
+        infoLines: MutableList<Provider<String>>,
     ) {
         val providers = project.providers
         // Plain values captured at configuration time: configuration-cache safe (no Project in lambdas).
@@ -388,30 +431,44 @@ class KiteCodecPlugin : Plugin<Project> {
                     link.dependsOn(fetch)
                 }
                 binary.linkerOpts("-L${libDir.get().absolutePath}")
-                // The dav1d toggle (owner decision D-7). Presence in the tree is the linking
-                // truth; the toggle is the CONTRACT, so asking for dav1d against a tree that
-                // does not carry it fails here instead of at the final link's symbol soup.
+                // The dav1d contract, enforced BOTH ways (owner decision 2026-08-19, replacing
+                // the earlier presence-is-truth rule). dav1d is compiled INTO libavcodec when
+                // FFmpeg is built, so a consumer link can neither add nor subtract it; what the
+                // toggle can do is refuse a mismatch loudly instead of silently linking a decoder
+                // the build script says it does not want, or silently shipping without one it
+                // says it wants. Silently linking is how Synkplay carried dav1d for two releases
+                // without one line of its build saying so.
                 val dav1dArchive = File(libDir.get(), "libdav1d.a")
-                if (ext.ffmpeg.dav1d.get()) {
-                    when (source.get()) {
-                        FFmpegSource.System -> project.logger.warn(
+                val dav1dRequested = ext.ffmpeg.dav1d.get()
+                when {
+                    source.get() == FFmpegSource.System -> if (dav1dRequested) {
+                        project.logger.warn(
                             "kitecodec: ffmpeg.dav1d = true is ignored with FFmpegSource.System; " +
                                 "a system FFmpeg decides its own decoders.",
                         )
-                        FFmpegSource.Prebuilt -> check(dav1dArchive.exists()) {
+                    }
+                    dav1dRequested && !dav1dArchive.exists() -> when (source.get()) {
+                        FFmpegSource.Prebuilt -> error(
                             "kitecodec: ffmpeg.dav1d = true, but no prebuilt dav1d flavour is " +
                                 "published yet. Use FFmpegSource.Local with a tree produced by " +
                                 "KiteCodec's :kitecodec-core:buildFFmpegFor<Target> under " +
-                                "-Pkitecodec.ffmpeg.dav1d=true (after buildDav1dFor<Target>)."
-                        }
-                        else -> check(dav1dArchive.exists()) {
+                                "-Pkitecodec.ffmpeg.dav1d=true (after buildDav1dFor<Target>).",
+                        )
+                        else -> error(
                             "kitecodec: ffmpeg.dav1d = true, but ${dav1dArchive} does not exist. " +
                                 "Rebuild the local tree with -Pkitecodec.ffmpeg.dav1d=true " +
-                                "(after buildDav1dFor<Target>), or turn the toggle off."
-                        }
+                                "(after buildDav1dFor<Target>), or turn the toggle off.",
+                        )
                     }
+                    !dav1dRequested && dav1dArchive.exists() -> error(
+                        "kitecodec: this FFmpeg tree carries dav1d (${dav1dArchive}) but " +
+                            "ffmpeg.dav1d is not set to true. dav1d is compiled into libavcodec " +
+                            "when FFmpeg itself is built, so it cannot be dropped at link time. " +
+                            "Either state `kitecodec { ffmpeg { dav1d = true } }`, or point " +
+                            "ffmpeg.localRoot at a tree built without dav1d.",
+                    )
+                    dav1dRequested -> binary.linkerOpts("-ldav1d")
                 }
-                if (dav1dArchive.exists()) binary.linkerOpts("-ldav1d")
                 // The libass chain toggle (phase L, decision D-7): links the OPTIONAL rendering
                 // chain from the local tree's deps installs. Local-only by construction; the
                 // check makes a missing chain a sentence, not a page of undefined symbols.
@@ -466,6 +523,33 @@ class KiteCodecPlugin : Plugin<Project> {
                     binary.linkerOpts(PrebuiltLinkFlags.extraLinkerOpts(triple, license.get()))
                 }
             }
+        }
+
+        // One report line for kitecodecInfo, composed lazily so it reads the consumer's final
+        // DSL values. Everything in it is a plain value or a captured provider; the resolution
+        // that can fail (a System source with no FFmpeg found) is folded into text instead of
+        // thrown, because a report task must never be the thing that breaks the build.
+        val versionProp = ext.ffmpeg.version
+        val dav1dProp = ext.ffmpeg.dav1d
+        val libassProp = ext.ffmpeg.libass
+        infoLines += project.providers.provider {
+            val src = source.get()
+            val lic = license.orNull?.id ?: "(license unset)"
+            val from = when (src) {
+                FFmpegSource.Prebuilt -> downloadUrl.get()
+                FFmpegSource.Local -> runCatching { libDir.get().absolutePath }
+                    .getOrElse { "(localRoot unset)" }
+                FFmpegSource.System -> runCatching { libDir.get().absolutePath }
+                    .getOrElse { "(no system FFmpeg found)" }
+                FFmpegSource.BuildFromSource -> "(built inside the KiteCodec checkout)"
+            }
+            val dav1d = when {
+                src == FFmpegSource.System -> "system FFmpeg decides"
+                dav1dProp.get() -> "true (links -ldav1d)"
+                else -> "false"
+            }
+            "${triple.triple}: source=$src license=$lic version=${versionProp.get()} " +
+                "dav1d=$dav1d libass=${libassProp.get()} from=$from"
         }
     }
 

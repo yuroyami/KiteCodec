@@ -11,6 +11,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 The library is source-only for now. Nothing has been published, not `kitecodec-core`, not the Gradle plugin, and not the FFmpeg Release assets the plugin's `FFmpegSource.Prebuilt` default downloads. Release state and the per-target table live in the [README](https://github.com/yuroyami/KiteCodec#release-status) rather than being restated here.
 
 ### Added
+- **`kitecodecCleanCache` and `kitecodec { cleanCacheOnClean = true }`.** `clean` wipes `build/`, but nothing ever wiped what the plugin GRABBED: downloaded FFmpeg archives live in the shared Gradle cache (`<gradle-user-home>/caches/kitecodec`) and outlived every project clean invisibly. The task is the visible handle; the property hooks it into `clean` for consumers who want a cleared project to mean cleared provisioning too. Default off, because the cache is shared by every project on the machine. `ffmpeg.localRoot` is never touched either way: the plugin only reads that tree and must not delete what it did not create.
+- **`kitecodecInfo`.** Prints one line per wired Kotlin/Native target: source, license, version, dav1d, libass, and where the binaries come from (the download URL or the resolved lib directory). The provisioning decisions all happen across lazy providers at configuration time, which made them invisible; this makes them a sentence instead of a link-failure autopsy.
+
 - **A real JVM variant, so a desktop app is one dependency line.** `jvmMain` compiled
   `unsupportedMain` until now, so every JVM consumer got a library whose every entry point threw,
   while the working JNI implementation was compiled only for Android. The jvm target builds the
@@ -89,6 +92,8 @@ The library is source-only for now. Nothing has been published, not `kitecodec-c
 - Maven publishing (vanniktech plugin, Central Portal, signing, Dokka javadoc jar) for `kitecodec-core`; Gradle Plugin Portal metadata + a TestKit functional test for `kitecodec-gradle-plugin`.
 
 ### Changed
+- **BREAKING: the `ffmpeg.dav1d` toggle is now a contract enforced in BOTH directions.** Before, `if (archive.exists()) linkerOpts("-ldav1d")` meant the tree decided and the toggle only validated one way: a consumer whose tree carried dav1d linked it without one line of their build saying so, and `dav1d = false` silently linked it anyway. dav1d is compiled into `libavcodec` when FFmpeg itself is built, so a link-time toggle can neither add nor subtract it; what it now does is refuse a mismatch loudly at task realisation, with the one-line fix in the message. Consumers whose Local tree carries dav1d must state `ffmpeg { dav1d = true }` from this release on.
+
 - **Every public entry point can now refuse to start.** `kc_init` runs first inside 15 C entry points, so a mismatched FFmpeg runtime produces a typed error naming what disagreed instead of undefined behaviour later. Nothing else about the failure behaviour of the Kotlin API changed, and micro version differences never reject.
 - **15 helper symbols were deleted, and the `archived/` directory with them.** The 15 were exported surface that nothing imported; in a versioned library that is a compatibility promise nobody meant to make. `scripts/check-deleted-surface.sh` proves neither repository refers to any of them. Safe because nothing has ever been published from here and there are no tags. The six def files under `nativeInterop/cinterop/archived/` were referenced by no build file and duplicated 176 helper names, which made every later grep report false hits.
 - The vendored FFmpeg build and the plugin now agree on their expected FFmpeg ref by assertion rather than by a comment asking three files to be kept in sync.
