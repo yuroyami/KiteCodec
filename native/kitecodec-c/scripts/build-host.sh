@@ -122,7 +122,7 @@ HELPER_LIB="$LIB/libkitecodec_helpers_host.a"
 INTERPOSE_LIB="$LIB/libkc_interpose_alloc.dylib"
 
 # The seven suites of plan section 15.3. Keep this list and run-c-tests.sh in agreement.
-TESTS="test_ownership test_buffers test_rescale test_strerror_thread test_convert test_identity test_args"
+TESTS="test_ownership test_buffers test_rescale test_strerror_thread test_convert test_identity test_args test_append"
 
 # The doctored copies of the identity gate, one directory per case under tests/fake_headers/. Each is
 # src/kitecodec_abi.c compiled again with that directory FIRST on the include path, so its shim
@@ -144,8 +144,11 @@ compile() {
     shift 2
     echo "  cc  $(basename "$source")"
     # shellcheck disable=SC2086
+    # kitecodec-jni is on the include path for ONE reason: test_append covers kj_append.h, the
+    # JNI layer's bounded string builder (SEC-4). That header carries no jni.h, so it compiles
+    # here, and the JNI tree has no C test rig of its own to put the suite in.
     "$CC" $BASE_FLAGS $VARIANT_FLAGS "${BUILD_DEFINES[@]}" $FF_CFLAGS \
-        -I "$ROOT/include" -I "$ROOT/tests" \
+        -I "$ROOT/include" -I "$ROOT/tests" -I "$ROOT/../kitecodec-jni" \
         "$@" -c "$source" -o "$object"
 }
 

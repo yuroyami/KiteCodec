@@ -183,7 +183,10 @@ public data class AudioFormat(
     override val filterName: String get() = "aformat"
     override fun compile(): String {
         val args = buildList {
-            sampleFormat?.let { add("sample_fmts=$it") }
+            // Escaped like every other value (SEC-5). This one alone was interpolated raw, one
+            // line above a neighbour that did escape, so `AudioFormat(sampleFormat = "fltp,volume=0")`
+            // silently appended a whole extra filter to the graph.
+            sampleFormat?.let { add("sample_fmts=${escapeFilterValue(it)}") }
             sampleRate?.let { add("sample_rates=$it") }
             channelLayout?.let { add("channel_layouts=${escapeFilterValue(it)}") }
         }

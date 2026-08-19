@@ -35,7 +35,7 @@ ROOT="$(cd "$HERE/.." && pwd)"
 BIN="$ROOT/build/$VARIANT/bin"
 
 # The seven suites of plan section 15.3. Keep this list and build-host.sh in agreement.
-ALL_SUITES="test_ownership test_buffers test_rescale test_strerror_thread test_convert test_identity test_args"
+ALL_SUITES="test_ownership test_buffers test_rescale test_strerror_thread test_convert test_identity test_args test_append"
 SUITES="${*:-$ALL_SUITES}"
 
 [ -d "$BIN" ] || {

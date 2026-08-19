@@ -78,6 +78,23 @@ class KdGoldensTest {
     }
 
     @Test
+    fun aSampleFormatCannotAppendAnExtraFilter() {
+        // SEC-5. `sample_fmts=$it` was interpolated raw, one line above a neighbour that escaped,
+        // so a value carrying a comma closed the aformat step and opened a filter of its own.
+        assertEquals(
+            "aformat=sample_fmts='fltp,volume=0'",
+            AudioFormat(sampleFormat = "fltp,volume=0").compile(),
+        )
+        assertEquals(
+            "aformat=sample_fmts='a:b'",
+            AudioFormat(sampleFormat = "a:b").compile(),
+        )
+        // The ordinary value is unchanged, which is why the golden above did not have to move:
+        // escapeFilterValue quotes only values that carry a structural character.
+        assertEquals("aformat=sample_fmts=fltp", AudioFormat(sampleFormat = "fltp").compile())
+    }
+
+    @Test
     fun rawPassesVerbatimAndBlankRefuses() {
         assertEquals("frei0r=glow:0.5", Raw("frei0r=glow:0.5").compile())
         assertFailsWith<IllegalArgumentException> { Raw("  ") }

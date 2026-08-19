@@ -11,6 +11,7 @@
  */
 
 #include "kj_internal.h"
+#include "kj_append.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -52,21 +53,35 @@ JNIEXPORT jstring JNICALL kj_abi_identity_report(JNIEnv *env, jclass cls)
     int off = 0, i;
     (void)cls;
     kc_ffmpeg_report_get(&r);
-    off += snprintf(buf + off, sizeof buf - (size_t)off, "%d\x1f%d\x1f%d\x1f%d",
-                    r.status, r.bypassed, r.abi_major, r.abi_minor);
-    for (i = 0; i < KC_FFMPEG_LIBRARY_COUNT; i++) {
-        off += snprintf(buf + off, sizeof buf - (size_t)off,
-                        "\x1f%d.%d.%d\x1f%d.%d.%d\x1f%d",
-                        r.header_major[i], r.header_minor[i], r.header_micro[i],
-                        r.runtime_major[i], r.runtime_minor[i], r.runtime_micro[i],
-                        r.verdict[i]);
+    /* Every append is checked (SEC-4). Seven of these fields are strings of unbounded length, and
+       the old `off += snprintf(...)` chain would have walked `buf + off` out of the array on the
+       first one that did not fit. A report that does not fit is refused, never truncated: the
+       Kotlin side splits it into a fixed 31 fields, so a short one parses into wrong values
+       instead of failing. */
+    if (kj_append(buf, sizeof buf, &off, "%d\x1f%d\x1f%d\x1f%d",
+                  r.status, r.bypassed, r.abi_major, r.abi_minor) != 0) {
+        kj_throw_handle(env, "the FFmpeg identity report does not fit its buffer");
+        return NULL;
     }
-    snprintf(buf + off, sizeof buf - (size_t)off,
-             "\x1f%d\x1f%d\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s",
-             r.configuration_agrees, r.configuration_disagreed_count,
-             r.configuration_disagreed, r.build_ffmpeg_ref, r.build_license_flavour,
-             r.build_provisioning_dir, r.runtime_version_info, r.runtime_license,
-             r.provisioning);
+    for (i = 0; i < KC_FFMPEG_LIBRARY_COUNT; i++) {
+        if (kj_append(buf, sizeof buf, &off,
+                      "\x1f%d.%d.%d\x1f%d.%d.%d\x1f%d",
+                      r.header_major[i], r.header_minor[i], r.header_micro[i],
+                      r.runtime_major[i], r.runtime_minor[i], r.runtime_micro[i],
+                      r.verdict[i]) != 0) {
+            kj_throw_handle(env, "the FFmpeg identity report does not fit its buffer");
+            return NULL;
+        }
+    }
+    if (kj_append(buf, sizeof buf, &off,
+                  "\x1f%d\x1f%d\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s",
+                  r.configuration_agrees, r.configuration_disagreed_count,
+                  r.configuration_disagreed, r.build_ffmpeg_ref, r.build_license_flavour,
+                  r.build_provisioning_dir, r.runtime_version_info, r.runtime_license,
+                  r.provisioning) != 0) {
+        kj_throw_handle(env, "the FFmpeg identity report does not fit its buffer");
+        return NULL;
+    }
     return kj_string_new(env, buf);
 }
 
