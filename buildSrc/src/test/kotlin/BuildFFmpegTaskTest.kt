@@ -14,6 +14,113 @@ import kotlin.test.assertTrue
 
 class BuildFFmpegTaskTest {
 
+    /**
+     * The staleness check exists because of a MEASURED silence, and this row replays it.
+     *
+     * On 2026-08-19 `av1_videotoolbox` was pinned into the Apple hwaccel list. A day later every
+     * Apple tree on the proving machine still carried the two-hwaccel line, AV1 hardware decode was
+     * therefore impossible, and not one gate anywhere was red. The tree is a dead artifact nothing
+     * rebuilds and nothing compared. The stamp the tree already carried was the evidence; nobody
+     * was reading it.
+     */
+    @Test
+    fun `a tree baked before the av1 hwaccel pin is reported stale, naming the flag`() {
+        val installed =
+            "/scratch/kitecodec-ffmpeg-1/configure --enable-static --disable-shared " +
+                "--enable-videotoolbox --enable-hwaccel='h264_videotoolbox,hevc_videotoolbox' " +
+                "--enable-libdav1d --prefix=/scratch/install"
+        val expected = listOf(
+            "--enable-static", "--disable-shared", "--enable-videotoolbox",
+            "--enable-hwaccel=h264_videotoolbox,hevc_videotoolbox,av1_videotoolbox",
+            "--enable-libdav1d", "--prefix=/somewhere/else",
+        )
+        val reason = BuildFFmpegTask.staleReason(installed, expected)
+        assertTrue(reason != null && "av1_videotoolbox" in reason, "expected the new flag: $reason")
+        assertTrue("no longer asked for" in reason!!, "expected the dropped line too: $reason")
+    }
+
+    /**
+     * The other half, and the half that decides whether anyone leaves the check turned on: one
+     * recipe rendered two ways must compare EQUAL. FFmpeg's own config.log echo quotes list values
+     * and the task does not, `--prefix` is a fresh scratch path every run, and `--cc` carries an
+     * SDK path that moves with every Xcode update. A checker that cried wolf on any of those would
+     * be disabled within a day.
+     */
+    @Test
+    fun `the same recipe rendered by ffmpeg and by the task compares equal`() {
+        val installed =
+            "/tmp/kitecodec-ffmpeg-abc/configure --enable-static " +
+                "--enable-protocol='file,fd,pipe' --enable-hwaccel='h264_videotoolbox' " +
+                "--cc='clang -arch arm64 -isysroot /Xcode17/SDK/iphoneos -mios-version-min=14.0' " +
+                "--prefix=/tmp/kitecodec-ffmpeg-abc/install"
+        val expected = listOf(
+            "--enable-static",
+            "--enable-protocol=file,fd,pipe",
+            "--enable-hwaccel=h264_videotoolbox",
+            "--cc=clang -arch arm64 -isysroot /Xcode26/SDK/iphoneos -mios-version-min=14.0",
+            "--prefix=/var/folders/somewhere/completely/different/install",
+        )
+        assertEquals(
+            null,
+            BuildFFmpegTask.staleReason(installed, expected),
+            "quoting, the scratch prefix and an Xcode SDK move must not read as a recipe change",
+        )
+    }
+
+    /** Drift is caught in BOTH directions: a tree carrying what the recipe dropped is stale too. */
+    @Test
+    fun `a flag the recipe dropped is caught in the other direction`() {
+        val installed = "/s/configure --enable-static --enable-filter=scale,pad --enable-muxer=mp4"
+        val reason = BuildFFmpegTask.staleReason(
+            installed,
+            listOf("--enable-static", "--enable-filter=scale,pad"),
+        )
+        assertTrue(
+            reason != null && "--enable-muxer=mp4" in reason && "no longer asked for" in reason,
+            "a tree still carrying a dropped flag must be stale: $reason",
+        )
+    }
+
+    /**
+     * dav1d is switched by a per-invocation `-P` toggle, so a tree baked with it and a check run
+     * without it are not drifting. Measured before this exclusion: 8 of 8 real trees reported
+     * stale for dav1d alone, which would have made the check red by default and therefore ignored.
+     * The plugin's own dav1d contract guards that flag in both directions instead.
+     */
+    @Test
+    fun `dav1d is excluded, because a toggle is not drift and the plugin already guards it`() {
+        val installed =
+            "/s/configure --enable-static --enable-libdav1d --enable-decoder=libdav1d --pkg-config=pkg-config"
+        assertEquals(
+            null,
+            BuildFFmpegTask.staleReason(installed, listOf("--enable-static")),
+            "a dav1d tree checked without the dav1d toggle must not read as a recipe change",
+        )
+    }
+
+    /** The fingerprint is what the two above rest on, so it is pinned directly too. */
+    @Test
+    fun `the fingerprint keeps capability flags and drops machine paths`() {
+        val fingerprint = BuildFFmpegTask.recipeFingerprint(
+            listOf(
+                "/scratch/configure",
+                "--enable-decoder=h264,hevc",
+                "--enable-hwaccel='a,b'",
+                "--prefix=/scratch/install",
+                "--cc=clang -isysroot /SDK",
+                "--enable-cross-compile",
+                "-arch",
+                "arm64",
+                // Toggle-controlled, guarded by the plugin's dav1d contract instead.
+                "--enable-libdav1d",
+            ),
+        )
+        assertEquals(
+            setOf("--enable-decoder=h264,hevc", "--enable-hwaccel=a,b", "--enable-cross-compile"),
+            fingerprint,
+        )
+    }
+
     @Test
     fun androidArm64AndX64UseTheExactApi24MediaCodecJniPicArguments() {
         val task = ProjectBuilder.builder().build().tasks.create("ffmpeg", BuildFFmpegTask::class.java)

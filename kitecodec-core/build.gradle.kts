@@ -3,6 +3,8 @@ import com.vanniktech.maven.publish.KotlinMultiplatform
 import com.android.build.api.dsl.KotlinMultiplatformAndroidLibraryTarget
 import com.android.build.api.variant.KotlinMultiplatformAndroidComponentsExtension
 import io.github.yuroyami.kitecodec.buildtools.BuildFFmpegTask
+import io.github.yuroyami.kitecodec.buildtools.FFmpegRecipeExpectation
+import io.github.yuroyami.kitecodec.buildtools.CheckFFmpegRecipesTask
 import io.github.yuroyami.kitecodec.buildtools.BundleHostJniTask
 import io.github.yuroyami.kitecodec.buildtools.CompareCodecContractTask
 import io.github.yuroyami.kitecodec.buildtools.CompileKiteCodecCTask
@@ -366,6 +368,9 @@ kotlin {
         }
     }
 
+    val autoBakeFFmpeg = providers.gradleProperty("kitecodec.ffmpeg.autoBake")
+        .map { it.toBoolean() }.orElse(false).get()
+
     knTargetMap.forEach { (target, triple) ->
         val license = if (triple.isAndroid) FFmpegLicense.LGPL else selectedLicense
         val paths = try {
@@ -392,6 +397,20 @@ kotlin {
          * only at the consumer's final link.
          */
         val compileC = tasks.register<CompileKiteCodecCTask>("compileKiteCodecCFor${triple.gradleSuffix}") {
+            /*
+             * Auto-bake (-Pkitecodec.ffmpeg.autoBake=true).
+             *
+             * The FFmpeg tree is a dead artifact: nothing rebuilds it, so a recipe change in
+             * buildSrc and the .a files on disk drift apart in silence. Measured 2026-08-19: the
+             * av1_videotoolbox pin landed and every Apple tree still lacked it a day later with no
+             * gate red. Depending on the bake hands that problem to Gradle, which already knows
+             * when the task's inputs (including its buildSrc implementation classpath) moved, and
+             * skips it as UP-TO-DATE when they did not.
+             *
+             * Opt-in, because the first bake of a missing tree is tens of minutes and nobody wants
+             * that to happen by surprise inside an ordinary build.
+             */
+            if (autoBakeFFmpeg) dependsOn("buildFFmpegFor${triple.gradleSuffix}${license.taskSuffix}")
             konanTargetName.set(target.konanTarget.name)
             sourceDir.set(rootDir.resolve("native/kitecodec-c/src"))
             includeDir.set(rootDir.resolve("native/kitecodec-c/include"))
@@ -638,10 +657,26 @@ kotlin {
     }
 }
 
+/*
+ * checkFFmpegRecipes: is every vendored tree still what this checkout would bake?
+ *
+ * The manual half of what -Pkitecodec.ffmpeg.autoBake=true automates; the reasoning lives on
+ * CheckFFmpegRecipesTask. Each bake feeds it below, and only when this task is actually asked for:
+ * the expectations are gathered inside its own configure block, so an ordinary build never
+ * realises a BuildFFmpegTask to compute them.
+ */
+val checkFFmpegRecipes = tasks.register<CheckFFmpegRecipesTask>("checkFFmpegRecipes") {
+    group = "kitecodec"
+    description =
+        "Fails when a vendored FFmpeg tree was baked with a different recipe than this checkout describes."
+}
+
 // Register the :buildFFmpegFor<Target>[Gpl] tasks. Users run these to populate
 // native-libs/<license>/<target> with static .a files; subsequent Gradle syncs pick them up.
-fun registerBuildFFmpeg(triple: TargetTriple, flavour: FFmpegLicense) =
+fun registerBuildFFmpeg(triple: TargetTriple, flavour: FFmpegLicense) = registerBake(
     tasks.register<BuildFFmpegTask>("buildFFmpegFor${triple.gradleSuffix}${flavour.taskSuffix}") {
+        // Hand this bake's identity and expected recipe to checkFFmpegRecipes. Realised when that
+        // task is, and pure: expectedRecipeFingerprint stubs every toolchain lookup.
         target = triple
         license = flavour
         sourceRef = BuildFFmpegTask.DEFAULT_SOURCE_REF
@@ -663,7 +698,29 @@ fun registerBuildFFmpeg(triple: TargetTriple, flavour: FFmpegLicense) =
         )
         sourceDir.set(rootDir.resolve("vendor/ffmpeg"))
         outputDir.set(rootDir.resolve("native-libs/${flavour.dirName}/${triple.dirName}"))
+    },
+)
+
+/**
+ * Registers [bake] with checkFFmpegRecipes and returns it unchanged.
+ *
+ * `bake.get()` realises the task OBJECT to read its recipe; it creates no dependency and runs no
+ * build. It happens inside the check task's configure block, so the cost is paid only by someone
+ * who asked for the check.
+ */
+fun registerBake(bake: TaskProvider<BuildFFmpegTask>): TaskProvider<BuildFFmpegTask> {
+    checkFFmpegRecipes.configure {
+        val task = bake.get()
+        expectations.add(
+            FFmpegRecipeExpectation(
+                taskName = task.name,
+                treePath = task.outputDir.get().asFile.absolutePath,
+                fingerprint = task.expectedRecipeFingerprint(),
+            ),
+        )
     }
+    return bake
+}
 
 // Register :buildFFmpegForWasm[Simd|Mt] (17.14 X-02). Not a TargetTriple: konan has no wasm
 // target, so none of the cross-toolchain plumbing above applies. Output goes to a sibling of the

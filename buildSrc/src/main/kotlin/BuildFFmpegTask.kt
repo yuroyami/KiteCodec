@@ -226,6 +226,50 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
         }
     }
 
+    /**
+     * The capability fingerprint this task WOULD bake right now, for [staleReason] to compare a
+     * tree's stamp against.
+     *
+     * Every machine-specific input is stubbed rather than resolved: `xcrun`, the NDK lookup and the
+     * konan toolchain all shell out or touch the filesystem, and none of their answers survive
+     * [recipeFingerprint] anyway. Stubbing them is what lets a check run without a toolchain
+     * present, and without the "starting an external process during configuration" refusal that
+     * already bit the system-FFmpeg check.
+     */
+    public fun expectedRecipeFingerprint(): Set<String> {
+        val stubKonan = KonanTools(
+            clang = "clang", toolchainBin = "/stub/bin", runtimeDir = null,
+            ar = "ar", nm = "nm", ranlib = "ranlib", triple = "stub", sysroot = "/stub/sysroot",
+        )
+        val args = configureArguments(
+            target = target.get(),
+            license = license.get(),
+            installPrefix = "/stub/install",
+            sdkPath = { "/stub/sdk" },
+            ndkToolchainBin = { stubNdkToolchainBin() },
+            dav1dRoot = if (enableDav1d.getOrElse(false)) File("/stub/dav1d") else null,
+            konanBin = { stubKonan },
+        )
+        return recipeFingerprint(args)
+    }
+
+    /**
+     * A throwaway NDK bin directory holding empty files named as the three Android profiles expect.
+     *
+     * `androidArgs` asserts its compiler EXISTS, which is a guard worth keeping for real bakes and
+     * an obstacle for a fingerprint that discards every toolchain path anyway. Touching the names
+     * satisfies it without weakening it, and reuses [ANDROID_API] rather than repeating the number,
+     * so an API bump moves this with it instead of leaving a stale literal behind.
+     */
+    private fun stubNdkToolchainBin(): File {
+        val dir = Files.createTempDirectory("kitecodec-recipe-stub-ndk").toFile()
+        dir.deleteOnExit()
+        listOf("aarch64-linux-android", "armv7a-linux-androideabi", "x86_64-linux-android").forEach {
+            dir.resolve("$it$ANDROID_API-clang").apply { createNewFile(); deleteOnExit() }
+        }
+        return dir
+    }
+
     internal fun configureArguments(
         target: TargetTriple,
         license: FFmpegLicense,
@@ -950,6 +994,101 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
 
         /** Stable installed provenance path consumed by packaging and release evidence. */
         const val CONFIGURE_EVIDENCE_RELATIVE_PATH = "lib/kitecodec/ffmpeg-configure.txt"
+
+        /**
+         * Configure keys whose values describe THIS MACHINE rather than the recipe.
+         *
+         * A tree baked on a laptop with Xcode 17 carries a different `--cc` sysroot than the same
+         * recipe baked after an Xcode update, and `--prefix` is a fresh scratch directory on every
+         * single run. Comparing those would make [staleReason] cry wolf constantly, which is worse
+         * than not checking at all: a check nobody believes gets disabled.
+         */
+        private val MACHINE_SPECIFIC_CONFIGURE_KEYS = setOf(
+            "--prefix", "--cc", "--cxx", "--ar", "--nm", "--ranlib", "--strip", "--as", "--ld",
+            "--sysroot", "--pkg-config", "--extra-cflags", "--extra-ldflags", "--extra-libs",
+            "--toolchain", "--cross-prefix", "--host-cc",
+        )
+
+        /**
+         * Flags decided by a per-invocation `-P` toggle rather than by the recipe, and guarded
+         * elsewhere.
+         *
+         * dav1d is switched on with `-Pkitecodec.ffmpeg.dav1d=true` at BAKE time, so a tree baked
+         * with it and a check run without it disagree for a reason that is not drift. Including
+         * these would paint every tree stale for anyone who did not repeat the flag, and a check
+         * that is red by default is a check nobody runs.
+         *
+         * Nothing is lost by the omission: the Gradle PLUGIN's dav1d contract (0.0.11) compares the
+         * tree's `libdav1d.a` against the consumer's declaration in BOTH directions and fails the
+         * build on a mismatch. That is the guard for dav1d; this one is for the recipe.
+         */
+        private val TOGGLE_CONTROLLED_CONFIGURE_FLAGS = setOf(
+            "--enable-libdav1d",
+            "--enable-decoder=libdav1d",
+            "--pkg-config=pkg-config",
+        )
+
+        /**
+         * The CAPABILITY half of a configure command, as a comparable set.
+         *
+         * Everything that decides what the resulting FFmpeg can DO (which decoders, demuxers,
+         * hwaccels, filters and features it carries) and nothing that decides where it was built.
+         * Two renderings of one recipe must produce equal sets, so this also unquotes: FFmpeg's own
+         * `config.log` echo writes `--enable-hwaccel='a,b'` where the task passes
+         * `--enable-hwaccel=a,b`.
+         *
+         * Splitting a `config.log` line on spaces shreds multi-word values such as
+         * `--cc=clang -arch arm64 ...` into fragments; the fragments do not start with `--` and are
+         * dropped, and the `--cc=clang` head is dropped by key, so the shredding cannot invent a
+         * difference.
+         */
+        public fun recipeFingerprint(args: List<String>): Set<String> = args.asSequence()
+            .map { it.trim() }
+            .filter { it.startsWith("--") }
+            .map { arg ->
+                val equals = arg.indexOf('=')
+                if (equals < 0) arg else {
+                    arg.substring(0, equals) + "=" + arg.substring(equals + 1).trim('\'', '"')
+                }
+            }
+            .filterNot { it.substringBefore('=') in MACHINE_SPECIFIC_CONFIGURE_KEYS }
+            .filterNot { '/' in it.substringAfter('=', "") }
+            .filterNot { it in TOGGLE_CONTROLLED_CONFIGURE_FLAGS }
+            .toSet()
+
+        /**
+         * Why an installed tree no longer matches the recipe this checkout describes, or null when
+         * it does.
+         *
+         * THE HOLE THIS CLOSES. A baked tree is a dead artifact: nothing rebuilds it, and no gate
+         * compared it against anything. Measured on 2026-08-19: `av1_videotoolbox` was pinned into
+         * the Apple hwaccel list, every Apple tree on this machine still lacked it a day later, and
+         * not one check anywhere was red. The recipe and the artifact drifted in silence, which is
+         * the same failure shape the register keeps recording in prose.
+         *
+         * [installedConfigureLine] is the tree's own stamp, written by [writeConfigureEvidence].
+         */
+        public fun staleReason(
+            installedConfigureLine: String,
+            expectedArgs: List<String>,
+        ): String? {
+            val installed = recipeFingerprint(installedConfigureLine.split(" "))
+            val expected = recipeFingerprint(expectedArgs)
+            if (installed == expected) return null
+            val dropped = (installed - expected).sorted()
+            val gained = (expected - installed).sorted()
+            return buildString {
+                append("it was baked with a different recipe than this checkout now describes")
+                if (gained.isNotEmpty()) {
+                    append("\n    now asked for, but NOT in the tree: ")
+                    append(gained.joinToString("\n                                  "))
+                }
+                if (dropped.isNotEmpty()) {
+                    append("\n    in the tree, but no longer asked for: ")
+                    append(dropped.joinToString("\n                                          "))
+                }
+            }
+        }
 
         /** Creates the unique hash-free workspace that is the only path configure and make see. */
         internal fun createScratchWorkspace(temporaryRoot: Path): Path {
