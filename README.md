@@ -136,10 +136,10 @@ Stated exactly, because rounding this up is how people lose an afternoon.
 
 | Thing | Status |
 |---|---|
-| `kitecodec-core`, Gradle plugin | published at **0.1.0** |
-| FFmpeg prebuilts, android arm64 / arm32 / x64 | **built by CI** |
-| FFmpeg prebuilts, macos-arm64 / linux-x64 | **blocked**, see below |
-| FFmpeg prebuilts, iOS (any) | **none, and none planned in CI** |
+| `kitecodec-core`, Gradle plugin | source at **0.1.0**, not yet on Maven Central |
+| FFmpeg prebuilts, android arm64 / arm32 / x64 | **published** at `ffmpeg-n8.0` |
+| FFmpeg prebuilts, macos-arm64 / linux-x64 | **failing**, causes below |
+| FFmpeg prebuilts, iOS (any) | **none, and no CI job exists** |
 | FFmpeg prebuilts, mingw-x64, macos-x64, linux-arm64 | none |
 
 **iOS has no prebuilt FFmpeg and the release workflow has no job for it.** An iOS
@@ -148,12 +148,21 @@ consumer must use `FFmpegSource.Local` against a tree built by
 state; it is tracked as the register's provisioning row and is what a real
 `BuildFromSource` mode will fix.
 
-**The desktop blocker.** Homebrew ships svt-av1 and graphite2 as shared libraries
-only, so `-Pkitecodec.ffmpeg.selfContained=true` fails on the macOS runner and
-names exactly those two. A Release asset must link on a machine that has neither
-installed, so the flag cannot simply be dropped. Two real fixes: build those two
-statically inside the workflow, or drop libsvtav1 and harfbuzz's graphite2 backend
-from the desktop profile and lose desktop AV1 encoding.
+**The desktop failures, measured on the 2026-08-21 run rather than predicted.** This
+file previously said both were blocked on Homebrew shipping svt-av1 and graphite2
+shared-only against `-Pkitecodec.ffmpeg.selfContained=true`. The first real run
+falsified that: neither job reached the self-contained check.
+
+- **macos-arm64 fails to COMPILE.** `libavcodec/libsvtav1.c:241` uses
+  `enable_adaptive_quantization`, which the SVT-AV1 on the runner no longer has in
+  `EbSvtAv1EncConfiguration`. FFmpeg n8.0 and current SVT-AV1 disagree about that
+  struct. Fixes: drop `libsvtav1` from the desktop profile and lose desktop AV1
+  *encoding* (decoding is dav1d's job and unaffected), or pin an SVT-AV1 that
+  matches.
+- **linux-x64 fails before FFmpeg is touched:** `No konan dependencies at
+  ~/.konan/dependencies`. The desktop profile uses konan's cross toolchain, which is
+  only downloaded once a Kotlin/Native compile has run, and the workflow builds
+  FFmpeg first. Fix: compile one Kotlin/Native target before the FFmpeg step.
 
 **Local routes that always work.** `FFmpegSource.System` links a Homebrew or apt
 FFmpeg for the host's own desktop target; CI uses this. Inside this repository,
