@@ -502,8 +502,13 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
      */
     private fun desktopBaseArgs(): List<String> = listOf(
         // Extends the dependency-free set in sharedCoreArgs: configure accumulates --enable-encoder.
-        "--enable-encoder=libsvtav1,aac,libmp3lame,libopus",
-        "--enable-libsvtav1",
+        // No libsvtav1. FFmpeg n8.0's libavcodec/libsvtav1.c:241 reads
+        // `enable_adaptive_quantization`, which current SVT-AV1 removed from
+        // EbSvtAv1EncConfiguration, so the desktop build dies at `make` against any recent
+        // release (measured on the 2026-08-21 CI run). The loss is desktop AV1 ENCODING only:
+        // AV1 DECODING is dav1d's job and is untouched. Restore this pair once FFmpeg and
+        // SVT-AV1 agree about that struct again.
+        "--enable-encoder=aac,libmp3lame,libopus",
         "--enable-libvpx", "--enable-libaom",
         "--enable-libmp3lame", "--enable-libopus",
         "--enable-libwebp",

@@ -19,6 +19,10 @@ version="${1:?ffmpeg version, e.g. n8.0}"
 license="${2:?license: lgpl|gpl}"
 triple="${3:?target triple, e.g. macos-arm64}"
 ffmpeg_src="${4:-vendor/ffmpeg}"
+# Optional 5th argument: a flavour suffix such as `dav1d`, which becomes part of the asset name
+# (ffmpeg-<version>-<license>-dav1d-<triple>.zip). The plugin picks the flavour that matches the
+# consumer's `ffmpeg.dav1d` toggle, so both must be published for that toggle to be satisfiable.
+flavour="${5:-}"
 
 src="native-libs/${license}/${triple}"
 
@@ -226,7 +230,7 @@ esac
 
 # --- zip + checksum -------------------------------------------------------------------------
 mkdir -p dist
-asset="ffmpeg-${version}-${license}-${triple}.zip"
+asset="ffmpeg-${version}-${license}${flavour:+-${flavour}}-${triple}.zip"
 dist_abs="$(cd dist && pwd)"
 rm -f "${dist_abs}/${asset}"
 

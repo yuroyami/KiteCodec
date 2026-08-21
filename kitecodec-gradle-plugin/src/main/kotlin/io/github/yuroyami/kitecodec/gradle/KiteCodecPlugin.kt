@@ -367,12 +367,22 @@ class KiteCodecPlugin : Plugin<Project> {
             if (triple.android) providers.provider { FFmpegLicense.LGPL } else ext.ffmpeg.license
         val versionAndLicense = ext.ffmpeg.version.zip(license) { v, l -> v to l }
 
-        val assetName = versionAndLicense.map { (v, l) -> "ffmpeg-$v-${l.id}-${triple.triple}.zip" }
+        // The asset carries the dav1d flavour in its NAME, because dav1d is compiled into
+        // libavcodec and two trees that differ by it are genuinely different binaries. Publishing
+        // one flavour only made `dav1d = true` unsatisfiable from a Release, which is precisely
+        // what the contract check used to say: "no prebuilt dav1d flavour is published yet".
+        val assetName = versionAndLicense.zip(ext.ffmpeg.dav1d) { (v, l), dav1d ->
+            val flavour = if (dav1d) "-dav1d" else ""
+            "ffmpeg-$v-${l.id}$flavour-${triple.triple}.zip"
+        }
         val downloadUrl = ext.ffmpeg.repo.zip(versionAndLicense) { repo, (v, _) ->
             "https://github.com/$repo/releases/download/ffmpeg-$v/"
         }.zip(assetName) { base, asset -> base + asset }
-        val cacheDir: Provider<File> = versionAndLicense.map { (v, l) ->
-            gradleUserHome.resolve("caches/kitecodec/ffmpeg/$v/${l.id}/${triple.triple}")
+        // Keyed by flavour as well: without it, switching `dav1d` would silently reuse the other
+        // flavour's unpacked tree and the link would contradict the build script.
+        val cacheDir: Provider<File> = versionAndLicense.zip(ext.ffmpeg.dav1d) { (v, l), dav1d ->
+            val flavour = if (dav1d) "dav1d" else "plain"
+            gradleUserHome.resolve("caches/kitecodec/ffmpeg/$v/${l.id}/$flavour/${triple.triple}")
         }
 
         val fetch = project.tasks.register(
@@ -449,10 +459,11 @@ class KiteCodecPlugin : Plugin<Project> {
                     }
                     dav1dRequested && !dav1dArchive.exists() -> when (source.get()) {
                         FFmpegSource.Prebuilt -> error(
-                            "kitecodec: ffmpeg.dav1d = true, but no prebuilt dav1d flavour is " +
-                                "published yet. Use FFmpegSource.Local with a tree produced by " +
-                                "KiteCodec's :kitecodec-core:buildFFmpegFor<Target> under " +
-                                "-Pkitecodec.ffmpeg.dav1d=true (after buildDav1dFor<Target>).",
+                            "kitecodec: ffmpeg.dav1d = true, but the downloaded tree carries no " +
+                                "libdav1d.a. A dav1d flavour IS published for the triples this " +
+                                "project releases; ${triple.triple} is either not one of them or " +
+                                "its asset predates the dav1d flavour. Check the release assets, " +
+                                "or use FFmpegSource.Local with a locally built dav1d tree.",
                         )
                         else -> error(
                             "kitecodec: ffmpeg.dav1d = true, but ${dav1dArchive} does not exist. " +
