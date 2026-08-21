@@ -179,9 +179,15 @@ jobs:
 
   # Single point of release creation: downloading every build artifact here and publishing once
   # avoids three jobs racing to create/update the same release tag.
+  # `if: always()` plus a needs-list is deliberate, and it is the difference between a release and
+  # nothing. Homebrew ships svt-av1 and graphite2 SHARED ONLY, so the macOS job fails against
+  # -Pkitecodec.ffmpeg.selfContained=true, and a plain `needs:` made that one failure cancel the
+  # publish and throw away the three Android zips that had already built. Publish what succeeded;
+  # a partially covered release is exactly what the plugin's per-triple asset table describes.
   publish:
     name: publish release
     needs: [android, macos-desktop, linux-desktop]
+    if: always() && needs.android.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -195,6 +201,7 @@ jobs:
           pattern: ffmpeg-*
           path: dist
           merge-multiple: true
+        continue-on-error: true
       # LGPL/GPL source offer: the offer must stay valid for as long as the binaries are
       # distributed, so the exact FFmpeg source is attached to the same release instead of only
       # pointing at ffmpeg.org/GitHub (a URL we don't control). BUILD-INFO.txt inside each zip
