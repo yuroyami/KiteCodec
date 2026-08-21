@@ -29,7 +29,10 @@ object StaticLinkFlags {
      * FFmpeg's anim encoder; libsharpyuv is libwebp's own dependency).
      */
     private val DESKTOP_LGPL = listOf(
-        "SvtAv1Enc", "vpx", "aom", "opus", "mp3lame",
+        // No SvtAv1Enc: the desktop profile stopped passing --enable-libsvtav1 on 2026-08-21
+        // (FFmpeg n8.0 and current SVT-AV1 disagree about EbSvtAv1EncConfiguration), so demanding
+        // its archive made every self-contained desktop build fail on a library nothing links.
+        "vpx", "aom", "opus", "mp3lame",
         "webpmux", "webp", "sharpyuv",
         "ass", "harfbuzz", "freetype", "fribidi",
         // Transitive dependencies of the text stack, and they must come AFTER it: freetype's

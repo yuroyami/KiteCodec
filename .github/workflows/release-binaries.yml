@@ -46,6 +46,10 @@ on:
         description: "FFmpeg source tag to build (e.g. n8.0)"
         required: true
         default: "n8.0"
+      dav1d_version:
+        description: "dav1d source tag (must equal BuildDav1dTask.DEFAULT_SOURCE_REF)"
+        required: true
+        default: "1.5.4"
 
 permissions:
   contents: read
@@ -175,6 +179,9 @@ jobs:
         run: brew install meson ninja nasm
       - name: Clone FFmpeg ${{ github.event.inputs.ffmpeg_version }}
         run: git clone --depth 1 --branch ${{ github.event.inputs.ffmpeg_version }} https://github.com/FFmpeg/FFmpeg.git vendor/ffmpeg
+      - name: Clone dav1d ${{ github.event.inputs.dav1d_version }}
+        if: matrix.dav1d
+        run: git clone --depth 1 --branch ${{ github.event.inputs.dav1d_version }} https://code.videolan.org/videolan/dav1d.git vendor/dav1d
       - name: Build dav1d
         if: matrix.dav1d
         run: ./gradlew :kitecodec-core:buildDav1dFor${{ matrix.task }} --stacktrace
