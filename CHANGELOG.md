@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 **Versioning policy:** KiteCodec is pre-1.0. During 0.x, minor versions may contain breaking API changes; they are called out here when they happen. From 1.0 on, breaking changes only land in major versions.
 
+## [0.1.0] - 2026-08-21
+
+First public release. The repository went public on this date; everything before it
+was private and unpublished.
+
+### Added
+- `LICENSE` (Apache-2.0) and `NOTICE`. The repository had **no licence file at all**
+  until now, which made it legally unusable by anyone. `NOTICE` states the FFmpeg LGPL
+  position and what shipping it obliges you to do.
+
+### Removed
+- **All GPL FFmpeg build tasks and release jobs.** This project builds and publishes the
+  LGPL flavour only. Distributing a GPL-flavoured binary makes the consumer's whole
+  application GPL-3.0, which is not a decision a library should make on their behalf.
+  `FFmpegLicense.GPL` survives as a LABEL for a tree you built yourself (it is a path
+  segment and rides into the identity report); what is gone is KiteCodec producing one.
+  This also deletes register row P0-14, where `portableDesktopArgs()` ignored the licence
+  argument and wrote trees containing no GPL code into directories named `gpl` - a
+  curiosity while private, a false public statement about licensing once published.
+
 ## [Unreleased]
 
 The library is source-only for now. Nothing has been published, not `kitecodec-core`, not the Gradle plugin, and not the FFmpeg Release assets the plugin's `FFmpegSource.Prebuilt` default downloads. Release state and the per-target table live in the [README](https://github.com/yuroyami/KiteCodec#release-status) rather than being restated here.

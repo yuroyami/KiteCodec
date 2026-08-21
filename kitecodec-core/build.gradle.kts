@@ -806,30 +806,32 @@ io.github.yuroyami.kitecodec.buildtools.BuildAssChainTask.SUPPORTED_TARGETS.forE
 TargetTriple.entries.forEach { triple ->
     // LGPL flavour for every target (the default).
     registerBuildFFmpeg(triple, FFmpegLicense.LGPL)
-    // GPL flavour (libx264 / libx265) for desktop targets only; Android and iOS are LGPL-only.
-    if (
-        !triple.isAndroid &&
-        triple !in setOf(TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64, TargetTriple.IosX64)
-    ) {
-        registerBuildFFmpeg(triple, FFmpegLicense.GPL)
-    }
 }
+
+/*
+ * NO GPL BUILD TASKS. Owner decision 2026-08-21, taken as this repository went public.
+ *
+ * This project builds and publishes the LGPL flavour only. `FFmpegLicense.GPL` still EXISTS,
+ * because it labels a tree rather than naming a feature: a consumer who builds their own
+ * x264/x265 FFmpeg needs to say so, since the label is a path segment
+ * (`<localRoot>/gpl/<triple>`) and it rides into the identity report. What is gone is KiteCodec
+ * PRODUCING such a tree.
+ *
+ * Two reasons, and the second is the one that forced the timing:
+ *
+ * 1. Distributing a GPL-flavoured binary makes the consumer's whole application GPL-3.0. That is
+ *    a decision no library should make on a user's behalf by default, and publishing it as a
+ *    Release asset is exactly making it on their behalf.
+ * 2. Register row P0-14: `portableDesktopArgs()` IGNORES the licence argument, so
+ *    `buildFFmpegForLinuxX64Gpl` and its two siblings produced trees containing no GPL code at
+ *    all and wrote them into a directory named `gpl`. Private, that is a curiosity. Published,
+ *    it is a false public statement about licensing. Deleting the tasks deletes the row.
+ */
 
 tasks.register("buildFFmpegForAll") {
     group = "kitecodec"
     description = "Cross-compile the LGPL FFmpeg for every supported Kotlin/Native target."
     dependsOn(TargetTriple.entries.map { "buildFFmpegFor${it.gradleSuffix}" })
-}
-
-tasks.register("buildFFmpegForAllGpl") {
-    group = "kitecodec"
-    description = "Cross-compile the GPL FFmpeg (x264 / x265) for every desktop target."
-    dependsOn(
-        TargetTriple.entries
-            .filterNot { it.isAndroid }
-            .filterNot { it in setOf(TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64, TargetTriple.IosX64) }
-            .map { "buildFFmpegFor${it.gradleSuffix}Gpl" },
-    )
 }
 
 /*

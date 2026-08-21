@@ -15,9 +15,9 @@ with the typed `FFmpegError.Unsupported`. There is no `ffmpeg` process to launch
 **[Documentation](docs/)** · a guide per task, from installing FFmpeg to
 building filter graphs.
 
-> **KiteCodec cannot be consumed from Maven Central today.** Nothing is
-> published, and the FFmpeg release assets the Gradle plugin downloads do not
-> exist. Read [Install](#install) and [Release status](#release-status) first.
+> **Read [Release status](#release-status) before you plan around this.** What is
+> published, what is not, and which targets have prebuilt FFmpeg is stated there
+> exactly, with no rounding up.
 
 ## What you get
 
@@ -76,19 +76,8 @@ decode, no encode, timestamp rescale only.
 
 ## Install
 
-**KiteCodec cannot be consumed from Maven Central today.** The Kotlin/Native,
-JVM, Android, JS and WasmJs variants live in this source tree, but their public binary
-distribution does not. `kitecodec-core` and the Gradle plugin have never been
-published, and the FFmpeg release assets the plugin downloads do not exist. See
-[Release status](#release-status) for the blocker.
-Three local routes work until it is fixed: build inside the KiteCodec checkout,
-build a desktop consumer against `publishToMavenLocal` with `FFmpegSource.System`,
-or point `FFmpegSource.Local` at a complete generated tree. CI uses the System
-route. Local trees and Maven-local artifacts are private evidence, not releases.
-
-When the artifacts exist, the script below is all a consumer writes. Three pieces
-are load-bearing and none is optional: the Gradle plugin, the library dependency,
-and the `license` choice.
+Three pieces are load-bearing and none is optional: the Gradle plugin, the
+library dependency, and the `license` choice.
 
 ```kotlin
 // build.gradle.kts
@@ -98,13 +87,13 @@ import io.github.yuroyami.kitecodec.gradle.FFmpegLicense
 
 plugins {
     kotlin("multiplatform") version "2.4.10"
-    id("io.github.yuroyami.kitecodec") version "0.0.1"
+    id("io.github.yuroyami.kitecodec") version "0.1.0"
 }
 
 kotlin {
     macosArm64()          // or linuxX64 / androidNativeArm64 / Arm32 / X64
     sourceSets.commonMain.dependencies {
-        implementation("io.github.yuroyami:kitecodec-core:0.0.1")
+        implementation("io.github.yuroyami:kitecodec-core:0.1.0")
     }
 }
 
@@ -125,41 +114,110 @@ link then fails on unresolved libav\* symbols. The plugin supplies the binaries
 and adds the `-L<libdir>` flag to every link task. It also keeps FFmpeg's license
 separate from KiteCodec's Apache-2.0 artifact.
 
-**`license` has no default, deliberately.** The two values differ in what you may
-ship.
+**`license` has no default, deliberately**, because the flavour you link decides
+your application's legal obligations and a library must not pick that for you.
+Configuration fails when it is missing and prints the block to paste. Android-only
+projects are exempt: those targets always link the LGPL MediaCodec build.
 
-| Value | Adds | Effect on your app |
+| Value | Contains | Effect on your app |
 |---|---|---|
-| `FFmpegLicense.LGPL` | no libx264, no libx265 | safe for closed source and App Store distribution |
-| `FFmpegLicense.GPL` | libx264, libx265 | makes your whole application GPL-3.0 |
+| `FFmpegLicense.LGPL` | no libx264, no libx265 | safe for closed source and App Store |
+| `FFmpegLicense.GPL` | libx264, libx265 | makes your **whole application** GPL-3.0 |
 
-Configuration fails when the choice is missing, and the error prints the block to
-paste. The plugin also warns when you pick GPL. Android Kotlin/Native-only projects
-are exempt, because those targets always link the LGPL MediaCodec build. The full DSL is in
-[Gradle plugin](docs/gradle-plugin.md).
+**This project builds and publishes the LGPL flavour only.** `GPL` still exists as
+a value because it labels a tree you brought yourself: it is a path segment
+(`<localRoot>/gpl/<triple>`) and it rides into the identity report. Choosing it
+means you built that tree and you own its obligations. There are no GPL build
+tasks and no GPL release assets here.
 
 ### Release status
 
-`FFmpegSource.Prebuilt` is the plugin's default. It downloads from
-`https://github.com/yuroyami/KiteCodec/releases/download/ffmpeg-n8.0/`. **No such
-release exists.** The workflow that would produce it,
-[`release-binaries.yml`](.github/workflows/release-binaries.yml), records its own
-blocker in its header. Homebrew ships svt-av1 and graphite2 as shared libraries
-only, so `-Pkitecodec.ffmpeg.selfContained=true` fails on macOS and names exactly
-those two. The `publish` job declares `needs: [android, macos-desktop,
-linux-desktop]`, so that single failure fails the whole release. The three
-Android zips are lost with it, and they do build. Two fixes are possible: build
-svt-av1 and graphite2 statically from source in that workflow, or drop libsvtav1
-and harfbuzz's graphite2 backend from the desktop profile.
+Stated exactly, because rounding this up is how people lose an afternoon.
 
-Three local paths work until then. `FFmpegSource.System` links a Homebrew or apt
-FFmpeg on the host's own desktop target. Inside this repository,
-`:kitecodec-core:buildFFmpegFor<Target>` cross-compiles a vendored static tree
-into `native-libs/<license>/<target>/`, including the exact normalized configure
-invocation at `lib/kitecodec/ffmpeg-configure.txt`. Packaging accepts only that
-single-line installed evidence. After a private local publication,
-`FFmpegSource.Local` reuses that tree without network access and validates all
-six archives plus headers for every wired target.
+| Thing | Status |
+|---|---|
+| `kitecodec-core`, Gradle plugin | published at **0.1.0** |
+| FFmpeg prebuilts, android arm64 / arm32 / x64 | **built by CI** |
+| FFmpeg prebuilts, macos-arm64 / linux-x64 | **blocked**, see below |
+| FFmpeg prebuilts, iOS (any) | **none, and none planned in CI** |
+| FFmpeg prebuilts, mingw-x64, macos-x64, linux-arm64 | none |
+
+**iOS has no prebuilt FFmpeg and the release workflow has no job for it.** An iOS
+consumer must use `FFmpegSource.Local` against a tree built by
+`:kitecodec-core:buildFFmpegFor<Target>` inside this checkout. That is the honest
+state; it is tracked as the register's provisioning row and is what a real
+`BuildFromSource` mode will fix.
+
+**The desktop blocker.** Homebrew ships svt-av1 and graphite2 as shared libraries
+only, so `-Pkitecodec.ffmpeg.selfContained=true` fails on the macOS runner and
+names exactly those two. A Release asset must link on a machine that has neither
+installed, so the flag cannot simply be dropped. Two real fixes: build those two
+statically inside the workflow, or drop libsvtav1 and harfbuzz's graphite2 backend
+from the desktop profile and lose desktop AV1 encoding.
+
+**Local routes that always work.** `FFmpegSource.System` links a Homebrew or apt
+FFmpeg for the host's own desktop target; CI uses this. Inside this repository,
+`:kitecodec-core:buildFFmpegFor<Target>` cross-compiles a vendored static tree into
+`native-libs/lgpl/<target>/`, recording its exact configure line at
+`lib/kitecodec/ffmpeg-configure.txt`. `FFmpegSource.Local` then reuses that tree
+with no network, validating all six archives plus headers for every wired target.
+`:kitecodec-core:checkFFmpegRecipes` tells you when such a tree has gone stale
+against the current recipe, and `-Pkitecodec.ffmpeg.autoBake=true` re-bakes it
+automatically.
+
+## Gradle plugin API
+
+The complete surface. Everything else in the plugin is validation.
+
+```kotlin
+kitecodec {
+    cleanCacheOnClean = false            // clean also drops the download cache
+    ffmpeg {
+        version   = "n8.0"               // must match what these artifacts were built for
+        source    = FFmpegSource.Prebuilt
+        localRoot = file("...")          // required by Local
+        license   = FFmpegLicense.LGPL   // mandatory, no default
+        dav1d     = false                // AV1 software decoder
+        libass    = false                // ASS subtitle chain
+        repo      = "yuroyami/KiteCodec" // where Prebuilt downloads from
+        pinnedSha256 = mapOf()           // asset filename -> sha256
+    }
+}
+```
+
+| Property | Type | Default | Notes |
+|---|---|---|---|
+| `cleanCacheOnClean` | Boolean | `false` | Makes `clean` run `kitecodecCleanCache`. Root level. |
+| `ffmpeg.version` | String | `n8.0` | Refused if these artifacts were not compiled against it. |
+| `ffmpeg.source` | `FFmpegSource` | `Prebuilt` | `Prebuilt`, `System`, `Local`, `BuildFromSource`. |
+| `ffmpeg.localRoot` | Directory | none | Layout: `<root>/<license>/<triple>/{include,lib}`. |
+| `ffmpeg.license` | `FFmpegLicense` | **none** | Mandatory unless every target is Android. |
+| `ffmpeg.dav1d` | Boolean | `false` | Contract, enforced **both ways**. See below. |
+| `ffmpeg.libass` | Boolean | `false` | Requires `Local` plus a built chain. |
+| `ffmpeg.repo` | String | this repo | `owner/repo` hosting the Release assets. |
+| `ffmpeg.pinnedSha256` | Map | empty | A pinned value overrides the published `.sha256`. |
+
+**Tasks.** `fetchFFmpeg<Target>` (one per wired native target, automatic under
+`Prebuilt`), `kitecodecCleanCache`, `kitecodecInfo`.
+
+**Command-line flags.** `-Pkitecodec.ffmpeg.allowUnverified=true` accepts a
+download whose checksum cannot be verified. `-Pkitecodec.macos.homebrew.prefix`
+points the System source at a non-default Homebrew.
+
+**`FFmpegSource.BuildFromSource` is declared and not implemented.** It throws with
+a message telling you to use `Prebuilt`, `System` or `Local`. Making it real is
+planned work, not a hidden feature.
+
+**The dav1d contract.** dav1d is compiled *into* `libavcodec` when FFmpeg is
+built, so a link-time flag can neither add nor remove it. The toggle therefore
+refuses a mismatch instead of pretending:
+
+| You declare | Tree has dav1d | Result |
+|---|---|---|
+| `true` | yes | links `-ldav1d` |
+| `true` | no | fails, naming the bake task |
+| `false` or unset | yes | fails: state it, or use a tree without it |
+| `false` or unset | no | nothing linked |
 
 ## What it does
 
@@ -345,13 +403,13 @@ MediaCodec is reached only by asking FFmpeg for a named decoder such as
 |---|---|
 | A functional published JVM/Android distribution | Public JVM is an invariant placeholder. JNI-backed Android actuals and an unpublished JVM test harness exist in the local phone proof scope; its macOS dylib is test-only and no Android AAR is public. |
 | A functional Web codec backend | `js` and `wasmJs` are dependency-compatible placeholders only. Capability probes return false and media operations throw typed `FFmpegError.Unsupported`. |
-| A working binary distribution | `FFmpegSource.Prebuilt` cannot work against KiteCodec's own repository. The five triples that should have assets return 404, and the six that never had one fail configuration by design. |
-| `kitecodec-gpl` | It is a README and nothing else: no `build.gradle.kts`, and it is commented out of `settings.gradle.kts`. Reach the GPL flavor through `buildFFmpegFor<Target>Gpl` plus `-Pkitecodec.ffmpeg.license=gpl`, or through `license = FFmpegLicense.GPL`. |
+| Prebuilt FFmpeg for iOS or desktop | `FFmpegSource.Prebuilt` serves the three Android triples. iOS has no CI job at all; macOS and Linux are blocked on the static svt-av1 / graphite2 issue in [Release status](#release-status). Use `Local` or `System` for those. |
+| Any GPL FFmpeg flavour | Removed on 2026-08-21: no GPL build tasks, no GPL release assets. `FFmpegLicense.GPL` survives only as a label for a tree you built yourself. Distributing a GPL binary makes your whole app GPL-3.0, which is not a choice a library should make for you. |
 | A bitstream filter API | Nothing binds `av_bsf_*`, so you cannot give a stream copy one explicitly. The vendored profile does compile the common ones in (`h264_mp4toannexb`, `hevc_mp4toannexb`, `aac_adtstoasc`, `extract_extradata`, `vp9_superframe`), so libavformat can insert them automatically during a copy. |
 | Hardware decode, and zero-copy hwframes | Hardware *encode* does work. `h264_videotoolbox` is verified on macOS arm64. Pass `allow_sw` on VMs and CI runners, where the encoder exists but the hardware block does not. |
 | Direct MediaCodec or Android UI integration | The Android loader attaches its `JavaVM`, then callers may select an FFmpeg-owned named decoder. There is no direct `MediaCodec` API, Compose component, Android View, Android playback or physical-device qualification here. |
 | `https` in the vendored profile | It needs a TLS backend cross-compiled per target. Use `http`, a local file, or link a system FFmpeg. |
-| A stable API | 0.0.1 is pre-1.0, so a minor version may still break you. `explicitApi()` is on, every public declaration states its visibility and return type, and there is now a committed klib dump under `kitecodec-core/api/` that `apiCheck` verifies in every local gate (a macOS CI job is configured to run it too, and has not run yet), so an accidental signature change fails a build. That is a change being visible, not a promise that it will not happen. |
+| A stable API | 0.1.0 is pre-1.0, so a minor version may still break you. `explicitApi()` is on, every public declaration states its visibility and return type, and there is now a committed klib dump under `kitecodec-core/api/` that `apiCheck` verifies in every local gate (a macOS CI job is configured to run it too, and has not run yet), so an accidental signature change fails a build. That is a change being visible, not a promise that it will not happen. |
 
 ## Build and test it here
 
@@ -410,12 +468,16 @@ helpers and the timestamp rules are in [About KiteCodec](docs/about.md).
 
 Apache-2.0 for this code. See [NOTICE](NOTICE) and [CHANGELOG.md](CHANGELOG.md).
 
-The FFmpeg you link carries its own license, and that license decides whether you
-may ship your binary. FFmpeg is LGPL-2.1+ without `--enable-gpl`. With it, and
-because these builds also pass `--enable-version3`, the effective license of a
-GPL-flavor binary is **GPL-3.0**. The default everywhere is LGPL. Do not ship a
-GPL-flavor binary through a channel that forbids GPL code, such as the iOS App
-Store. Full compliance guidance is in [Licensing](docs/licensing.md).
+The FFmpeg you link carries its own licence, and that licence decides whether you
+may ship your binary. **Everything this project builds and publishes is LGPL-2.1+**,
+configured without `--enable-gpl` and without any GPL-only component, which is safe
+for closed source and for the App Store.
+
+Shipping it puts three obligations on you: say your app uses FFmpeg under the LGPL,
+make the corresponding FFmpeg source available, and if you link statically, let your
+users relink against a modified FFmpeg. [NOTICE](NOTICE) states this precisely and
+lists the optional components that carry their own terms. Full guidance is in
+[Licensing](docs/licensing.md).
 
 Part of the Kite family: [KiteCore](https://github.com/yuroyami/KiteCore),
 [KitePDF](https://github.com/yuroyami/KitePDF),

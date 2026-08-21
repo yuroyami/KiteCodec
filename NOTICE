@@ -3,22 +3,65 @@ Copyright 2026 Yuroyami
 
 This product includes software developed as part of the KiteCodec project
 (https://github.com/yuroyami/KiteCodec), licensed under the Apache License,
-Version 2.0.
+Version 2.0. See LICENSE.
 
-Third-party components
-----------------------
-KiteCodec links against FFmpeg's libav* libraries (https://ffmpeg.org),
-licensed under the LGPL-2.1-or-later (or the GPL when built with
---enable-gpl; KiteCodec's GPL build flavour is effectively GPL-3.0, as it
-also sets --enable-version3). FFmpeg is NOT covered by this NOTICE or by
-KiteCodec's Apache-2.0 license.
+--------------------------------------------------------------------------------
+FFmpeg
+--------------------------------------------------------------------------------
 
-Depending on the build flavour, the linked FFmpeg additionally bundles
-third-party codec and rendering libraries (SVT-AV1, libvpx, libaom, libopus,
-libmp3lame, libwebp, FreeType, HarfBuzz, FriBidi, libass, x264/x265 in the
-GPL flavour, and others), each under its own license.
+KiteCodec is a binding. It contains no FFmpeg source, and this repository ships no
+FFmpeg binaries in its git tree. FFmpeg is NOT covered by this NOTICE or by
+KiteCodec's Apache-2.0 licence.
 
-The complete component list, per-component licenses, and the distribution
+The binaries this project provisions (its GitHub Release assets, and the trees its
+build tasks produce) are built from unmodified FFmpeg release sources at the
+version pinned in gradle.properties, configured WITHOUT --enable-gpl and without
+any GPL-only component. They are covered by the GNU Lesser General Public License,
+version 2.1 or later.
+
+  FFmpeg          https://ffmpeg.org
+  LGPL v2.1       https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
+  Source          https://github.com/FFmpeg/FFmpeg at the pinned tag, unmodified
+                  apart from the patches under native/patches/ffmpeg, which are
+                  committed in this repository
+
+As of 0.1.0 this project builds and publishes NO GPL flavour. x264 and x265 are
+never linked here. A tree you build yourself with --enable-gpl is yours, and its
+obligations are yours.
+
+WHAT THIS MEANS IF YOU SHIP AN APP USING KITECODEC
+
+  - The LGPL applies to FFmpeg, not to your application, and not to KiteCodec's
+    own Apache-2.0 code.
+  - State that your application uses FFmpeg under the LGPL, and make the
+    corresponding FFmpeg source available to your users. Linking to the tag above
+    plus any patches you applied satisfies this.
+  - If you link FFmpeg statically, the LGPL additionally requires that your users
+    be able to relink your application against a modified FFmpeg. Publishing your
+    object files, or providing a written offer, are the usual routes.
+
+--------------------------------------------------------------------------------
+Components the linked FFmpeg may bundle
+--------------------------------------------------------------------------------
+
+Which of these are present depends on the build profile and on the optional
+toggles you set. Each carries its own licence, and enabling one adds its
+obligations to yours.
+
+  SVT-AV1         BSD-3-Clause-Clear  https://gitlab.com/AOMediaCodec/SVT-AV1
+  libvpx          BSD-3-Clause        https://chromium.googlesource.com/webm/libvpx
+  libaom          BSD-2-Clause        https://aomedia.googlesource.com/aom
+  libopus         BSD-3-Clause        https://opus-codec.org
+  libmp3lame      LGPL v2             https://lame.sourceforge.io
+  libwebp         BSD-3-Clause        https://developers.google.com/speed/webp
+  dav1d           BSD-2-Clause        https://code.videolan.org/videolan/dav1d
+  libass          ISC                 https://github.com/libass/libass
+  FreeType        FTL or GPLv2        https://freetype.org
+  HarfBuzz        MIT                 https://harfbuzz.github.io
+  FriBidi         LGPL v2.1           https://github.com/fribidi/fribidi
+  zlib            zlib                https://zlib.net
+
+The complete component list, per-component licences, and the distribution
 obligations they carry are documented at:
 https://yuroyami.github.io/KiteCodec/licensing/
 (source: docs/licensing.md in this repository).

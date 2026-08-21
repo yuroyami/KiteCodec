@@ -99,7 +99,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        license: [lgpl, gpl]
+        license: [lgpl]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -142,7 +142,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        license: [lgpl, gpl]
+        license: [lgpl]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
