@@ -41,6 +41,17 @@ abstract class BuildDav1dTask : DefaultTask() {
         description = "Cross-compile dav1d as a static library for the given target."
     }
 
+    /**
+     * The repository root, captured at CONFIGURATION time purely so the error message below can
+     * print a relative clone path.
+     *
+     * It used to read `project.rootDir` inside the task action, which the configuration cache
+     * forbids outright. Nothing caught it because nothing ever ran this task in CI: it failed on
+     * the first run that did, taking both iOS dav1d flavours with it.
+     */
+    @get:Internal
+    abstract val repoRoot: DirectoryProperty
+
     @TaskAction
     fun run() {
         val target = target.get()
@@ -49,7 +60,8 @@ abstract class BuildDav1dTask : DefaultTask() {
         require(source.resolve("meson.build").isFile) {
             "dav1d source not found at $source. Run:\n" +
                 "  git clone --depth 1 --branch ${sourceRef.get()} " +
-                "https://code.videolan.org/videolan/dav1d ${source.relativeTo(project.rootDir)}"
+                "https://code.videolan.org/videolan/dav1d " +
+                source.relativeTo(repoRoot.get().asFile)
         }
         val meson = which("meson") ?: throw GradleException("meson not found. brew install meson ninja nasm")
         val ninja = which("ninja") ?: throw GradleException("ninja not found. brew install ninja")

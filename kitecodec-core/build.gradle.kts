@@ -782,6 +782,8 @@ fun registerBuildDav1d(triple: TargetTriple) =
         sourceRef = io.github.yuroyami.kitecodec.buildtools.BuildDav1dTask.DEFAULT_SOURCE_REF
         sourceDir.set(rootDir.resolve("vendor/dav1d"))
         outputDir.set(rootDir.resolve("native-libs/deps/${triple.dirName}/dav1d"))
+        // Configuration-time capture; the action may not touch Project (config cache).
+        repoRoot.set(rootDir)
     }
 
 // Linux and Windows joined the set when KC-AV1SW went from "demand-driven" to demanded: AV1 files

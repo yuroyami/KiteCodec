@@ -174,8 +174,10 @@ class KiteCodecPluginFunctionalTest {
                 }
 
                 kotlin {
-                    // No prebuilt asset for ios-arm64 in v0.1; source keeps its Prebuilt convention.
-                    iosArm64()
+                    // mingw-x64 has no prebuilt asset and no CI job, and needs a cross-built
+                    // third-party stack before it could have one. ios-arm64 was this row's example
+                    // until 2026-08-21, when iOS got its first release job and stopped qualifying.
+                    mingwX64()
                 }
 
                 kitecodec {
@@ -193,9 +195,9 @@ class KiteCodecPluginFunctionalTest {
                 .buildAndFail()
 
             assertTrue(
-                "ios-arm64" in result.output &&
+                "mingw-x64" in result.output &&
                     "no prebuilt FFmpeg asset" in result.output,
-                "Expected the no-prebuilt-asset error naming ios-arm64. Output:\n${result.output}",
+                "Expected the no-prebuilt-asset error naming mingw-x64. Output:\n${result.output}",
             )
             assertTrue(
                 "FFmpegSource.System" in result.output &&
