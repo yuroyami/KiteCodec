@@ -93,12 +93,11 @@ jobs:
       - name: Fetch prebuilt FFmpeg (all 11 triples, lgpl, dav1d inside)
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            tag="v${{ github.event.inputs.version }}"
-          else
-            tag="${GITHUB_REF_NAME}"
-          fi
-          base="https://github.com/${{ github.repository }}/releases/download/${tag}"
+          # The FFmpeg binaries are keyed to the FFMPEG version, not to KiteCodec's: n8.0 zips are
+          # byte-identical across every KiteCodec release, so ONE canonical `ffmpeg-<version>`
+          # release holds them and every KiteCodec version fetches from it. Storing a copy per
+          # version release cost 127 MB each for nothing (owner call, 2026-08-22).
+          base="https://github.com/${{ github.repository }}/releases/download/ffmpeg-${FFMPEG_VERSION}"
           for triple in macos-arm64 macos-x64 ios-arm64 ios-simulator-arm64 ios-x64 \
                         linux-x64 linux-arm64 mingw-x64 android-arm64 android-arm32 android-x64; do
             asset="ffmpeg-${FFMPEG_VERSION}-lgpl-${triple}.zip"

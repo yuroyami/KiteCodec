@@ -32,7 +32,7 @@ Nothing yet.
 
 ## [0.1.1] - 2026-08-22
 
-**The first release on Maven Central**, and the first anyone can consume with one dependency line. 0.1.0 existed only as source and local artifacts; everything below shipped publicly for the first time in 0.1.1, alongside the `v0.1.1` GitHub release carrying the 11 FFmpeg companion zips (build evidence and the LGPL source offer; consumers need none of them).
+**The first release on Maven Central**, and the first anyone can consume with one dependency line. 0.1.0 existed only as source and local artifacts; everything below shipped publicly for the first time in 0.1.1, The 11 FFmpeg companion zips live on the `ffmpeg-n8.0` release, one canonical copy shared by every KiteCodec version, because they are keyed to the FFmpeg version rather than to this one; they are build evidence and the LGPL source offer, and a consumer needs none of them.
 
 ### Added
 - **The Android AAR is a first-class published artifact** (`kitecodec-core-android`): self-contained `libkitecodec_jni.so` for `arm64-v8a` and `x86_64` with FFmpeg + dav1d statically inside, the LGPL licence payload under `META-INF/licenses/`, and consumer keep rules. Before this, an `androidTarget` consumer resolved the JVM artifact and failed at first load.

@@ -107,7 +107,7 @@ Stated exactly, because rounding this up is how people lose an afternoon.
 | Thing | Status |
 |---|---|
 | `kitecodec-core` with embedded FFmpeg: all 11 native targets, JVM and the Android AAR | **on Maven Central** at **0.1.1** |
-| FFmpeg zips, ALL 11 triples (dav1d inside every one) | **published** on the matching `v0.1.1` release |
+| FFmpeg zips, ALL 11 triples (dav1d inside every one) | **published** on the `ffmpeg-n8.0` release, one canonical copy for every KiteCodec version. Build evidence and the LGPL source offer; consumers need none of them |
 
 **KC-EMBED, 2026-08-22.** The Gradle plugin is deleted and dav1d is mandatory.
 Each native target's cinterop klib embeds the six libav\* archives plus

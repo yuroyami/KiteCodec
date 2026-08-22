@@ -1,6 +1,9 @@
 # Builds the vendored static FFmpeg for EVERY supported target and publishes the zips as assets
-# of the KiteCodec release tag (v<version>). Since KC-EMBED (2026-08-22) there is NO flavour
-# axis: dav1d is mandatory in every build, and no Gradle plugin exists; these zips are the build
+# of the FFMPEG-keyed release tag (ffmpeg-<version>), which is the single canonical home for
+# them: the binaries depend on the FFmpeg version, not on KiteCodec's, so KiteCodec version
+# releases carry release notes only and publish.yml fetches from this tag.
+#
+# Since KC-EMBED (2026-08-22) there is NO flavour axis: dav1d is mandatory in every build, and no Gradle plugin exists; these zips are the build
 # evidence, the LGPL source-offer anchor, and the input the publication pipeline unpacks into
 # native-libs/ before embedding FFmpeg INTO the published klibs. Assets are named
 # `ffmpeg-<ffversion>-<license>-<triple>.zip` (+ `.sha256`).
@@ -28,9 +31,9 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "KiteCodec release tag to attach assets to (e.g. v0.1.0)"
+        description: "Release tag to attach the binaries to. Keep it FFmpeg-keyed (ffmpeg-n8.0): the zips are identical across KiteCodec versions and publish.yml fetches from exactly this tag."
         required: true
-        default: "v0.1.0"
+        default: "ffmpeg-n8.0"
       ffmpeg_version:
         description: "FFmpeg source tag to build (e.g. n8.0)"
         required: true
