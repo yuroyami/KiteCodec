@@ -3,10 +3,13 @@
 #
 #   package-ffmpeg.sh <ffmpeg-version> <license> <target-triple> [ffmpeg-source-dir]
 #
+# dav1d is MANDATORY (KC-EMBED, 2026-08-22): there is no flavour axis; every zip carries
+# lib/libdav1d.a and the packaging refuses a tree without it.
+#
 # Zips the {include,lib} tree at native-libs/<license>/<triple> (NOT the parent dir, so the archive
 # root is {include,lib}, exactly what the kitecodec Gradle plugin's unzip expects) into
-# dist/ffmpeg-<version>-<license>[-<flavour>]-<triple>.zip plus a matching .sha256. Every profile
-# is portable (2026-08-22): nothing is bundled from the runner; the optional dav1d archive is
+# dist/ffmpeg-<version>-<license>-<triple>.zip plus a matching .sha256. Every profile
+# is portable (2026-08-22): nothing is bundled from the runner; the mandatory dav1d archive is
 # already inside the tree, put there by BuildFFmpegTask.
 #
 # LGPL compliance: every zip additionally carries, at the archive root,
@@ -21,10 +24,6 @@ version="${1:?ffmpeg version, e.g. n8.0}"
 license="${2:?license: lgpl|gpl}"
 triple="${3:?target triple, e.g. macos-arm64}"
 ffmpeg_src="${4:-vendor/ffmpeg}"
-# Optional 5th argument: a flavour suffix such as `dav1d`, which becomes part of the asset name
-# (ffmpeg-<version>-<license>-dav1d-<triple>.zip). The plugin picks the flavour that matches the
-# consumer's `ffmpeg.dav1d` toggle, so both must be published for that toggle to be satisfiable.
-flavour="${5:-}"
 
 src="native-libs/${license}/${triple}"
 
@@ -115,23 +114,18 @@ recorded in this file.
 EOF
 
 # --- self-containment check -----------------------------------------------------------------
-# Every profile is PORTABLE (2026-08-22): no third-party stack is linked on any target, so there
-# is nothing to bundle from the runner. The one optional third-party archive, the cross-built
-# dav1d, is copied into the tree's lib/ by BuildFFmpegTask itself. Verify the flavour and the
-# tree agree, both ways: a dav1d-flavoured zip without libdav1d.a would 404 the plugin's dav1d
-# contract at the consumer's link, and a plain zip WITH it would violate it in reverse.
-if [ "${flavour}" = "dav1d" ] && [ ! -f "${src}/lib/libdav1d.a" ]; then
-  echo "::error::flavour is dav1d but ${src}/lib/libdav1d.a is missing (was the tree baked with -Pkitecodec.ffmpeg.dav1d=true?)" >&2
-  exit 1
-fi
-if [ "${flavour}" != "dav1d" ] && [ -f "${src}/lib/libdav1d.a" ]; then
-  echo "::error::flavour is plain but ${src}/lib/libdav1d.a is present; package it as the dav1d flavour or rebake without the switch" >&2
+# Every profile is PORTABLE and dav1d is MANDATORY: the one third-party archive, the cross-built
+# libdav1d.a, is copied into the tree's lib/ by BuildFFmpegTask itself. A zip without it would
+# ship an FFmpeg that plays zero AV1 in software, which is exactly the silent hole KC-EMBED
+# closed, so its absence is fatal here.
+if [ ! -f "${src}/lib/libdav1d.a" ]; then
+  echo "::error::${src}/lib/libdav1d.a is missing; dav1d is mandatory (run buildDav1dFor<Target>, then rebake)" >&2
   exit 1
 fi
 
 # --- zip + checksum -------------------------------------------------------------------------
 mkdir -p dist
-asset="ffmpeg-${version}-${license}${flavour:+-${flavour}}-${triple}.zip"
+asset="ffmpeg-${version}-${license}-${triple}.zip"
 dist_abs="$(cd dist && pwd)"
 rm -f "${dist_abs}/${asset}"
 

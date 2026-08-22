@@ -82,19 +82,28 @@ class BuildFFmpegTaskTest {
     }
 
     /**
-     * dav1d is switched by a per-invocation `-P` toggle, so a tree baked with it and a check run
-     * without it are not drifting. Measured before this exclusion: 8 of 8 real trees reported
-     * stale for dav1d alone, which would have made the check red by default and therefore ignored.
-     * The plugin's own dav1d contract guards that flag in both directions instead.
+     * dav1d stopped being a toggle on 2026-08-22 (KC-EMBED): it is RECIPE, so a tree WITHOUT it
+     * is genuinely stale and must say so. The old exclusion existed only because a -P toggle is
+     * not drift; with no toggle left, the exclusion would hide a real AV1-less tree.
      */
     @Test
-    fun `dav1d is excluded, because a toggle is not drift and the plugin already guards it`() {
-        val installed =
-            "/s/configure --enable-static --enable-libdav1d --enable-decoder=libdav1d --pkg-config=pkg-config"
+    fun `a tree without dav1d is stale, because dav1d is recipe now`() {
+        val installed = "/s/configure --enable-static"
+        val reason = BuildFFmpegTask.staleReason(
+            installed,
+            listOf("--enable-static", "--enable-libdav1d", "--enable-decoder=libdav1d"),
+        )
+        assertTrue(
+            reason != null && "--enable-libdav1d" in reason,
+            "an AV1-less tree must be reported stale naming the dav1d flag: $reason",
+        )
+        // And a tree WITH it, checked against the same recipe, is not drift.
         assertEquals(
             null,
-            BuildFFmpegTask.staleReason(installed, listOf("--enable-static")),
-            "a dav1d tree checked without the dav1d toggle must not read as a recipe change",
+            BuildFFmpegTask.staleReason(
+                "/s/configure --enable-static --enable-libdav1d --enable-decoder=libdav1d --pkg-config=pkg-config",
+                listOf("--enable-static", "--enable-libdav1d", "--enable-decoder=libdav1d"),
+            ),
         )
     }
 
@@ -111,12 +120,15 @@ class BuildFFmpegTaskTest {
                 "--enable-cross-compile",
                 "-arch",
                 "arm64",
-                // Toggle-controlled, guarded by the plugin's dav1d contract instead.
+                // Recipe since KC-EMBED: dav1d flags survive into the fingerprint.
                 "--enable-libdav1d",
             ),
         )
         assertEquals(
-            setOf("--enable-decoder=h264,hevc", "--enable-hwaccel=a,b", "--enable-cross-compile"),
+            setOf(
+                "--enable-decoder=h264,hevc", "--enable-hwaccel=a,b", "--enable-cross-compile",
+                "--enable-libdav1d",
+            ),
             fingerprint,
         )
     }
@@ -134,12 +146,14 @@ class BuildFFmpegTaskTest {
                 target = TargetTriple.AndroidArm64,
                 license = FFmpegLicense.LGPL,
                 installPrefix = "/scratch/install-arm64",
+                dav1dRoot = java.io.File("/stub/dav1d"),
                 ndkToolchainBin = { toolchainBin.toFile() },
             )
             val x64 = task.configureArguments(
                 target = TargetTriple.AndroidX64,
                 license = FFmpegLicense.LGPL,
                 installPrefix = "/scratch/install-x64",
+                dav1dRoot = java.io.File("/stub/dav1d"),
                 ndkToolchainBin = { toolchainBin.toFile() },
             )
 
@@ -181,12 +195,14 @@ class BuildFFmpegTaskTest {
             target = TargetTriple.IosArm64,
             license = FFmpegLicense.LGPL,
             installPrefix = "/scratch/install",
+            dav1dRoot = java.io.File("/stub/dav1d"),
             sdkPath = { "/SDK/${it}" },
         )
         val simulator = task.configureArguments(
             target = TargetTriple.IosSimulatorArm64,
             license = FFmpegLicense.LGPL,
             installPrefix = "/scratch/install",
+            dav1dRoot = java.io.File("/stub/dav1d"),
             sdkPath = { "/SDK/${it}" },
         )
 
@@ -209,6 +225,9 @@ class BuildFFmpegTaskTest {
                 "--target-os=darwin",
                 "--cc=clang -arch arm64 -isysroot /SDK/iphoneos -mios-version-min=14.0",
                 "--enable-cross-compile",
+                "--enable-libdav1d",
+                "--enable-decoder=libdav1d",
+                "--pkg-config=pkg-config",
                 "--prefix=/scratch/install",
             ),
             device,
@@ -224,6 +243,9 @@ class BuildFFmpegTaskTest {
                 "--target-os=darwin",
                 "--cc=clang -arch arm64 -isysroot /SDK/iphonesimulator -mios-simulator-version-min=14.0",
                 "--enable-cross-compile",
+                "--enable-libdav1d",
+                "--enable-decoder=libdav1d",
+                "--pkg-config=pkg-config",
                 "--prefix=/scratch/install",
             ),
             simulator,
@@ -234,6 +256,7 @@ class BuildFFmpegTaskTest {
                 target = TargetTriple.IosArm64,
                 license = FFmpegLicense.GPL,
                 installPrefix = "/must-not-resolve",
+                dav1dRoot = java.io.File("/stub/dav1d"),
                 sdkPath = { error("GPL refusal must happen before SDK resolution") },
             )
         }
@@ -256,6 +279,7 @@ class BuildFFmpegTaskTest {
                 target = target,
                 license = FFmpegLicense.LGPL,
                 installPrefix = "/scratch/install",
+            dav1dRoot = java.io.File("/stub/dav1d"),
                 sdkPath = { "/SDK/${it}" },
             )
             assertFalse("--disable-asm" in args, "$target must build with aarch64 asm")
@@ -268,6 +292,7 @@ class BuildFFmpegTaskTest {
                 target = TargetTriple.IosX64,
                 license = FFmpegLicense.LGPL,
                 installPrefix = "/scratch/install",
+            dav1dRoot = java.io.File("/stub/dav1d"),
                 sdkPath = { "/SDK/${it}" },
             ),
         )
@@ -281,6 +306,7 @@ class BuildFFmpegTaskTest {
             target = target,
             license = FFmpegLicense.LGPL,
             installPrefix = "/scratch/install-${target.dirName}",
+            dav1dRoot = java.io.File("/stub/dav1d"),
             konanBin = ::fakeKonanTools,
         )
 
@@ -351,6 +377,7 @@ class BuildFFmpegTaskTest {
                 target = target,
                 license = FFmpegLicense.LGPL,
                 installPrefix = "/scratch/install",
+            dav1dRoot = java.io.File("/stub/dav1d"),
                 konanBin = ::fakeKonanTools,
             )
             forbidden.forEach { flag ->
@@ -369,6 +396,7 @@ class BuildFFmpegTaskTest {
                     target = target,
                     license = FFmpegLicense.GPL,
                     installPrefix = "/scratch/install",
+            dav1dRoot = java.io.File("/stub/dav1d"),
                     konanBin = ::fakeKonanTools,
                 )
             }
@@ -377,36 +405,28 @@ class BuildFFmpegTaskTest {
     }
 
     @Test
-    fun theDav1dSwitchAddsExactlyItsThreeArgumentsAndOffIsByteIdentical() {
+    fun everyRecipeCarriesTheThreeDav1dArgumentsBeforeThePrefix() {
+        // KC-EMBED (2026-08-22): the dav1d switch is dead, dav1d is recipe. The three arguments
+        // sit immediately before --prefix on every profile.
         val task = ProjectBuilder.builder().build().tasks.create("ffmpeg", BuildFFmpegTask::class.java)
         val root = Files.createTempDirectory("kitecodec-av1sw-args-test")
         try {
             val toolchainBin = root.resolve("toolchains/llvm/prebuilt/test-host/bin").createDirectories()
             toolchainBin.resolve("aarch64-linux-android24-clang").createFile()
-            val deps = root.resolve("deps").toFile()
 
-            val off = task.configureArguments(
+            val arguments = task.configureArguments(
                 target = TargetTriple.AndroidArm64,
                 license = FFmpegLicense.LGPL,
                 installPrefix = "/scratch/install",
+                dav1dRoot = java.io.File("/stub/dav1d"),
                 ndkToolchainBin = { toolchainBin.toFile() },
             )
-            val on = task.configureArguments(
-                target = TargetTriple.AndroidArm64,
-                license = FFmpegLicense.LGPL,
-                installPrefix = "/scratch/install",
-                ndkToolchainBin = { toolchainBin.toFile() },
-                dav1dRoot = deps,
-            )
-            // Off carries not one dav1d trace: D-7's not-one-extra-byte promise starts at
-            // configure. This test compares off against on, so it stays about the switch only.
-            assertTrue(off.none { it.contains("dav1d") }, "dav1d leaked into off: " + off.filter { it.contains("dav1d") })
-            assertTrue(off.none { it == "--pkg-config=pkg-config" }, "pkg-config flag leaked into off")
             assertEquals(
-                off.dropLast(1) +
-                    listOf("--enable-libdav1d", "--enable-decoder=libdav1d", "--pkg-config=pkg-config") +
-                    listOf("--prefix=/scratch/install"),
-                on,
+                listOf(
+                    "--enable-libdav1d", "--enable-decoder=libdav1d", "--pkg-config=pkg-config",
+                    "--prefix=/scratch/install",
+                ),
+                arguments.takeLast(4),
             )
         } finally {
             root.toFile().deleteRecursively()
@@ -414,41 +434,24 @@ class BuildFFmpegTaskTest {
     }
 
     @Test
-    fun theDav1dArchiveAndLinkFlagRideEveryProfileOnlyWhenAsked() {
-        // Android and iOS bundle nothing by default; the switch adds exactly libdav1d.a.
-        assertEquals(emptyList(), StaticLinkFlags.thirdPartyArchives(TargetTriple.AndroidArm64, FFmpegLicense.LGPL))
-        assertEquals(
-            listOf("libdav1d.a"),
-            StaticLinkFlags.thirdPartyArchives(TargetTriple.AndroidArm64, FFmpegLicense.LGPL, dav1d = true),
-        )
-        assertEquals(
-            listOf("libdav1d.a"),
-            StaticLinkFlags.thirdPartyArchives(TargetTriple.IosArm64, FFmpegLicense.LGPL, dav1d = true),
-        )
-        // The link flag leads the list where a static stack exists, and stands alone where not.
-        assertEquals(
-            emptyList(),
-            StaticLinkFlags.forTarget(TargetTriple.AndroidArm64, FFmpegLicense.LGPL, isStaticVendored = true),
-        )
-        assertEquals(
-            listOf("-ldav1d"),
-            StaticLinkFlags.forTarget(TargetTriple.AndroidArm64, FFmpegLicense.LGPL, isStaticVendored = true, dav1d = true),
-        )
-        assertEquals(
-            "-ldav1d",
-            StaticLinkFlags.forTarget(TargetTriple.MacosArm64, FFmpegLicense.LGPL, isStaticVendored = true, dav1d = true).first(),
-        )
-        // Linux and Windows joined the dav1d set later than the phones and are the targets with the
-        // most to gain: they compile no hwaccel at all, so dav1d is their ONLY AV1 route.
-        listOf(TargetTriple.LinuxX64, TargetTriple.LinuxArm64, TargetTriple.MingwX64).forEach { target ->
-            assertTrue(
-                "libdav1d.a" in StaticLinkFlags.thirdPartyArchives(target, FFmpegLicense.LGPL, dav1d = true),
-                "$target must bundle libdav1d.a when asked",
+    fun theDav1dArchiveAndLinkFlagRideEveryProfile() {
+        // Every triple bundles exactly libdav1d.a and leads its link set with -ldav1d: dav1d is
+        // the ONLY software AV1 route FFmpeg has, and since KC-EMBED it is never optional.
+        TargetTriple.entries.forEach { target ->
+            assertEquals(
+                listOf("libdav1d.a"),
+                StaticLinkFlags.thirdPartyArchives(target, FFmpegLicense.LGPL),
+                "$target must bundle exactly libdav1d.a",
             )
             assertEquals(
                 "-ldav1d",
-                StaticLinkFlags.forTarget(target, FFmpegLicense.LGPL, isStaticVendored = true, dav1d = true).first(),
+                StaticLinkFlags.forTarget(target, FFmpegLicense.LGPL, isStaticVendored = true).first(),
                 "$target must name -ldav1d first, before anything that draws from it",
+            )
+            assertEquals(
+                emptyList(),
+                StaticLinkFlags.forTarget(target, FFmpegLicense.LGPL, isStaticVendored = false),
+                "a shared system FFmpeg resolves its own dependencies ($target)",
             )
         }
     }
@@ -477,10 +480,11 @@ class BuildFFmpegTaskTest {
             TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64, TargetTriple.IosX64,
             TargetTriple.MacosArm64, TargetTriple.MacosX64,
         ).forEach { target ->
-            assertEquals(emptyList(), StaticLinkFlags.thirdPartyArchives(target, FFmpegLicense.LGPL))
+            assertEquals(listOf("libdav1d.a"), StaticLinkFlags.thirdPartyArchives(target, FFmpegLicense.LGPL))
             assertEquals(emptyList(), StaticLinkFlags.hostFallbackSearchFlags(target, "/host", true))
             assertEquals(
                 listOf(
+                    "-ldav1d",
                     "-lz",
                     "-framework", "CoreFoundation",
                     "-framework", "CoreMedia",
@@ -717,7 +721,10 @@ class BuildFFmpegTaskTest {
         "--ranlib=/fake/llvm/bin/llvm-ar s",
         "--disable-stripping",
         "--host-cc=/usr/bin/clang",
-    ) + trailing + "--prefix=$installPrefix"
+    ) + trailing + listOf(
+        // dav1d is MANDATORY since KC-EMBED (2026-08-22); every recipe carries these three.
+        "--enable-libdav1d", "--enable-decoder=libdav1d", "--pkg-config=pkg-config",
+    ) + "--prefix=$installPrefix"
 
     private fun expectedAndroidArguments(
         toolchainBin: String,
@@ -744,6 +751,9 @@ class BuildFFmpegTaskTest {
             // Android the MediaCodec wrappers are the only AV1 route this profile can offer.
             "--enable-decoder=h264_mediacodec,hevc_mediacodec,av1_mediacodec,vp9_mediacodec,vp8_mediacodec",
             "--enable-zlib",
-        ) + suffix + "--prefix=$installPrefix"
+        ) + suffix + listOf(
+            // dav1d is MANDATORY since KC-EMBED (2026-08-22); every recipe carries these three.
+            "--enable-libdav1d", "--enable-decoder=libdav1d", "--pkg-config=pkg-config",
+        ) + "--prefix=$installPrefix"
     }
 }

@@ -83,14 +83,13 @@ kotlin {
      * STABLE: the targets with prebuilt FFmpeg Release assets and CI coverage:
      * macosArm64, linuxX64, androidNativeArm64/Arm32/X64. JVM, JS and Wasm are always registered;
      * they are portable API variants and do not alter which FFmpeg-backed native targets ship.
-     * EXPERIMENTAL: builds locally (given an FFmpeg tree) but is NOT part of the published set:
-     * ios*, macosX64, linuxArm64, mingwX64.
+     * Since KC-EMBED (2026-08-22) ALL 11 native triples are part of the published set: every
+     * one has a CI-proven FFmpeg tree, and FFmpeg rides inside each klib.
      *
-     *   -Pkitecodec.stableTargetsOnly=true  Register only the stable native targets. Publications
-     *                                        also contain the always-present JVM/JS/Wasm variants.
-     *                                        Default false:
-     *                                        local dev and the CI matrix (incl. the Windows/mingw
-     *                                        job) see every target.
+     *   -Pkitecodec.stableTargetsOnly=true  OPTIONAL narrowing to the original stable set
+     *                                        (macosArm64, linuxX64, android x3). No longer a
+     *                                        publish requirement. Default false:
+     *                                        local dev, CI and publication see every target.
      *   -Pkitecodec.hostTargetsOnly=true    Register only THIS host's own native desktop target
      *                                        (macosArm64 on an arm64 Mac, linuxX64 on x64 Linux),
      *                                        plus the always-present JVM/JS/Wasm variants.
@@ -161,41 +160,11 @@ kotlin {
                 "be used with publishToMavenLocal; remote publication is forbidden.",
         )
     }
-    if (
-        corePublishRequested &&
-        !stableTargetsOnly &&
-        !(hostTargetsOnly && onlyLocalPublishes) &&
-        !(applePhoneTargetsOnly && onlyLocalPublishes) &&
-        !(phoneTargetsOnly && onlyLocalPublishes)
-    ) {
-        throw GradleException(
-            """
-            |kitecodec-core: publishing requested (${corePublishTaskNames.joinToString()}) without the release target scope.
-            |
-            |Publishing kitecodec-core requires BOTH:
-            |  1. -Pkitecodec.stableTargetsOnly=true
-            |     v0.1 publishes the stable native target set (macosArm64, linuxX64,
-            |     androidNativeArm64/Arm32/X64) plus the always-present JVM/JS/Wasm variants.
-            |     Experimental native targets (ios*, macosX64, linuxArm64, mingwX64) must not leak
-            |     into publications.
-            |  2. an FFmpeg tree present for EVERY configured target.
-            |     While publishing, a missing FFmpeg build is a hard failure instead of the usual
-            |     skip-with-warning (kitecodec.requireAllTargets is implied true), so a publication
-            |     can never silently drop a target.
-            |
-            |Note: `./gradlew publishToMavenLocal` from the root hits this guard too because it
-            |includes kitecodec-core's publications. Satisfy it the same way: pass
-            |-Pkitecodec.stableTargetsOnly=true with all five stable FFmpeg trees present under
-            |native-libs/lgpl/ (or system installs for the desktop ones). For a host-only local
-            |smoke publish, -Pkitecodec.hostTargetsOnly=true is accepted for publishToMavenLocal.
-            |On an arm64 Mac, -Pkitecodec.applePhoneTargetsOnly=true is accepted only for a local
-            |macOS/iPhone/simulator proof and only with publishToMavenLocal.
-            |-Pkitecodec.phoneTargetsOnly=true is accepted only for the one local
-            |macOS/iPhone/simulator/Android phone-superset publication; JVM/JS/Wasm are included
-            |in every scope.
-            """.trimMargin(),
-        )
-    }
+    // KC-EMBED (2026-08-22): the FULL 11-target set IS the release set. FFmpeg rides inside
+    // every native klib, all 11 triples have CI-proven trees, and the every-target-tree hard
+    // fail below (requireAllTargets implied true while publishing) is what keeps a publication
+    // from silently dropping one. The old stableTargetsOnly gate survives only as an optional
+    // narrowing flag; it is no longer a publish requirement.
 
     fun requireArm64Mac(selector: String) {
         val osName = System.getProperty("os.name").lowercase()
@@ -304,7 +273,7 @@ kotlin {
             put(androidNativeArm32(), TargetTriple.AndroidArm32)
             put(androidNativeX64(), TargetTriple.AndroidX64)
             if (!stableTargetsOnly) {
-                // EXPERIMENTAL targets (not published in v0.1).
+                // The rest of the 11-triple set (published since KC-EMBED).
                 put(macosX64(), TargetTriple.MacosX64)
                 put(iosArm64(), TargetTriple.IosArm64)
                 put(iosSimulatorArm64(), TargetTriple.IosSimulatorArm64)
@@ -458,7 +427,13 @@ kotlin {
             // AVPacket etc. as a SINGLE Kotlin type across every binding (each cinterop module
             // otherwise generates its own duplicate copy of identical C types).
             create("ffmpeg") {
-                defFile(project.file("src/nativeInterop/cinterop/ffmpeg.def"))
+                // KC-EMBED (2026-08-22): the VENDORED def embeds the six libav* archives plus
+                // libdav1d into the cinterop klib (the same `staticLibraries` slot libkitecodec.a
+                // has always ridden), and carries the platform linker flags, so a consumer needs
+                // nothing but the dependency line. The SYSTEM def is the dev fallback for a host
+                // with only a shared brew/apt FFmpeg: nothing to embed, plain -lav* flags.
+                val defName = if (paths.isStaticVendored) "ffmpeg.def" else "ffmpeg-system.def"
+                defFile(project.file("src/nativeInterop/cinterop/$defName"))
                 includeDirs.allHeaders(paths.includeDir)
                 extraOpts("-libraryPath", paths.libDir)
                 compilerOpts("-I${paths.includeDir}")
@@ -505,20 +480,22 @@ kotlin {
             inputs.files(compileC.map { c -> c.outputDir.file(CompileKiteCodecCTask.ARCHIVE_NAME) })
                 .withPropertyName("kiteCodecCArchive")
                 .withPathSensitivity(PathSensitivity.NAME_ONLY)
+            // The embedded FFmpeg archives need the same treatment for the same measured reason
+            // (see the block comment above): cinterop's own up-to-date check covers headers, not
+            // libraries the def names, so a rebaked tree would otherwise publish a STALE embed.
+            if (paths.isStaticVendored) {
+                inputs.files(fileTree(paths.libDir) { include("*.a") })
+                    .withPropertyName("kiteCodecFFmpegArchives")
+                    .withPathSensitivity(PathSensitivity.NAME_ONLY)
+            }
         }
         target.binaries.all {
             linkerOpts("-L${paths.libDir}")
-            // ffmpeg.def names only the six libav* archives. That is enough for a shared/system
-            // FFmpeg, whose dylibs resolve their own dependencies, but a STATIC libavcodec.a
-            // resolves nothing, so every third-party archive it draws symbols from must be named
-            // here too or the final link fails on svt_av1_*, vpx_*, ass_* and friends.
-            // The dav1d switch (D-7) is tree-presence truth: the flag appears exactly when the
-            // vendored tree carries the archive BuildFFmpegTask bundled into it.
-            val hasDav1d = file("${paths.libDir}/libdav1d.a").exists()
-            linkerOpts(StaticLinkFlags.forTarget(triple, license, paths.isStaticVendored, dav1d = hasDav1d))
-            // Searched AFTER the vendored lib/, so a bundled archive always wins; this only
-            // catches dependencies the host package manager ships shared-only (see StaticLinkFlags).
-            linkerOpts(StaticLinkFlags.hostFallbackSearchFlags(triple, homebrewPrefix, paths.isStaticVendored))
+            // A STATIC libavcodec.a resolves nothing itself: dav1d (mandatory since KC-EMBED)
+            // and the platform libraries/frameworks must be named. Since the embedded def these
+            // flags also ride the klib for consumers; naming them here keeps this project's own
+            // test binaries correct even under the system def.
+            linkerOpts(StaticLinkFlags.forTarget(triple, license, paths.isStaticVendored))
             if (!paths.isStaticVendored && triple in setOf(TargetTriple.MacosArm64, TargetTriple.MacosX64)) {
                 // Embed Homebrew rpath for dev convenience; release builds use static vendored libs.
                 linkerOpts("-rpath", paths.libDir)
@@ -686,10 +663,9 @@ fun registerBuildFFmpeg(triple: TargetTriple, flavour: FFmpegLicense) = register
         requireSelfContained.set(
             providers.gradleProperty("kitecodec.ffmpeg.selfContained").map { it.toBoolean() }.orElse(false),
         )
-        // The optional dav1d switch (D-7): -Pkitecodec.ffmpeg.dav1d=true after buildDav1dFor<Target>.
-        enableDav1d.set(
-            providers.gradleProperty("kitecodec.ffmpeg.dav1d").map { it.toBoolean() }.orElse(false),
-        )
+        // dav1d is MANDATORY since KC-EMBED (2026-08-22): one bake task produces a complete
+        // tree, so the dav1d cross-build always runs (UP-TO-DATE when already built).
+        dependsOn("buildDav1dFor${triple.gradleSuffix}")
         sourceDir.set(rootDir.resolve("vendor/ffmpeg"))
         outputDir.set(rootDir.resolve("native-libs/${flavour.dirName}/${triple.dirName}"))
     },
@@ -855,6 +831,19 @@ mavenPublishing {
                 url = "https://www.apache.org/licenses/LICENSE-2.0.txt"
                 distribution = "repo"
             }
+            // KC-EMBED (2026-08-22): the native klibs and the JVM/Android native libraries EMBED
+            // compiled FFmpeg, so the artifact redistributes LGPL bytes and must say so. The
+            // complete corresponding source is attached to the matching v-tag GitHub release.
+            license {
+                name = "GNU Lesser General Public License, Version 2.1 or later (bundled FFmpeg)"
+                url = "https://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt"
+                distribution = "repo"
+            }
+            license {
+                name = "BSD 2-Clause License (bundled dav1d)"
+                url = "https://code.videolan.org/videolan/dav1d/-/blob/master/COPYING"
+                distribution = "repo"
+            }
         }
         developers {
             developer {
@@ -911,19 +900,14 @@ run {
     val macosFfmpegLib = rootDir.resolve("native-libs/lgpl/macos-arm64/lib")
     // dav1d is vendored per target and toggled by the consumer DSL, so the flag follows the tree
     // rather than a constant: the Android arms already do exactly this a few lines below.
-    val macosDav1d = if (rootDir.resolve("native-libs/lgpl/macos-arm64/lib/libdav1d.a").exists()) {
-        listOf("-ldav1d")
-    } else {
-        emptyList()
-    }
+    // The portable macOS profile (KC-EMBED): the six libav* archives, the mandatory dav1d, SDK
+    // zlib and the media frameworks. Nothing from Homebrew: the fat third-party stack died with
+    // the fat profile, and the JNI bundle is self-contained again because there are no shared
+    // dylib dependencies left to carry.
     val macosJniLinkFlags = listOf(
         "-lavformat", "-lavcodec", "-lavfilter", "-lavutil", "-lswscale", "-lswresample",
-    ) + macosDav1d + listOf(
-        "-lSvtAv1Enc", "-lvpx", "-laom", "-lopus", "-lmp3lame",
-        "-lwebpmux", "-lwebp", "-lsharpyuv",
-        "-lass", "-lharfbuzz", "-lgraphite2", "-lfreetype", "-lfribidi", "-lpng16",
-        "-lz", "-lbz2", "-llzma", "-liconv", "-lc++",
-        "-framework", "CoreGraphics", "-framework", "CoreText",
+        "-ldav1d",
+        "-lz",
         "-framework", "CoreFoundation", "-framework", "CoreMedia",
         "-framework", "CoreVideo", "-framework", "VideoToolbox",
         "-framework", "AudioToolbox",
@@ -970,7 +954,7 @@ run {
         extraIncludeDirs.set(
             javaHome.map { listOf("${it.absolutePath}/include", "${it.absolutePath}/include/darwin") },
         )
-        libSearchDirs.set(listOf("/opt/homebrew/lib"))
+        libSearchDirs.set(emptyList())
         linkFlags.set(macosJniLinkFlags)
         exportControlFile.set(jniDir.resolve("exports.macos"))
         exportControlKind.set(LinkKiteCodecJniTask.ExportControlKind.MACHO_EXPORTED_SYMBOLS)
@@ -1070,7 +1054,7 @@ run {
             extraIncludeDirs.set(
                 javaHome.map { listOf("${it.absolutePath}/include", "${it.absolutePath}/include/darwin") },
             )
-            libSearchDirs.set(listOf("/opt/homebrew/lib"))
+            libSearchDirs.set(emptyList())
             linkFlags.set(macosJniLinkFlags)
             exportControlFile.set(jniDir.resolve("exports.macos"))
             exportControlKind.set(LinkKiteCodecJniTask.ExportControlKind.MACHO_EXPORTED_SYMBOLS)
@@ -1116,7 +1100,7 @@ run {
             extraIncludeDirs.set(
                 javaHome.map { listOf("${it.absolutePath}/include", "${it.absolutePath}/include/darwin") },
             )
-            libSearchDirs.set(listOf("/opt/homebrew/lib"))
+            libSearchDirs.set(emptyList())
             linkFlags.set(macosJniLinkFlags)
             exportControlFile.set(prepareCorruptJni.flatMap { it.outputDirectory.file("exports.macos") })
             exportControlKind.set(LinkKiteCodecJniTask.ExportControlKind.MACHO_EXPORTED_SYMBOLS)

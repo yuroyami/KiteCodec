@@ -109,7 +109,7 @@ coordinates.
 
 For a private consumer proof, publish the three Apple variants locally in a separate invocation with `./gradlew publishToMavenLocal -Pkitecodec.applePhoneTargetsOnly=true`. Then configure the consumer plugin with `source = FFmpegSource.Local`, `license = FFmpegLicense.LGPL` and `localRoot` pointing at this checkout's absolute `native-libs` directory. Its fixed layout is `<localRoot>/<license.id>/<target-triple>/{include,lib}`. The plugin validates every wired tree and performs no download. This selector is local-only; any remote `publish` task refuses it during configuration.
 
-Once `kitecodec-core` and the [Gradle plugin](gradle-plugin.md) are publicly published, a native
+Once `kitecodec-core` is publicly published, a native
 consumer build script can replace the composite build. It is written out in full in the
 [README](https://github.com/yuroyami/KiteCodec#install); the plugin is mandatory for Kotlin/Native
 because the klib's `ffmpeg.def` carries no `-L`, and so is the `license` choice. This is not a

@@ -3,9 +3,6 @@ import io.github.yuroyami.kitecodec.buildtools.CheckCinteropCouplingTask
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform).apply(false)
-    // Pin the Kotlin Gradle plugin version once at the root so :kitecodec-gradle-plugin can apply
-    // kotlin.jvm without re-declaring a version (both ids resolve to the same KGP on the classpath).
-    alias(libs.plugins.kotlin.jvm).apply(false)
     alias(libs.plugins.android.kmp.library).apply(false)
     // Applied (not deferred) at the root so `dokkaGenerate` aggregates every
     // library module into one API site at build/dokka/html (deployed to /api/).
@@ -64,7 +61,7 @@ allprojects {
 
 apiValidation {
     // Only :kitecodec-core is a published library with a guarded API surface.
-    ignoredProjects += listOf("kitecodec-sample", "kitecodec-gradle-plugin")
+    ignoredProjects += listOf("kitecodec-sample")
 
     // Native declarations remain guarded in klibs. Every scope has one public JVM target using
     // the unavailable placeholder, so its dump lives directly under kitecodec-core/api/. The
@@ -96,7 +93,7 @@ tasks.register<CheckCinteropCouplingTask>("checkCinteropCoupling") {
 }
 
 /*
- * Register item B1-04: the expected FFmpeg release is written down in three places bound only by a
+ * Register item B1-04: the expected FFmpeg release is written down in more than one place bound only by a
  * comment asking the reader to keep them in sync, and nothing checked any of them against the vendored
  * checkout. This is that check, and it is a build-time ASSERTION rather than a task on purpose: a task
  * has to be asked for, and the failure this prevents is one nobody would think to ask about. It runs
@@ -118,7 +115,7 @@ run {
         ?: throw GradleException(
             "Cannot check the FFmpeg release pins (register item B1-04): " +
                 ".github/workflows/publish.yml has no `FFMPEG_VERSION:` line in its env block. It is " +
-                "one of the three places that must name the release; a workflow that stopped pinning " +
+                "one of the places that must name the release; a workflow that stopped pinning " +
                 "one is exactly the drift this check exists to catch.",
         )
     // Absent on a checkout that never vendored FFmpeg, which is normal and not a failure. Present at
@@ -130,90 +127,17 @@ run {
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
 
-    val pluginSource = layout.projectDirectory
-        .file("kitecodec-gradle-plugin/src/main/kotlin/io/github/yuroyami/kitecodec/gradle/KiteCodecPlugin.kt")
-    val pluginRef = providers.fileContents(pluginSource).asText.orNull
-        ?.let { BuildFFmpegTask.readPluginDefaultFFmpegVersion(it) }
-        ?: throw GradleException(
-            "Cannot check the FFmpeg release pins (register item B1-04): no " +
-                "`DEFAULT_FFMPEG_VERSION = \"...\"` in ${pluginSource.asFile.path}. It is one of the " +
-                "three places that must name the release.",
-        )
-
+    // The plugin pin site died with the plugin (KC-EMBED, 2026-08-22): with FFmpeg embedded in
+    // the klibs there is no consumer-side version to keep honest, only the two producer pins.
     BuildFFmpegTask.assertFFmpegRefsAgree(
         listOf(
             BuildFFmpegTask.FFmpegRefSite(
                 "buildSrc/src/main/kotlin/BuildFFmpegTask.kt DEFAULT_SOURCE_REF",
                 BuildFFmpegTask.DEFAULT_SOURCE_REF,
             ),
-            BuildFFmpegTask.FFmpegRefSite(
-                "kitecodec-gradle-plugin/.../KiteCodecPlugin.kt DEFAULT_FFMPEG_VERSION",
-                pluginRef,
-            ),
             BuildFFmpegTask.FFmpegRefSite(".github/workflows/publish.yml FFMPEG_VERSION", workflowRef),
         ),
         vendorRelease,
     )
 
-    /*
-     * The plugin's EXPECTED_MAJORS table, against the vendored checkout's own version headers.
-     *
-     * FFmpegExpectations.EXPECTED_MAJORS is written down in the plugin because the plugin runs in the
-     * consumer's build, where neither the vendored checkout nor KiteCodec's C sources exist. Written down
-     * means it can be wrong, and a wrong table would refuse a system FFmpeg that is fine or accept one
-     * that is not. So when the checkout IS present, which is here, the table is checked against it.
-     *
-     * Skipped without complaint when vendor/ffmpeg is absent: most builds never vendor FFmpeg, and a
-     * missing optional checkout must not fail every build in the repository.
-     */
-    val expectedMajors = mapOf(
-        "libavutil" to "LIBAVUTIL",
-        "libavcodec" to "LIBAVCODEC",
-        "libavformat" to "LIBAVFORMAT",
-        "libavfilter" to "LIBAVFILTER",
-        "libswscale" to "LIBSWSCALE",
-        "libswresample" to "LIBSWRESAMPLE",
-    )
-    val pluginTableText = providers.fileContents(
-        layout.projectDirectory
-            .file("kitecodec-gradle-plugin/src/main/kotlin/io/github/yuroyami/kitecodec/gradle/FFmpegExpectations.kt"),
-    ).asText.orNull
-    if (vendorRelease != null && pluginTableText != null) {
-        val disagreements = expectedMajors.mapNotNull { (pkgName, macroPrefix) ->
-            // Both headers, concatenated, and both are needed. The pkg-config name IS the directory name
-            // in an FFmpeg checkout, so nothing is stripped from it. And FFmpeg keeps the MAJOR of every
-            // library except libavutil in its own `version_major.h`, so `version.h` alone carries only
-            // MINOR and MICRO for five of the six.
-            //
-            // Two measured mistakes are recorded here because both passed silently. The first stripped
-            // the `lib` prefix, so every read returned null. The second read only `version.h`, so the
-            // MAJOR regex found nothing. Either way every entry was skipped and the check reported
-            // success against a table that had been deliberately falsified. The negative test is what
-            // caught both, which is why it is part of the gate and not an afterthought.
-            val headerText = listOf("version.h", "version_major.h")
-                .mapNotNull { name ->
-                    providers.fileContents(
-                        layout.projectDirectory.file("vendor/ffmpeg/$pkgName/$name"),
-                    ).asText.orNull
-                }
-                .takeIf { it.isNotEmpty() }
-                ?.joinToString("\n")
-                ?: return@mapNotNull null
-            val vendored = Regex("""^\s*#define\s+${macroPrefix}_VERSION_MAJOR\s+(\d+)""", RegexOption.MULTILINE)
-                .find(headerText)?.groupValues?.get(1)?.toIntOrNull() ?: return@mapNotNull null
-            val declared = Regex(""""$pkgName"\s+to\s+(\d+)""")
-                .find(pluginTableText)?.groupValues?.get(1)?.toIntOrNull() ?: return@mapNotNull null
-            if (vendored == declared) null else "  $pkgName: vendor/ffmpeg says $vendored, FFmpegExpectations says $declared"
-        }
-        if (disagreements.isNotEmpty()) {
-            throw GradleException(
-                "FFmpegExpectations.EXPECTED_MAJORS disagrees with vendor/ffmpeg (register item B1-04):\n" +
-                    disagreements.joinToString("\n") + "\n\n" +
-                    "That table is what the Gradle plugin compares a consumer's system FFmpeg against, " +
-                    "and it is written down rather than read because the plugin runs where the checkout " +
-                    "does not exist. Correct the table, or check the vendored tree out at the release " +
-                    "the three pins name.",
-            )
-        }
-    }
 }

@@ -1,27 +1,25 @@
-# Publishes the v0.1 release artifacts:
-#   - kitecodec-core            → Maven Central (Central Portal, via the vanniktech plugin)
-#   - kitecodec-gradle-plugin   → the Gradle Plugin Portal
+# Publishes kitecodec-core to Maven Central (Central Portal, via the vanniktech plugin).
+# Since KC-EMBED (2026-08-22) there is no Gradle plugin: FFmpeg is embedded INSIDE the native
+# klibs, so the fetch step below unpacks ALL 11 triples' zips (dav1d inside every one) into
+# native-libs/ before publishing, and cinterop embeds them.
 #
 # PREREQUISITES (all must exist before running this workflow):
 #   Secrets:
 #     MAVEN_CENTRAL_USERNAME / MAVEN_CENTRAL_PASSWORD: Central Portal user token
 #     SIGNING_IN_MEMORY_KEY / SIGNING_IN_MEMORY_KEY_PASSWORD: ASCII-armored GPG key + passphrase
-#     GRADLE_PUBLISH_KEY / GRADLE_PUBLISH_SECRET: Plugin Portal API key
 #   Release assets:
-#     The `ffmpeg-<version>` release (created by release-binaries.yml) must exist with the five
-#     stable-target LGPL zips + .sha256 files:
-#       ffmpeg-<version>-lgpl-{macos-arm64,linux-x64,android-arm64,android-arm32,android-x64}.zip
+#     The `v<VERSION>` release (created by release-binaries.yml) must exist with all 11 LGPL
+#     zips + .sha256 files: ffmpeg-<ffversion>-lgpl-<triple>.zip for every supported triple.
 #
 # VERSIONING: the library version is static in gradle.properties (VERSION=…). The tag is the
 # trigger, not the source of truth: the check-version job asserts `v<VERSION>` == the pushed tag
 # (or the workflow_dispatch input) and fails on mismatch, so a stale gradle.properties can never
 # publish under the wrong tag.
 #
-# kitecodec-core publishes the v0.1 stable native target set plus the always-present JVM, JS and
-# WasmJs variants (-Pkitecodec.stableTargetsOnly=true). JVM/JS/WasmJs are invariant unsupported
-# placeholders; the JNI JVM harness in the local phone proof is a custom test compilation only.
-# The publish guard in kitecodec-core/build.gradle.kts hard-fails if any configured native target
-# is missing its FFmpeg tree, which is why the fetch step below must cover all five native triples.
+# kitecodec-core publishes ALL 11 native targets plus the always-present JVM, JS and WasmJs
+# variants. JS/WasmJs are invariant unsupported placeholders. The publish guard in
+# kitecodec-core/build.gradle.kts hard-fails if any configured native target is missing its
+# FFmpeg tree, which is why the fetch step must cover all 11.
 name: Publish release
 
 on:
@@ -37,9 +35,8 @@ permissions:
   contents: read
 
 env:
-  # FFmpeg release tag whose prebuilt assets kitecodec-core compiles against. Keep in sync with
-  # BuildFFmpegTask.DEFAULT_SOURCE_REF (buildSrc) and DEFAULT_FFMPEG_VERSION in
-  # kitecodec-gradle-plugin/…/KiteCodecPlugin.kt. There is no single gradle.properties pin (yet).
+  # FFmpeg release whose prebuilt assets kitecodec-core compiles against and embeds. Keep in
+  # sync with BuildFFmpegTask.DEFAULT_SOURCE_REF (buildSrc); the root build asserts they agree.
   FFMPEG_VERSION: n8.0
 
 jobs:
@@ -82,14 +79,21 @@ jobs:
           key: konan-publish-${{ hashFiles('gradle/libs.versions.toml') }}
           restore-keys: |
             konan-publish-
-      # The publish guard requires an FFmpeg tree for EVERY stable target. Fetch this repo's own
-      # prebuilt LGPL assets and unpack them into the exact layout FFmpegPaths.resolve() expects:
-      # native-libs/<license>/<triple>/{include,lib} (the zips are rooted at {include,lib}).
-      - name: Fetch prebuilt FFmpeg (5 stable triples, lgpl)
+      # The publish guard requires an FFmpeg tree for EVERY configured target, and cinterop
+      # EMBEDS these archives into the published klibs (KC-EMBED). Fetch this repo's own prebuilt
+      # LGPL assets from the release tag being published and unpack into the exact layout
+      # FFmpegPaths.resolve() expects: native-libs/<license>/<triple>/{include,lib}.
+      - name: Fetch prebuilt FFmpeg (all 11 triples, lgpl, dav1d inside)
         run: |
           set -euo pipefail
-          base="https://github.com/${{ github.repository }}/releases/download/ffmpeg-${FFMPEG_VERSION}"
-          for triple in macos-arm64 linux-x64 android-arm64 android-arm32 android-x64; do
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            tag="v${{ github.event.inputs.version }}"
+          else
+            tag="${GITHUB_REF_NAME}"
+          fi
+          base="https://github.com/${{ github.repository }}/releases/download/${tag}"
+          for triple in macos-arm64 macos-x64 ios-arm64 ios-simulator-arm64 ios-x64 \
+                        linux-x64 linux-arm64 mingw-x64 android-arm64 android-arm32 android-x64; do
             asset="ffmpeg-${FFMPEG_VERSION}-lgpl-${triple}.zip"
             echo "fetching ${asset}"
             curl -fL --retry 3 -o "${asset}" "${base}/${asset}"
@@ -112,26 +116,5 @@ jobs:
           ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_IN_MEMORY_KEY_PASSWORD }}
         run: |
           ./gradlew :kitecodec-core:publishAllPublicationsToMavenCentralRepository \
-            -Pkitecodec.stableTargetsOnly=true \
             --no-configuration-cache \
             --stacktrace
-
-  publish-plugin:
-    name: kitecodec-gradle-plugin → Plugin Portal
-    needs: check-version
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 21
-      - uses: gradle/actions/setup-gradle@v4
-      # com.gradle.plugin-publish reads GRADLE_PUBLISH_KEY / GRADLE_PUBLISH_SECRET from the
-      # environment (its documented env-var form of gradle.publish.key / gradle.publish.secret).
-      - name: Publish to the Gradle Plugin Portal
-        env:
-          GRADLE_PUBLISH_KEY: ${{ secrets.GRADLE_PUBLISH_KEY }}
-          GRADLE_PUBLISH_SECRET: ${{ secrets.GRADLE_PUBLISH_SECRET }}
-        run: ./gradlew :kitecodec-gradle-plugin:publishPlugins --stacktrace

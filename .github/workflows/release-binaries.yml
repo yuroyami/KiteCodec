@@ -1,8 +1,9 @@
-# Builds the vendored static FFmpeg for EVERY supported target, in both flavours (plain and
-# dav1d), and publishes the zips as assets of the KiteCodec release tag (v<version>). The
-# `io.github.yuroyami.kitecodec` Gradle plugin downloads them from exactly that tag: its default
-# release tag is its own version, so plugin 0.1.0 fetches from v0.1.0. Assets are named
-# `ffmpeg-<ffversion>-<license>[-dav1d]-<triple>.zip` (+ `.sha256`).
+# Builds the vendored static FFmpeg for EVERY supported target and publishes the zips as assets
+# of the KiteCodec release tag (v<version>). Since KC-EMBED (2026-08-22) there is NO flavour
+# axis: dav1d is mandatory in every build, and no Gradle plugin exists; these zips are the build
+# evidence, the LGPL source-offer anchor, and the input the publication pipeline unpacks into
+# native-libs/ before embedding FFmpeg INTO the published klibs. Assets are named
+# `ffmpeg-<ffversion>-<license>-<triple>.zip` (+ `.sha256`).
 #
 # Structure: every build job uploads its zips as workflow artifacts; the single `publish` job at
 # the end downloads them all, attests build provenance, and creates/updates the release exactly
@@ -17,9 +18,8 @@
 #   - linux-x64 / linux-arm64 / mingw-x64: konan's own clang over konan's own sysroot (decision
 #     W-D3), which is the toolchain the consumer's Kotlin/Native link uses. The konan warmup step
 #     is what drops that toolchain into ~/.konan/dependencies.
-# The dav1d flavour cross-builds dav1d first (meson/ninja/nasm) and bakes it into libavcodec.
-# Both flavours ship per triple because the plugin's dav1d contract needs a matching asset for
-# either value of the consumer's `dav1d` toggle.
+# Every job cross-builds dav1d first (meson/ninja/nasm) and bakes it into libavcodec: FFmpeg
+# has no native software AV1 decoder, so dav1d is the recipe, not an option.
 #
 # Manual trigger only: this is a release pipeline, not a per-push check.
 name: Release FFmpeg binaries
@@ -49,14 +49,13 @@ concurrency:
 
 jobs:
   android:
-    name: android ${{ matrix.abi }} (lgpl${{ matrix.dav1d && '+dav1d' || '' }})
+    name: android ${{ matrix.abi }} (lgpl)
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         abi: [arm64, arm32, x64]
-        dav1d: [false, true]
         include:
           - { abi: arm64, triple: android-arm64, task: AndroidArm64 }
           - { abi: arm32, triple: android-arm32, task: AndroidArm32 }
@@ -69,34 +68,24 @@ jobs:
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
       # meson + ninja + nasm are dav1d's build system and assembler (nasm for the x64 ABI).
-      - name: Install dav1d build deps
-        if: matrix.dav1d
+      - name: Install build deps
         run: sudo apt-get update && sudo apt-get install -y meson ninja-build nasm
       - name: Clone FFmpeg ${{ github.event.inputs.ffmpeg_version }}
         run: git clone --depth 1 --branch ${{ github.event.inputs.ffmpeg_version }} https://github.com/FFmpeg/FFmpeg.git vendor/ffmpeg
       - name: Clone dav1d ${{ github.event.inputs.dav1d_version }}
-        if: matrix.dav1d
         run: git clone --depth 1 --branch ${{ github.event.inputs.dav1d_version }} https://code.videolan.org/videolan/dav1d.git vendor/dav1d
-      - name: Build dav1d (NDK)
-        if: matrix.dav1d
-        run: |
-          export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"
-          ./gradlew :kitecodec-core:buildDav1dFor${{ matrix.task }} --stacktrace
-      - name: Build FFmpeg (NDK)
+      # The bake depends on the dav1d task since KC-EMBED, so one Gradle call builds both.
+      - name: Build FFmpeg (NDK, dav1d inside)
         run: |
           export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"
           ./gradlew :kitecodec-core:buildFFmpegFor${{ matrix.task }} \
-            -Pkitecodec.ffmpeg.selfContained=true \
-            ${{ matrix.dav1d && '-Pkitecodec.ffmpeg.dav1d=true' || '' }} --stacktrace
+            -Pkitecodec.ffmpeg.selfContained=true --stacktrace
       - name: Package
-        run: |
-          bash .github/scripts/package-ffmpeg.sh \
-            "${{ github.event.inputs.ffmpeg_version }}" lgpl ${{ matrix.triple }} \
-            vendor/ffmpeg ${{ matrix.dav1d && 'dav1d' || '' }}
+        run: bash .github/scripts/package-ffmpeg.sh "${{ github.event.inputs.ffmpeg_version }}" lgpl ${{ matrix.triple }}
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ffmpeg-lgpl-${{ matrix.triple }}${{ matrix.dav1d && '-dav1d' || '' }}
+          name: ffmpeg-lgpl-${{ matrix.triple }}
           path: |
             dist/*.zip
             dist/*.sha256
@@ -104,14 +93,13 @@ jobs:
           retention-days: 7
 
   apple:
-    name: ${{ matrix.triple }} (lgpl${{ matrix.dav1d && '+dav1d' || '' }})
+    name: ${{ matrix.triple }} (lgpl)
     runs-on: macos-latest
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
         triple: [ios-arm64, ios-simulator-arm64, ios-x64, macos-arm64, macos-x64]
-        dav1d: [false, true]
         include:
           - { triple: ios-arm64,            task: IosArm64 }
           - { triple: ios-simulator-arm64,  task: IosSimulatorArm64 }
@@ -132,27 +120,20 @@ jobs:
       - name: Clone FFmpeg ${{ github.event.inputs.ffmpeg_version }}
         run: git clone --depth 1 --branch ${{ github.event.inputs.ffmpeg_version }} https://github.com/FFmpeg/FFmpeg.git vendor/ffmpeg
       - name: Clone dav1d ${{ github.event.inputs.dav1d_version }}
-        if: matrix.dav1d
         run: git clone --depth 1 --branch ${{ github.event.inputs.dav1d_version }} https://code.videolan.org/videolan/dav1d.git vendor/dav1d
-      - name: Build dav1d
-        if: matrix.dav1d
-        run: ./gradlew :kitecodec-core:buildDav1dFor${{ matrix.task }} --stacktrace
+      # The bake depends on the dav1d task since KC-EMBED, so one Gradle call builds both.
       # -Pkitecodec.ffmpeg.selfContained=true: a Release asset must link on a machine that has
       # nothing installed; with the portable profile the only bundleable archive is dav1d itself.
-      - name: Build FFmpeg
+      - name: Build FFmpeg (dav1d inside)
         run: |
           ./gradlew :kitecodec-core:buildFFmpegFor${{ matrix.task }} \
-            -Pkitecodec.ffmpeg.selfContained=true \
-            ${{ matrix.dav1d && '-Pkitecodec.ffmpeg.dav1d=true' || '' }} --stacktrace
+            -Pkitecodec.ffmpeg.selfContained=true --stacktrace
       - name: Package
-        run: |
-          bash .github/scripts/package-ffmpeg.sh \
-            "${{ github.event.inputs.ffmpeg_version }}" lgpl ${{ matrix.triple }} \
-            vendor/ffmpeg ${{ matrix.dav1d && 'dav1d' || '' }}
+        run: bash .github/scripts/package-ffmpeg.sh "${{ github.event.inputs.ffmpeg_version }}" lgpl ${{ matrix.triple }}
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ffmpeg-lgpl-${{ matrix.triple }}${{ matrix.dav1d && '-dav1d' || '' }}
+          name: ffmpeg-lgpl-${{ matrix.triple }}
           path: |
             dist/*.zip
             dist/*.sha256
@@ -164,14 +145,13 @@ jobs:
   # downloads that toolchain into ~/.konan/dependencies; it may itself fail (no FFmpeg tree yet,
   # chicken-and-egg), which is fine, the dependencies land before the compiler runs.
   linux-portable:
-    name: ${{ matrix.triple }} (lgpl${{ matrix.dav1d && '+dav1d' || '' }})
+    name: ${{ matrix.triple }} (lgpl)
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
         triple: [linux-x64, linux-arm64, mingw-x64]
-        dav1d: [false, true]
         include:
           - { triple: linux-x64,   task: LinuxX64 }
           - { triple: linux-arm64, task: LinuxArm64 }
@@ -192,27 +172,21 @@ jobs:
       - name: Clone FFmpeg ${{ github.event.inputs.ffmpeg_version }}
         run: git clone --depth 1 --branch ${{ github.event.inputs.ffmpeg_version }} https://github.com/FFmpeg/FFmpeg.git vendor/ffmpeg
       - name: Clone dav1d ${{ github.event.inputs.dav1d_version }}
-        if: matrix.dav1d
         run: git clone --depth 1 --branch ${{ github.event.inputs.dav1d_version }} https://code.videolan.org/videolan/dav1d.git vendor/dav1d
       - name: Warm the Kotlin/Native toolchain
         run: ./gradlew :kitecodec-core:compileKotlin${{ matrix.task }} --stacktrace || true
-      - name: Build dav1d (konan cross)
-        if: matrix.dav1d
-        run: ./gradlew :kitecodec-core:buildDav1dFor${{ matrix.task }} --stacktrace
-      - name: Build FFmpeg
+      # The bake depends on the dav1d task since KC-EMBED, so one Gradle call builds both
+      # (dav1d cross-compiles with the same konan toolchain the warmup just provisioned).
+      - name: Build FFmpeg (dav1d inside)
         run: |
           ./gradlew :kitecodec-core:buildFFmpegFor${{ matrix.task }} \
-            -Pkitecodec.ffmpeg.selfContained=true \
-            ${{ matrix.dav1d && '-Pkitecodec.ffmpeg.dav1d=true' || '' }} --stacktrace
+            -Pkitecodec.ffmpeg.selfContained=true --stacktrace
       - name: Package
-        run: |
-          bash .github/scripts/package-ffmpeg.sh \
-            "${{ github.event.inputs.ffmpeg_version }}" lgpl ${{ matrix.triple }} \
-            vendor/ffmpeg ${{ matrix.dav1d && 'dav1d' || '' }}
+        run: bash .github/scripts/package-ffmpeg.sh "${{ github.event.inputs.ffmpeg_version }}" lgpl ${{ matrix.triple }}
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ffmpeg-lgpl-${{ matrix.triple }}${{ matrix.dav1d && '-dav1d' || '' }}
+          name: ffmpeg-lgpl-${{ matrix.triple }}
           path: |
             dist/*.zip
             dist/*.sha256
@@ -223,7 +197,7 @@ jobs:
   # avoids jobs racing to create/update the same release tag. `if: always()` is deliberate during
   # iteration: publish whatever succeeded, then re-run the failed jobs and this one; softprops
   # updates the existing release, so the missing assets join the same tag. A release only counts
-  # as COMPLETE when all 22 zips (11 triples x 2 flavours) are present.
+  # as COMPLETE when all 11 zips (one per triple, dav1d inside every one) are present.
   publish:
     name: publish release
     needs: [android, apple, linux-portable]

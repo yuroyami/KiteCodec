@@ -35,7 +35,7 @@ The LGPL flavor does **not** make your app open source. It does obligate you, wh
 
 ### What the KiteCodec release zips include
 
-The prebuilt FFmpeg archives on KiteCodec's GitHub Releases are named `ffmpeg-<version>-<license>-<triple>.zip` and are consumed by the [Gradle plugin](gradle-plugin.md). Each one is packaged for compliance. Next to `include/` and `lib/`, every zip carries:
+The prebuilt FFmpeg archives on KiteCodec's GitHub Releases are named `ffmpeg-<version>-<license>-<triple>.zip`; since KC-EMBED (2026-08-22) they are the publication pipeline's input (their contents get embedded into the published klibs) and the LGPL source-offer anchor. Each one is packaged for compliance. Next to `include/` and `lib/`, every zip carries:
 
 - `COPYING.LGPLv2.1`, always. The `gpl` zips add `COPYING.GPLv2` and `COPYING.GPLv3`.
 - `LICENSE.md` from the FFmpeg source tree, which is the per-component license map.
@@ -106,5 +106,4 @@ Before you ship an app that embeds KiteCodec:
 ## Related
 
 - [Platform support](platforms.md#licensing): choosing the flavor, and per-platform encoder guidance.
-- [Gradle plugin](gradle-plugin.md): how the compliance-packaged prebuilt FFmpeg zips are consumed.
 - [About KiteCodec](about.md#license): the short version.

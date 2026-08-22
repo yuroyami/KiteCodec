@@ -29,7 +29,7 @@ On macOS the build probes `/opt/homebrew` (Apple Silicon) and `/usr/local` (Inte
 kitecodec.macos.homebrew.prefix=/custom/prefix
 ```
 
-The prefix must contain `include/libavformat/avformat.h` and the FFmpeg dylibs under `lib/`. The same property is honored by the [Gradle plugin](gradle-plugin.md)'s `System` source.
+The prefix must contain `include/libavformat/avformat.h` and the FFmpeg dylibs under `lib/`.
 
 ## Windows: nothing is auto-discovered
 

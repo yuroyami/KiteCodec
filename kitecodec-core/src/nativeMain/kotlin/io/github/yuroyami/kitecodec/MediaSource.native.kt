@@ -110,7 +110,6 @@ import kotlinx.cinterop.UByteVar
 import kotlinx.cinterop.asStableRef
 import kotlinx.cinterop.convert
 import kotlinx.cinterop.staticCFunction
-import platform.posix.memcpy
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
@@ -740,8 +739,17 @@ private val byteSourceRead = staticCFunction { opaque: COpaquePointer?, buf: CPo
         val r = state.io.read(state.scratch, 0, want)
         when {
             r > 0 -> {
-                state.scratch.usePinned { pinned ->
-                    memcpy(buf, pinned.addressOf(0), r.convert())
+                // Element copy, not memcpy: posix memcpy's size_t is 32-bit on androidNativeArm32
+                // and 64-bit everywhere else, and the shared-native metadata compile refuses a
+                // commonized declaration whose widths differ (hit on the first full 11-target
+                // publish, KC-EMBED). A counted loop has no width to disagree about, and at media
+                // bitrates its cost is noise next to the decode this feeds.
+                val dst = buf!!
+                val src = state.scratch
+                var i = 0
+                while (i < r) {
+                    dst[i] = src[i].toUByte()
+                    i++
                 }
                 state.position += r
                 r

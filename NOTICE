@@ -13,7 +13,17 @@ KiteCodec is a binding. It contains no FFmpeg source, and this repository ships 
 FFmpeg binaries in its git tree. FFmpeg is NOT covered by this NOTICE or by
 KiteCodec's Apache-2.0 licence.
 
-The binaries this project provisions (its GitHub Release assets, and the trees its
+Since KC-EMBED (2026-08-22), KiteCodec's PUBLISHED ARTIFACTS (the per-target
+klibs, the JVM jar's bundled native library, and the Android AAR's JNI
+libraries) EMBED compiled FFmpeg with the dav1d AV1 decoder. Those FFmpeg
+portions remain LGPL-2.1-or-later (dav1d: BSD-2-Clause); the artifact POMs
+declare all three licences, the JVM jar carries the licence texts under
+META-INF/licenses/kitecodec-ffmpeg/, and the complete corresponding FFmpeg
+source is attached to the matching v<version> GitHub release. An application
+that ships these artifacts must give its users the LGPL notice and keep that
+source available; the release asset satisfies the source half.
+
+The binaries this project builds (its GitHub Release assets, and the trees its
 build tasks produce) are built from unmodified FFmpeg release sources at the
 version pinned in gradle.properties, configured WITHOUT --enable-gpl and without
 any GPL-only component. They are covered by the GNU Lesser General Public License,

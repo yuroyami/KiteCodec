@@ -97,7 +97,6 @@ nav:
   - Reference:
       - Recipes: recipes.md
       - Platform support: platforms.md
-      - Gradle plugin: gradle-plugin.md
       - Licensing: licensing.md
       - Troubleshooting: troubleshooting.md
       - About and status: about.md

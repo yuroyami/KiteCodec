@@ -38,7 +38,8 @@ private val TargetTriple.isIos: Boolean
  * (vpx/aom/opus/lame/webp encoders, freetype/harfbuzz/fribidi/libass, drawtext) is GONE: every
  * one of those had to come from Homebrew, Homebrew ships graphite2 shared-only, and a Release
  * asset that only links on a machine with Homebrew is not an asset. Decoding is untouched; the
- * read side is wide by class in [sharedCoreArgs]. Software AV1 is the dav1d switch's job.
+ * read side is wide by class in [sharedCoreArgs]. Software AV1 is dav1d, MANDATORY in every bake
+ * since 2026-08-22 (KC-EMBED): the on/off axis is dead.
  *
  * The **Android** profile: nothing GPL, nothing external;
  * hardware video encode/decode via MediaCodec (`h264_mediacodec`, `hevc_mediacodec`) plus FFmpeg's
@@ -106,17 +107,6 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
     @get:Optional
     abstract val requireSelfContained: Property<Boolean>
 
-    /**
-     * Compile FFmpeg's libdav1d AV1 software decoder in (KPKMP 17.12 D-7, register row
-     * KC-AV1SW). Off by default: dav1d is an OPTIONAL dependency, and a build that never asked
-     * for it must stay byte-identical to one from before this switch existed. When true, the
-     * cross-built static dav1d from [BuildDav1dTask] must already sit in
-     * `native-libs/deps/<target>/`; the build fails with the task to run otherwise.
-     */
-    @get:Input
-    @get:Optional
-    abstract val enableDav1d: Property<Boolean>
-
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
 
@@ -161,7 +151,7 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
             // repo lives under '#Kite', and pkg-config shell-escapes the '#' in emitted -I/-L
             // flags while configure hands them to the compiler unevaluated, which no compiler
             // survives. Inside the scratch there is no '#' to escape.
-            val dav1dRoot = dav1dRootOrNull(target)?.let { real ->
+            val dav1dRoot = dav1dRoot(target).let { real ->
                 val copied = scratch.resolve("deps").toFile()
                 real.copyRecursively(copied, overwrite = true)
                 copied
@@ -233,7 +223,7 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
             installPrefix = "/stub/install",
             sdkPath = { "/stub/sdk" },
             ndkToolchainBin = { stubNdkToolchainBin() },
-            dav1dRoot = if (enableDav1d.getOrElse(false)) File("/stub/dav1d") else null,
+            dav1dRoot = File("/stub/dav1d"),
             konanBin = { stubKonan },
         )
         return recipeFingerprint(args)
@@ -262,7 +252,7 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
         installPrefix: String,
         sdkPath: (String) -> String = ::xcrunSdkPath,
         ndkToolchainBin: () -> File = ::ndkToolchainBin,
-        dav1dRoot: File? = null,
+        dav1dRoot: File,
         konanBin: (TargetTriple) -> KonanTools = ::konanCrossTools,
     ): List<String> {
         require(license != FFmpegLicense.GPL) {
@@ -275,25 +265,24 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
             // macOS desktop: the portable Apple profile plus VideoToolbox encode.
             else -> desktopAppleArgs() + desktopTargetArgs(target, konanBin)
         }
-        // The optional dav1d switch (D-7). configure discovers dav1d ONLY through pkg-config,
-        // so the host pkg-config is forced even on cross builds; configureEnv points it at the
-        // deps tree and nothing else. The decoder pin makes the intent survive class policy
-        // changes exactly like the hwaccel pins do.
-        val dav1dArgs = if (dav1dRoot != null) {
-            listOf("--enable-libdav1d", "--enable-decoder=libdav1d", "--pkg-config=pkg-config")
-        } else {
-            emptyList()
-        }
+        // dav1d is MANDATORY (KC-EMBED, 2026-08-22): the parameter is required so no caller can
+        // forget it. configure discovers dav1d ONLY through pkg-config, so the host pkg-config is
+        // forced even on cross builds; configureEnv points it at the deps tree and nothing else.
+        // The decoder pin makes the intent survive class policy changes like the hwaccel pins do.
+        val dav1dArgs = listOf("--enable-libdav1d", "--enable-decoder=libdav1d", "--pkg-config=pkg-config")
         return sharedCoreArgs() + profileArgs + dav1dArgs + listOf("--prefix=$installPrefix")
     }
 
-    /** The cross-built dav1d install for [target], or null when the switch is off. */
-    private fun dav1dRootOrNull(target: TargetTriple): File? {
-        if (!enableDav1d.getOrElse(false)) return null
+    /**
+     * The cross-built dav1d install for [target]. MANDATORY since the axis died (owner decision
+     * 2026-08-22, KC-EMBED): every KiteCodec FFmpeg carries the dav1d AV1 software decoder,
+     * because FFmpeg has no native software AV1 decoder and a build without one plays zero AV1.
+     */
+    private fun dav1dRoot(target: TargetTriple): File {
         val root = outputDir.get().asFile.parentFile.parentFile.resolve("deps/${target.dirName}/dav1d")
         require(root.resolve("lib/libdav1d.a").isFile) {
-            "dav1d was requested but native-libs/deps/${target.dirName}/dav1d/lib/libdav1d.a does not " +
-                "exist. Run :kitecodec-core:buildDav1dFor${target.gradleSuffix} first."
+            "native-libs/deps/${target.dirName}/dav1d/lib/libdav1d.a does not exist, and dav1d is " +
+                "mandatory in every KiteCodec FFmpeg. Run :kitecodec-core:buildDav1dFor${target.gradleSuffix} first."
         }
         return root
     }
@@ -303,13 +292,13 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
      * `lib/`, so `native-libs/<license>/<target>` is self-contained and has exactly the layout the
      * published release zip does.
      *
-     * Since the portable profiles this means exactly one optional archive: the cross-built
-     * `libdav1d.a` from the deps tree, when the dav1d switch is on. `make install` only installs
-     * FFmpeg's own libraries, so without this copy the tree links only on the machine that baked
-     * the dav1d build.
+     * Since the portable profiles this means exactly one archive: the cross-built `libdav1d.a`
+     * from the deps tree, mandatory in every bake. `make install` only installs FFmpeg's own
+     * libraries, so without this copy the tree links only on the machine that baked the dav1d
+     * build.
      */
     private fun bundleThirdPartyArchives(target: TargetTriple, license: FFmpegLicense, outputDir: File) {
-        val wanted = StaticLinkFlags.thirdPartyArchives(target, license, dav1d = enableDav1d.getOrElse(false))
+        val wanted = StaticLinkFlags.thirdPartyArchives(target, license)
         if (wanted.isEmpty()) return
 
         val libDir = outputDir.resolve("lib").also { it.mkdirs() }
@@ -350,11 +339,9 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
         )
     }
 
-    /** Where the host package manager keeps the static archives, most specific first. */
-    private fun thirdPartySearchDirs(target: TargetTriple): List<File> = listOfNotNull(
-        // The cross-built deps trees first: a bundled dav1d must win over any host copy.
-        outputDir.get().asFile.parentFile.parentFile.resolve("deps/${target.dirName}/dav1d/lib")
-            .takeIf { enableDav1d.getOrElse(false) },
+    /** Where the static archives live: the cross-built deps tree, nothing host-managed. */
+    private fun thirdPartySearchDirs(target: TargetTriple): List<File> = listOf(
+        outputDir.get().asFile.parentFile.parentFile.resolve("deps/${target.dirName}/dav1d/lib"),
     ) + when (target) {
         TargetTriple.LinuxX64 -> listOf(
             File("/usr/lib/x86_64-linux-gnu"), File("/usr/lib"), File("/usr/local/lib"),
@@ -367,14 +354,11 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
 
     /**
      * Environment for configure/make. PKG_CONFIG_LIBDIR (not PATH) so the host's own .pc files
-     * can never leak into any target's link, macOS included: since the portable Apple profile the
-     * only pkg-config lookup any profile makes is the optional dav1d, and its deps tree is the
-     * whole pkg-config universe.
+     * can never leak into any target's link, macOS included: the only pkg-config lookup any
+     * profile makes is dav1d, and its deps tree is the whole pkg-config universe.
      */
-    private fun configureEnv(target: TargetTriple, dav1dRoot: File? = null): Map<String, String> {
-        val dav1dPkg = dav1dRoot?.resolve("lib/pkgconfig")?.absolutePath
-        return if (dav1dPkg != null) mapOf("PKG_CONFIG_LIBDIR" to dav1dPkg) else emptyMap()
-    }
+    private fun configureEnv(target: TargetTriple, dav1dRoot: File): Map<String, String> =
+        mapOf("PKG_CONFIG_LIBDIR" to dav1dRoot.resolve("lib/pkgconfig").absolutePath)
 
     /** The codec/filter core both profiles share. */
     private fun sharedCoreArgs(): List<String> = listOf(
@@ -899,21 +883,6 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
                 ?.trim('"', '\'')
                 ?.takeIf { it.isNotEmpty() }
 
-        /**
-         * Reads `DEFAULT_FFMPEG_VERSION = "<ref>"` out of `KiteCodecPlugin.kt`'s source text.
-         *
-         * Out of the TEXT, and not by referencing the constant, because it cannot be referenced from
-         * here: `kitecodec-gradle-plugin` is a separate Gradle project and its classes are not on the
-         * root build script's classpath, while `buildSrc`'s are. That asymmetry is the reason the value
-         * was duplicated in the first place, so reading the source is the check register item B1-04 needs
-         * rather than a workaround for one it does not.
-         */
-        fun readPluginDefaultFFmpegVersion(pluginSourceText: String): String? =
-            Regex("""DEFAULT_FFMPEG_VERSION\s*=\s*"([^"]+)"""")
-                .find(pluginSourceText)
-                ?.groupValues
-                ?.get(1)
-                ?.takeIf { it.isNotEmpty() }
 
         /** Reads `LIBAVUTIL_VERSION_MAJOR` out of a vendored `libavutil/version.h`, or null. */
         fun readVendoredAvutilMajor(versionHeaderText: String): Int? =
@@ -949,24 +918,9 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
             "--toolchain", "--cross-prefix", "--host-cc",
         )
 
-        /**
-         * Flags decided by a per-invocation `-P` toggle rather than by the recipe, and guarded
-         * elsewhere.
-         *
-         * dav1d is switched on with `-Pkitecodec.ffmpeg.dav1d=true` at BAKE time, so a tree baked
-         * with it and a check run without it disagree for a reason that is not drift. Including
-         * these would paint every tree stale for anyone who did not repeat the flag, and a check
-         * that is red by default is a check nobody runs.
-         *
-         * Nothing is lost by the omission: the Gradle PLUGIN's dav1d contract (0.0.11) compares the
-         * tree's `libdav1d.a` against the consumer's declaration in BOTH directions and fails the
-         * build on a mismatch. That is the guard for dav1d; this one is for the recipe.
-         */
-        private val TOGGLE_CONTROLLED_CONFIGURE_FLAGS = setOf(
-            "--enable-libdav1d",
-            "--enable-decoder=libdav1d",
-            "--pkg-config=pkg-config",
-        )
+        // No toggle-controlled flags remain: the dav1d switch died on 2026-08-22 (KC-EMBED),
+        // so --enable-libdav1d and --enable-decoder=libdav1d are RECIPE, and a tree without
+        // them is genuinely stale. --pkg-config=pkg-config is filtered by key above.
 
         /**
          * The CAPABILITY half of a configure command, as a comparable set.
@@ -993,7 +947,6 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
             }
             .filterNot { it.substringBefore('=') in MACHINE_SPECIFIC_CONFIGURE_KEYS }
             .filterNot { '/' in it.substringAfter('=', "") }
-            .filterNot { it in TOGGLE_CONTROLLED_CONFIGURE_FLAGS }
             .toSet()
 
         /**

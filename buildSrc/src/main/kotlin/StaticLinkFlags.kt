@@ -9,7 +9,7 @@ package io.github.yuroyami.kitecodec.buildtools
  * nothing: every symbol it draws from outside itself must be named at the consumer's link.
  *
  * Since the portable profiles (owner decision 2026-08-22) every target's needs are platform
- * services plus at most ONE third-party archive, the optional cross-built dav1d:
+ * services plus exactly ONE third-party archive, the cross-built dav1d (mandatory, KC-EMBED):
  *  - Apple (macOS and iOS): SDK zlib plus the media frameworks the VideoToolbox/AudioToolbox
  *    codecs reference.
  *  - Linux: zlib, maths, dynamic loader, pthreads (all from the konan sysroot / OS).
@@ -18,9 +18,9 @@ package io.github.yuroyami.kitecodec.buildtools
  *  - Android: nothing (MediaCodec is a platform service; zlib is a platform library named by
  *    the def file's linker opts).
  *
- * KEEP IN SYNC with `PrebuiltLinkFlags.kt` in `kitecodec-gradle-plugin`, which solves the same
- * problem for consumers of the published zips. The two cannot share code (separate classpaths),
- * so they are deliberately kept structurally identical instead.
+ * Consumers never see this class: since KC-EMBED the published klibs EMBED the archives and the
+ * def file carries the platform flags, so the per-target lists here and in `ffmpeg.def` are two
+ * renderings of one truth. KEEP THEM IN AGREEMENT.
  */
 object StaticLinkFlags {
 
@@ -32,10 +32,11 @@ object StaticLinkFlags {
     /**
      * Archive FILENAMES to bundle into the vendored tree's `lib/`, so it is self-contained.
      * OS/SDK-provided libraries (zlib, iconv) are deliberately excluded: they must come from the
-     * platform, not from a copy. Since the portable profiles this is the optional dav1d only.
+     * platform, not from a copy. Since the portable profiles this is dav1d only, and dav1d is
+     * MANDATORY since 2026-08-22 (KC-EMBED).
      */
-    fun thirdPartyArchives(target: TargetTriple, license: FFmpegLicense, dav1d: Boolean = false): List<String> =
-        if (dav1d) listOf("libdav1d.a") else emptyList()
+    fun thirdPartyArchives(target: TargetTriple, license: FFmpegLicense): List<String> =
+        listOf("libdav1d.a")
 
     /**
      * Extra `-L` search paths for a LOCAL vendored build. Since the portable profiles no target
@@ -49,17 +50,15 @@ object StaticLinkFlags {
         isStaticVendored: Boolean,
     ): List<String> = emptyList()
 
-    /** The `-l` flags the final link needs: dav1d first when carried, then platform basics. */
+    /** The `-l` flags the final link needs: dav1d first (always carried), then platform basics. */
     fun forTarget(
         target: TargetTriple,
         license: FFmpegLicense,
         isStaticVendored: Boolean,
-        dav1d: Boolean = false,
     ): List<String> {
         if (!isStaticVendored) return emptyList()
         // dav1d first: libavcodec draws from it, and GNU ld resolves static archives left to right.
-        val dav1dFlags = if (dav1d) listOf("-ldav1d") else emptyList()
-        return dav1dFlags + when {
+        return listOf("-ldav1d") + when {
             target in APPLE_TARGETS -> listOf(
                 "-lz",
                 // Every Apple profile enables VideoToolbox (decode everywhere, encode outside the

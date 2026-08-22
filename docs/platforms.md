@@ -27,7 +27,7 @@ Two points decide whether KiteCodec is usable for you:
 
 ## FFmpeg is a prerequisite
 
-KiteCodec links FFmpeg's libav\* libraries and ships none of their bytes. In a consumer project the [Gradle plugin](gradle-plugin.md) provisions them. Inside this repository you supply them in one of two forms. Nothing is published yet, so the repository path is the one that works today. See the README's [release status](https://github.com/yuroyami/KiteCodec#release-status).
+KiteCodec EMBEDS FFmpeg's libav\* libraries plus dav1d inside each native target's klib (KC-EMBED, 2026-08-22), so a consumer provisions nothing. Inside this repository the vendored trees under `native-libs/` are what gets embedded; a host without them falls back to a system FFmpeg for its own desktop target only. See the README's [release status](https://github.com/yuroyami/KiteCodec#release-status).
 
 ### Mode 1: dynamic against system FFmpeg
 

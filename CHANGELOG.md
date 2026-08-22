@@ -31,6 +31,27 @@ was private and unpublished.
 The Maven artifacts (`kitecodec-core`, the Gradle plugin) are still source-only: nothing is on Maven Central. The FFmpeg Release assets ARE published: the `v0.1.0` GitHub release carries the full 22-zip companion set. Release state and the per-target table live in the [README](https://github.com/yuroyami/KiteCodec#release-status) rather than being restated here.
 
 ### Changed
+- **KC-EMBED: FFmpeg now lives INSIDE the published klibs, and the Gradle plugin is gone.**
+  Owner decision 2026-08-22. Each native target's cinterop klib embeds the six libav\*
+  archives plus libdav1d (the same `staticLibraries` slot `libkitecodec.a` always rode) and
+  carries its platform linker flags, so the whole consumer integration is
+  `implementation("io.github.yuroyami:kitecodec-core:<v>")`. Proven the day it landed: a
+  project with nothing but that line linked a macOS executable (which ran, identity gate
+  green), an iOS simulator framework and a Windows PE32+ executable. The plugin module,
+  its DSL (`source`/`license`/`dav1d`/`libass`/`repo`/`releaseTag`/`pinnedSha256`), its
+  tasks and its docs page are DELETED; `Local` and `System` consumer modes die with it
+  (a dev host without vendored trees still falls back to a system FFmpeg internally, via
+  `ffmpeg-system.def`). The version-mismatch corruption class (B1-03) is gone by
+  construction, so the plugin-side version gate went with it. Artifact POMs now declare
+  Apache-2.0 + LGPL-2.1-or-later (embedded FFmpeg) + BSD-2-Clause (dav1d), the JVM jar
+  carries the licence texts, and NOTICE states the consumer obligations.
+- **The dav1d axis is dead: dav1d is mandatory in every FFmpeg build.** Measured in-app
+  cost ~0.7-0.9 MB on arm64, ~1.6-2.0 MB on x86_64; without it FFmpeg plays zero AV1 in
+  software. One flavour per triple (11 zips, `-dav1d` suffix gone), the two-way contract
+  deleted, `--enable-libdav1d` now part of the recipe fingerprint, and every
+  `buildFFmpegFor<Target>` depends on its `buildDav1dFor<Target>`.
+- **All 11 native targets are published.** The stable/experimental publication split is
+  gone; publication still hard-fails if any configured target lacks its FFmpeg tree.
 - **Every FFmpeg profile is now PORTABLE, macOS included.** The fat macOS desktop profile
   (vpx/aom/opus/lame/webp encoders, the freetype/harfbuzz/fribidi/libass text stack, drawtext)
   is gone. Every one of those libraries had to come from Homebrew, Homebrew ships graphite2

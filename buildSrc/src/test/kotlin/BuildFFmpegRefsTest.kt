@@ -98,17 +98,6 @@ class BuildFFmpegRefsTest {
     }
 
     @Test
-    fun thePluginConstantReaderFindsTheDeclaredDefault() {
-        assertEquals(
-            "n8.0",
-            BuildFFmpegTask.readPluginDefaultFFmpegVersion(
-                """internal const val DEFAULT_FFMPEG_VERSION = "n8.0"""",
-            ),
-        )
-        assertNull(BuildFFmpegTask.readPluginDefaultFFmpegVersion("nothing here"))
-    }
-
-    @Test
     fun theAvutilMajorReaderReadsARealHeader() {
         assertEquals(
             60,
@@ -120,26 +109,21 @@ class BuildFFmpegRefsTest {
     }
 
     /**
-     * The three sites this repository actually has, read the way the root build script reads them.
+     * The sites this repository actually has, read the way the root build script reads them.
+     * (The plugin's DEFAULT_FFMPEG_VERSION site died with the plugin, KC-EMBED 2026-08-22.)
      *
      * This is the one case in the file that is not a fixture, and it earns that: it is the assertion
-     * that the three readers point at files that exist and find the pin in each of them. A reader that
+     * that the readers point at files that exist and find the pin in each of them. A reader that
      * silently returned null would make the whole check pass vacuously, which is a failure mode two
      * separate bugs in this sub-phase already demonstrated.
      */
     @Test
-    fun theRepositorysOwnThreeSitesAreReadableAndAgree() {
+    fun theRepositorysOwnSitesAreReadableAndAgree() {
         val workflow = repoRoot.resolve(".github/workflows/publish.yml")
-        val pluginSource = repoRoot.resolve(
-            "kitecodec-gradle-plugin/src/main/kotlin/io/github/yuroyami/kitecodec/gradle/KiteCodecPlugin.kt",
-        )
         assertTrue(workflow.isFile, "no ${workflow.path}")
-        assertTrue(pluginSource.isFile, "no ${pluginSource.path}")
 
         val workflowRef = BuildFFmpegTask.readWorkflowFFmpegVersion(workflow.readText())
-        val pluginRef = BuildFFmpegTask.readPluginDefaultFFmpegVersion(pluginSource.readText())
         assertTrue(workflowRef != null, "publish.yml has no FFMPEG_VERSION pin")
-        assertTrue(pluginRef != null, "KiteCodecPlugin.kt has no DEFAULT_FFMPEG_VERSION")
 
         val vendorRelease = repoRoot.resolve("vendor/ffmpeg/RELEASE")
             .takeIf { it.isFile }
@@ -150,7 +134,6 @@ class BuildFFmpegRefsTest {
         BuildFFmpegTask.assertFFmpegRefsAgree(
             listOf(
                 site("buildSrc", BuildFFmpegTask.DEFAULT_SOURCE_REF),
-                site("plugin", pluginRef!!),
                 site("workflow", workflowRef!!),
             ),
             vendorRelease,
