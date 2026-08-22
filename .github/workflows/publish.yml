@@ -111,6 +111,12 @@ jobs:
             test -f "native-libs/lgpl/${triple}/lib/libavformat.a"
             rm -f "${asset}" "${asset}.sha256"
           done
+      # The C helper tasks compile with konan's own LLVM, which only lands in
+      # ~/.konan/dependencies once a Kotlin/Native compile has run; on a fresh runner the C task
+      # can race it and die with "No LLVM package with a usable clang" (register row KC-CI-KONAN,
+      # measured on this workflow's first armed run). One warmup compile provisions everything.
+      - name: Warm the Kotlin/Native toolchain
+        run: ./gradlew :kitecodec-core:compileKotlinMacosArm64 --stacktrace || true
       # publishAllPublicationsToMavenCentralRepository uploads to the Central Portal but does NOT
       # auto-release (the build script calls publishToMavenCentral() without automatic release), so
       # the deployment is finished manually in the portal UI, which is the right amount of caution
