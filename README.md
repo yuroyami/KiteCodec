@@ -137,34 +137,20 @@ Stated exactly, because rounding this up is how people lose an afternoon.
 | Thing | Status |
 |---|---|
 | `kitecodec-core`, Gradle plugin | source at **0.1.0**, not yet on Maven Central |
-| FFmpeg prebuilts, android arm64 / arm32 / x64 | **published** at `ffmpeg-n8.0` |
-| FFmpeg prebuilts, ios-arm64 / ios-simulator-arm64 | **published**, plain and `dav1d` flavours |
-| FFmpeg prebuilts, macos-arm64 / linux-x64 | **failing**, cause below |
-| FFmpeg prebuilts, mingw-x64, macos-x64, linux-arm64 | none |
+| FFmpeg prebuilts, ALL 11 triples, plain and `dav1d` flavours | **published** on the `v0.1.0` release (22 zips) |
 
-**iOS is prebuilt as of 2026-08-21**, in two flavours per triple. Set
-`ffmpeg.dav1d = true` to get the AV1 software decoder; the plugin downloads the
-matching flavour. Verified on the published asset: `libdav1d.a` present,
-`ff_libdav1d_decoder` defined in `libavcodec.a`, arm64.
+**Full coverage as of 2026-08-22.** Every release lives on the KiteCodec version
+tag (`v0.1.0`), and every release carries the complete companion set: 11 triples x
+2 flavours. The plugin's `ffmpeg.releaseTag` defaults to its own version tag, so a
+plugin version always fetches the assets released with it. This became possible by
+making EVERY profile portable: macOS dropped its Homebrew third-party stack (the
+runners ship graphite2 shared-only, so a self-contained fat asset was impossible)
+and now builds like iOS plus the VideoToolbox encoders. Decoding is untouched; set
+`ffmpeg.dav1d = true` for the AV1 software decoder flavour.
 
 **One source for all targets.** `ffmpeg.source` is a single property, not a
-per-target one. A project wiring iOS *and* desktop cannot take `Prebuilt` for iOS
-while keeping `Local` for desktop, so today it uses `Local` for both until desktop
-assets exist. Per-target source selection is unbuilt.
-
-**The desktop failures, measured on the 2026-08-21 run rather than predicted.** This
-file previously said both were blocked on Homebrew shipping svt-av1 and graphite2
-shared-only against `-Pkitecodec.ffmpeg.selfContained=true`. The first real run
-falsified that: neither job reached the self-contained check.
-
-Both fixed causes are gone (the SVT-AV1 struct mismatch, and konan's toolchain not
-being present before the FFmpeg step). What remains is one thing, and it is a
-capability decision rather than a bug: a Release asset must link on a machine that
-has none of these installed, and the runners ship **harfbuzz and graphite2 shared
-only**, so `-Pkitecodec.ffmpeg.selfContained=true` refuses. Clearing it means either
-building that shaping stack statically in CI, or dropping FFmpeg's `drawtext` and
-`libass` from the desktop profile. KitePlayer renders ASS through its own
-`kiteplayer-libass` module, so FFmpeg's copy may be redundant for a player.
+per-target one. With full prebuilt coverage this matters much less: `Prebuilt` now
+works for every triple at once. Per-target source selection remains unbuilt.
 
 **Local routes that always work.** `FFmpegSource.System` links a Homebrew or apt
 FFmpeg for the host's own desktop target; CI uses this. Inside this repository,
@@ -191,6 +177,7 @@ kitecodec {
         dav1d     = false                // AV1 software decoder
         libass    = false                // ASS subtitle chain
         repo      = "yuroyami/KiteCodec" // where Prebuilt downloads from
+        releaseTag = "v0.1.0"            // release tag holding the assets; defaults to the plugin's own version tag
         pinnedSha256 = mapOf()           // asset filename -> sha256
     }
 }
@@ -206,6 +193,7 @@ kitecodec {
 | `ffmpeg.dav1d` | Boolean | `false` | Contract, enforced **both ways**. See below. |
 | `ffmpeg.libass` | Boolean | `false` | Requires `Local` plus a built chain. |
 | `ffmpeg.repo` | String | this repo | `owner/repo` hosting the Release assets. |
+| `ffmpeg.releaseTag` | String | `v<plugin version>` | Release tag the assets are downloaded from. |
 | `ffmpeg.pinnedSha256` | Map | empty | A pinned value overrides the published `.sha256`. |
 
 **Tasks.** `fetchFFmpeg<Target>` (one per wired native target, automatic under
@@ -385,9 +373,9 @@ they do not decode, encode, filter, remux or transcode media.
 | `macosX64` | no | not built | Kotlin deprecated the target |
 | `linuxArm64` | no | 109 native tests pass in an arm64 Linux container over the vendored cross-build, covering demux, decode, encode, filter and transcode | vendored LGPL cross-build at the reduced desktop profile, from the Kotlin/Native toolchain |
 
-Six triples have no prebuilt asset. For those the Gradle plugin fails
-configuration and prints the alternatives, rather than letting the download
-return 404 mid-build. A remote publication of `kitecodec-core` requires
+Every triple has a prebuilt asset since the v0.1.0 full-coverage release. The
+Gradle plugin still fails configuration with alternatives, rather than 404-ing
+mid-build, for any triple a future release has not covered yet. A remote publication of `kitecodec-core` requires
 `-Pkitecodec.stableTargetsOnly=true` and a real FFmpeg tree for every configured native
 target, so it cannot silently drop one. JVM, JS and WasmJs are portable variants included in
 every publication scope and are invariant unsupported placeholders.
@@ -414,7 +402,6 @@ MediaCodec is reached only by asking FFmpeg for a named decoder such as
 |---|---|
 | A functional published JVM/Android distribution | Public JVM is an invariant placeholder. JNI-backed Android actuals and an unpublished JVM test harness exist in the local phone proof scope; its macOS dylib is test-only and no Android AAR is public. |
 | A functional Web codec backend | `js` and `wasmJs` are dependency-compatible placeholders only. Capability probes return false and media operations throw typed `FFmpegError.Unsupported`. |
-| Prebuilt FFmpeg for iOS or desktop | `FFmpegSource.Prebuilt` serves the three Android triples. iOS has no CI job at all; macOS and Linux are blocked on the static svt-av1 / graphite2 issue in [Release status](#release-status). Use `Local` or `System` for those. |
 | Any GPL FFmpeg flavour | Removed on 2026-08-21: no GPL build tasks, no GPL release assets. `FFmpegLicense.GPL` survives only as a label for a tree you built yourself. Distributing a GPL binary makes your whole app GPL-3.0, which is not a choice a library should make for you. |
 | A bitstream filter API | Nothing binds `av_bsf_*`, so you cannot give a stream copy one explicitly. The vendored profile does compile the common ones in (`h264_mp4toannexb`, `hevc_mp4toannexb`, `aac_adtstoasc`, `extract_extradata`, `vp9_superframe`), so libavformat can insert them automatically during a copy. |
 | Hardware decode, and zero-copy hwframes | Hardware *encode* does work. `h264_videotoolbox` is verified on macOS arm64. Pass `allow_sw` on VMs and CI runners, where the encoder exists but the hardware block does not. |

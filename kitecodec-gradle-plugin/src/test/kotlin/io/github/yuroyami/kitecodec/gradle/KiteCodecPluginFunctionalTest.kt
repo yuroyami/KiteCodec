@@ -133,12 +133,14 @@ class KiteCodecPluginFunctionalTest {
     }
 
     /**
-     * v0.1 ships prebuilt FFmpeg assets for five triples only. A consumer wiring a target outside
-     * that set with the default `source = Prebuilt` must fail configuration with the options
-     * (System source / self-hosted repo / drop the target), not 404 mid-build at fetch time.
+     * Since the v0.1.0 full-coverage release EVERY triple has a prebuilt asset, so the
+     * no-asset refusal has nothing to refuse: the once-refused mingw-x64 must now CONFIGURE
+     * against the default Prebuilt source. The refusal path itself stays in the plugin for the
+     * next uncovered triple a future release adds; this test flips back to buildAndFail the day
+     * one exists.
      */
     @Test
-    fun prebuiltSourceForTripleWithoutAssetFailsConfigurationWithOptions() {
+    fun prebuiltSourceConfiguresForEveryTripleSinceFullCoverage() {
         val repo = requireNotNull(System.getProperty("kitecodec.test.repo"))
         val pluginVersion = requireNotNull(System.getProperty("kitecodec.test.pluginVersion"))
         val kotlinVersion = requireNotNull(System.getProperty("kitecodec.test.kotlinVersion"))
@@ -174,9 +176,8 @@ class KiteCodecPluginFunctionalTest {
                 }
 
                 kotlin {
-                    // mingw-x64 has no prebuilt asset and no CI job, and needs a cross-built
-                    // third-party stack before it could have one. ios-arm64 was this row's example
-                    // until 2026-08-21, when iOS got its first release job and stopped qualifying.
+                    // mingw-x64 was the canonical asset-less triple until the 2026-08-22
+                    // full-coverage release; now it is the proof that none is left.
                     mingwX64()
                 }
 
@@ -192,18 +193,11 @@ class KiteCodecPluginFunctionalTest {
                 .withProjectDir(projectDir)
                 .withArguments("help", "--stacktrace")
                 .forwardOutput()
-                .buildAndFail()
+                .build()
 
             assertTrue(
-                "mingw-x64" in result.output &&
-                    "no prebuilt FFmpeg asset" in result.output,
-                "Expected the no-prebuilt-asset error naming mingw-x64. Output:\n${result.output}",
-            )
-            assertTrue(
-                "FFmpegSource.System" in result.output &&
-                    "repo = \"you/yourrepo\"" in result.output,
-                "Expected the error to list the fallback options (System source, self-hosted repo). " +
-                    "Output:\n${result.output}",
+                "no prebuilt FFmpeg asset" !in result.output,
+                "Full coverage means no triple may trip the no-asset refusal. Output:\n${result.output}",
             )
         } finally {
             projectDir.deleteRecursively()

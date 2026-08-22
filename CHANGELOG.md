@@ -28,7 +28,7 @@ was private and unpublished.
 
 ## [Unreleased]
 
-The library is source-only for now. Nothing has been published, not `kitecodec-core`, not the Gradle plugin, and not the FFmpeg Release assets the plugin's `FFmpegSource.Prebuilt` default downloads. Release state and the per-target table live in the [README](https://github.com/yuroyami/KiteCodec#release-status) rather than being restated here.
+The Maven artifacts (`kitecodec-core`, the Gradle plugin) are still source-only: nothing is on Maven Central. The FFmpeg Release assets ARE published: the `v0.1.0` GitHub release carries the full 22-zip companion set. Release state and the per-target table live in the [README](https://github.com/yuroyami/KiteCodec#release-status) rather than being restated here.
 
 ### Changed
 - **Every FFmpeg profile is now PORTABLE, macOS included.** The fat macOS desktop profile
