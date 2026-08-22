@@ -3,6 +3,15 @@
 # klibs, so the fetch step below unpacks ALL 11 triples' zips (dav1d inside every one) into
 # native-libs/ before publishing, and cinterop embeds them.
 #
+# THIS WORKFLOW CANNOT RUN YET, and that is a repository-settings fact rather than a bug in the
+# file: `gh secret list` on this repository returns NOTHING, so all four secrets below are
+# missing and every job here would fail at the publish step. 0.1.0 was therefore published from
+# the maintainer's own machine, where the same credentials already live in ~/.gradle/
+# gradle.properties (mavenCentralUsername/Password, signingInMemoryKey/KeyId/KeyPassword), with:
+#   ./gradlew :kitecodec-core:publishAllPublicationsToMavenCentralRepository --no-configuration-cache
+# To make CI the publisher instead, add the four secrets in repository settings; nothing else
+# below needs to change.
+#
 # PREREQUISITES (all must exist before running this workflow):
 #   Secrets:
 #     MAVEN_CENTRAL_USERNAME / MAVEN_CENTRAL_PASSWORD: Central Portal user token
