@@ -53,9 +53,9 @@ KiteCodec links against FFmpeg's libav* libraries. You need them present before 
 
     Configure, make and install run in a unique hash-free directory under `java.io.tmpdir`. The task installs the normalized configure invocation as the single-line `lib/kitecodec/ffmpeg-configure.txt` provenance record, requires it during verification, copies the verified install to a sibling staging directory and only then replaces `native-libs`. A failed build preserves the last good tree even when the checkout path contains `#`; packaging reads only that installed record.
 
-    The desktop profile also needs FFmpeg's usual build prerequisites and third-party encoder/text libraries: `make`, a C toolchain, `nasm`/`yasm`, `pkg-config`, svt-av1, libvpx, aom, opus, lame, webp, freetype, harfbuzz, fribidi, and libass. On macOS run `brew install nasm pkg-config svt-av1 libvpx aom opus lame webp freetype harfbuzz fribidi libass`. The iOS arm64 and arm64-simulator tasks deliberately do not use that desktop stack. They build the shared STANDARD software-playback set with SDK zlib, no GPL libraries and no VideoToolbox. See [Troubleshooting](troubleshooting.md#vendored-build-prerequisites) if configure fails.
+    Every profile is portable (2026-08-22): no third-party libraries are needed on any target. The prerequisites are `make`, a C toolchain and, for the x86_64 targets' assembly, `nasm`. The dav1d flavour additionally needs `meson` and `ninja`. On macOS: `brew install nasm meson ninja`. See [Troubleshooting](troubleshooting.md#vendored-build-prerequisites) if configure fails.
 
-    The default flavor is **LGPL** (no libx264 / libx265). For the GPL flavor, run the `Gpl` task variants (for example `buildFFmpegForMacosArm64Gpl`) and build with `-Pkitecodec.ffmpeg.license=gpl`. The resulting executable carries everything it needs (around 25 MB).
+    Every bake is **LGPL** (no libx264 / libx265). There are no GPL build tasks: a GPL tree is something you build and own yourself, consumed through `FFmpegSource.Local`.
 
 !!! tip "Android"
 

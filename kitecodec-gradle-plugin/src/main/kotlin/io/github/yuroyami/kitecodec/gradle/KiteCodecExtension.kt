@@ -71,6 +71,14 @@ abstract class FFmpegSpec {
     abstract val repo: Property<String>
 
     /**
+     * The Release TAG under [repo] the prebuilt assets are downloaded from. Defaults to this
+     * plugin's own version tag (`v0.1.0` for plugin 0.1.0), because every KiteCodec release ships
+     * its full set of FFmpeg companion prebuilts on its own version tag. Override only when
+     * self-hosting assets under a differently named release.
+     */
+    abstract val releaseTag: Property<String>
+
+    /**
      * States whether this build carries FFmpeg's libdav1d AV1 software decoder (default false).
      *
      * THIS IS A CONTRACT, NOT A SWITCH, and it is enforced in BOTH directions since 0.0.11.
@@ -83,9 +91,10 @@ abstract class FFmpegSpec {
      *   script says it does not want is a silent lie; the fix is one line either way.
      * - A match links (or omits) `-ldav1d` accordingly.
      *
-     * [FFmpegSource.Prebuilt] has no dav1d flavour published yet and says so; [FFmpegSource.System]
-     * ignores the toggle, because a system FFmpeg decides its own decoders. dav1d stays an OPTIONAL
-     * library by owner decision D-7: a tree built without it ships not one extra byte.
+     * [FFmpegSource.Prebuilt] publishes BOTH flavours per triple (`...-dav1d-<triple>.zip`), so the
+     * toggle picks the matching asset. [FFmpegSource.System] ignores the toggle, because a system
+     * FFmpeg decides its own decoders. dav1d stays an OPTIONAL library by owner decision D-7: a
+     * tree built without it ships not one extra byte.
      */
     abstract val dav1d: Property<Boolean>
 

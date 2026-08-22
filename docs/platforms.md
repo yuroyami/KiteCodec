@@ -81,18 +81,20 @@ small. If an encoder, muxer, filter or protocol is not listed here, it is not in
 profile. This table describes compiled profile contents, not per-target runtime qualification.
 The authoritative list is `sharedCoreArgs()` in [`BuildFFmpegTask.kt`](https://github.com/yuroyami/KiteCodec/blob/main/buildSrc/src/main/kotlin/BuildFFmpegTask.kt); as of `n8.0`:
 
-| | Desktop LGPL | Desktop GPL | Mobile Apple LGPL | Android LGPL |
+Every profile is PORTABLE since 2026-08-22: no third-party desktop stack anywhere. The optional dav1d flavour adds the `libdav1d` AV1 software decoder to any column.
+
+| | macOS LGPL | Mobile Apple LGPL | Linux / Windows LGPL | Android LGPL |
 |---|---|---|---|---|
-| **Video encode** | `mpeg4`, `libsvtav1`, `mjpeg`, `png`, `h264_videotoolbox`, `hevc_videotoolbox` | + `libx264`, `libx265` | `mpeg4`, `mjpeg`, `png` | `mpeg4`, `mjpeg`, `png`, `h264_mediacodec`, `hevc_mediacodec` |
-| **Audio encode** | `aac`, `libopus`, `libmp3lame`, `flac`, `pcm_s16le`/`s24le`/`f32le` | same | `flac`, `pcm_*` | `aac`, `flac`, `pcm_*` |
-| **Decode** | every native FFmpeg decoder, plus the external ones the flavor links (libvpx, libaom, libwebp) | same | every native FFmpeg decoder; VideoToolbox hwaccel behind h264/hevc | every native FFmpeg decoder + MediaCodec h264/hevc |
+| **Video encode** | `mpeg4`, `mjpeg`, `png`, `h264_videotoolbox`, `hevc_videotoolbox` | `mpeg4`, `mjpeg`, `png` | `mpeg4`, `mjpeg`, `png` | `mpeg4`, `mjpeg`, `png`, `h264_mediacodec`, `hevc_mediacodec` |
+| **Audio encode** | `aac`, `flac`, `pcm_s16le`/`s24le`/`f32le` | `flac`, `pcm_*` | `flac`, `pcm_*` | `aac`, `flac`, `pcm_*` |
+| **Decode** | every native FFmpeg decoder; VideoToolbox hwaccel behind h264/hevc | every native FFmpeg decoder; VideoToolbox hwaccel behind h264/hevc | every native FFmpeg decoder | every native FFmpeg decoder + MediaCodec h264/hevc |
 | **Demux** | every native FFmpeg demuxer | same | same | same |
 | **Mux (write)** | mp4/mov, matroska/webm (including `.mka`), mpegts, mp3, wav, flac, ogg/opus, image2 | same | same | same |
 | **Protocols** | `file`, `fd`, `pipe`, `data`, `http`, `tcp` | same | same | same |
-| **Filters** | scale, pad, overlay, hue, unsharp, vignette, colorbalance, colorlevels, curves, lut, colorchannelmixer, split, trim/setpts, drawtext, and the audio set | + `eq`, `boxblur` | shared set without `drawtext`, `eq` or `boxblur` | same as Mobile Apple |
+| **Filters** | the shared set: scale, pad, overlay, hue, unsharp, vignette, colorbalance, colorlevels, curves, lut, colorchannelmixer, split, trim/setpts, and the audio set | same | same | same |
 | **Bitstream filters** | all of them (they ride with the wide demuxer class) | same | same | same |
 
-`eq` and `boxblur` are marked `deps="gpl"` by FFmpeg itself, which is why they appear only in the GPL column. Use `hue` (it has a brightness parameter `b`), `colorlevels` or `curves` instead. The bitstream filters are never named by KiteCodec. libavformat inserts them during a stream copy, which is a copy of encoded packets with no decode or encode. Without them, a copy between container families produces a *corrupt file* rather than an error.
+There is no GPL column and no `drawtext`/`eq`/`boxblur` anywhere: this project bakes the LGPL portable profile only. Use `hue` (it has a brightness parameter `b`), `colorlevels` or `curves` where you reached for `eq`. The bitstream filters are never named by KiteCodec. libavformat inserts them during a stream copy, which is a copy of encoded packets with no decode or encode. Without them, a copy between container families produces a *corrupt file* rather than an error.
 
 `mpeg4` is the dependency-free video baseline: it is always present, in every flavor, so code that must encode *something* without pulling in a GPL or hardware encoder has a target. `https` is **not** built. It needs a TLS backend cross-compiled for every target, and this profile does not include one. Use `http`, a local file, or link a system FFmpeg that has TLS.
 

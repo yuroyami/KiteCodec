@@ -549,28 +549,13 @@ class KiteCodecPluginFunctionalTest {
             val sim = requireNotNull(result.output.lineSequence().firstOrNull { it.startsWith("sim=") })
             val localPath = localRoot.canonicalFile.invariantSeparatorsPath
 
-            assertEquals(
-                "mac=-L$localPath/lgpl/macos-arm64/lib -L/test-host/lib " +
-                    listOf(
-                        "-lSvtAv1Enc", "-lvpx", "-laom", "-lopus", "-lmp3lame",
-                        "-lwebpmux", "-lwebp", "-lsharpyuv", "-lass", "-lharfbuzz",
-                        "-lfreetype", "-lfribidi", "-lpng16", "-lgraphite2", "-lz", "-lbz2",
-                        "-llzma", "-liconv", "-lc++", "-framework", "CoreGraphics", "-framework", "CoreText",
-                        "-framework", "CoreFoundation", "-framework", "CoreMedia", "-framework",
-                        "CoreVideo", "-framework", "VideoToolbox", "-framework", "AudioToolbox",
-                    ).joinToString(" "),
-                mac,
-            )
-            assertEquals(
-                "ios=-L$localPath/lgpl/ios-arm64/lib -lz -framework CoreFoundation -framework CoreMedia " +
-                    "-framework CoreVideo -framework VideoToolbox",
-                ios,
-            )
-            assertEquals(
-                "sim=-L$localPath/lgpl/ios-simulator-arm64/lib -lz -framework CoreFoundation -framework CoreMedia " +
-                    "-framework CoreVideo -framework VideoToolbox",
-                sim,
-            )
+            // One portable Apple link set for macOS and iOS alike (2026-08-22): zlib plus the
+            // media frameworks, no Homebrew -L, no third-party stack.
+            val appleFlags = "-lz -framework CoreFoundation -framework CoreMedia " +
+                "-framework CoreVideo -framework VideoToolbox -framework AudioToolbox"
+            assertEquals("mac=-L$localPath/lgpl/macos-arm64/lib $appleFlags", mac)
+            assertEquals("ios=-L$localPath/lgpl/ios-arm64/lib $appleFlags", ios)
+            assertEquals("sim=-L$localPath/lgpl/ios-simulator-arm64/lib $appleFlags", sim)
             assertTrue("fetchFFmpeg" !in result.output, "Local source must execute no fetch task: ${result.output}")
         } finally {
             projectDir.deleteRecursively()

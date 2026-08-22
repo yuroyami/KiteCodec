@@ -7,6 +7,10 @@ import java.io.File
 const val IOS_GPL_REFUSAL =
     "iOS GPL refusal: FFmpegLicense.GPL is unsupported for iOS; use LGPL."
 
+const val LGPL_ONLY_REFUSAL =
+    "GPL refusal: KiteCodec builds and publishes the LGPL flavour only (owner decision " +
+        "2026-08-21). A GPL tree is a consumer-built FFmpegSource.Local tree, never this task's."
+
 private val TargetTriple.isIos: Boolean
     get() = this == TargetTriple.IosArm64 ||
         this == TargetTriple.IosSimulatorArm64 ||

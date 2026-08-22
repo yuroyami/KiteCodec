@@ -111,9 +111,30 @@ abstract class BuildDav1dTask : DefaultTask() {
     private fun crossFileFor(target: TargetTriple, scratch: File): File? {
         val text = when (target) {
             TargetTriple.MacosArm64 -> return null
-            TargetTriple.AndroidArm64, TargetTriple.AndroidX64 -> {
+            // Cross to Intel macOS from this arm64 host: same clang, -arch does the aiming. The
+            // x86 asm needs nasm, which the tool preflight above already demands.
+            TargetTriple.MacosX64 ->
+                """
+                [binaries]
+                c = 'clang'
+                ar = 'ar'
+                strip = 'strip'
+
+                [built-in options]
+                c_args = ['-arch', 'x86_64']
+                c_link_args = ['-arch', 'x86_64']
+
+                [host_machine]
+                system = 'darwin'
+                cpu_family = 'x86_64'
+                cpu = 'x86_64'
+                endian = 'little'
+                """.trimIndent()
+            TargetTriple.AndroidArm64, TargetTriple.AndroidArm32, TargetTriple.AndroidX64 -> {
                 val (cpuFamily, cpu, ccPrefix) = when (target) {
                     TargetTriple.AndroidArm64 -> Triple("aarch64", "aarch64", "aarch64-linux-android")
+                    // meson spells 32-bit ARM 'arm'; dav1d's NEON asm keys off it.
+                    TargetTriple.AndroidArm32 -> Triple("arm", "armv7a", "armv7a-linux-androideabi")
                     else -> Triple("x86_64", "x86_64", "x86_64-linux-android")
                 }
                 val bin = ndkToolchainBin()
@@ -132,9 +153,10 @@ abstract class BuildDav1dTask : DefaultTask() {
                 endian = 'little'
                 """.trimIndent()
             }
-            TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64 -> {
+            TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64, TargetTriple.IosX64 -> {
                 val sdkName = if (target == TargetTriple.IosArm64) "iphoneos" else "iphonesimulator"
                 val minFlag = if (target == TargetTriple.IosArm64) "-mios-version-min=14.0" else "-mios-simulator-version-min=14.0"
+                val (arch, cpuFamily) = if (target == TargetTriple.IosX64) "x86_64" to "x86_64" else "arm64" to "aarch64"
                 val sdk = xcrunSdkPath(sdkName)
                 """
                 [binaries]
@@ -143,13 +165,13 @@ abstract class BuildDav1dTask : DefaultTask() {
                 strip = 'strip'
 
                 [built-in options]
-                c_args = ['-arch', 'arm64', '-isysroot', '$sdk', '$minFlag']
-                c_link_args = ['-arch', 'arm64', '-isysroot', '$sdk', '$minFlag']
+                c_args = ['-arch', '$arch', '-isysroot', '$sdk', '$minFlag']
+                c_link_args = ['-arch', '$arch', '-isysroot', '$sdk', '$minFlag']
 
                 [host_machine]
                 system = 'darwin'
-                cpu_family = 'aarch64'
-                cpu = 'aarch64'
+                cpu_family = '$cpuFamily'
+                cpu = '$cpuFamily'
                 endian = 'little'
                 """.trimIndent()
             }
@@ -254,11 +276,6 @@ abstract class BuildDav1dTask : DefaultTask() {
          * wasm32 is absent by nature rather than by omission: it is not a [TargetTriple] at all,
          * and dav1d could not join the shipped wasm profile anyway (see the refusal message).
          */
-        val SUPPORTED_TARGETS: Set<TargetTriple> = setOf(
-            TargetTriple.MacosArm64,
-            TargetTriple.AndroidArm64, TargetTriple.AndroidX64,
-            TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64,
-            TargetTriple.LinuxX64, TargetTriple.LinuxArm64, TargetTriple.MingwX64,
-        )
+        val SUPPORTED_TARGETS: Set<TargetTriple> = TargetTriple.entries.toSet()
     }
 }

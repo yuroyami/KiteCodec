@@ -23,3 +23,6 @@ native-libs/
 # running py_compile over it leaves bytecode next to it. That is output, not source.
 __pycache__/
 *.pyc
+
+# Local runs of .github/scripts/package-ffmpeg.sh
+/dist/

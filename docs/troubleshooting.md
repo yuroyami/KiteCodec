@@ -62,22 +62,16 @@ The `buildFFmpegFor<Target>` tasks compile FFmpeg from source. They fail early w
 git clone --depth 1 --branch n8.0 https://github.com/FFmpeg/FFmpeg vendor/ffmpeg
 ```
 
-**2. Build tools.** `make`, a C toolchain (clang/gcc), `nasm` or `yasm` (x86 assembly: configure fails without it on x86 targets), and `pkg-config`.
-
-**3. The external encoder libraries** the desktop profile enables. Configure errors like `ERROR: libsvtav1 not found using pkg-config` mean the dev package is missing. On macOS:
+**2. Build tools.** `make`, a C toolchain (clang/gcc) and `nasm` (x86 assembly: configure fails without it on x86 targets). The dav1d flavour additionally needs `meson` and `ninja`:
 
 ```bash
-brew install nasm pkg-config svt-av1 libvpx aom opus lame webp \
-             freetype harfbuzz fribidi libass
-# GPL flavor additionally:
-brew install x264 x265
+brew install nasm meson ninja
 ```
 
-On Debian/Ubuntu the equivalents are the `-dev` packages (`libsvtav1-dev`, `libvpx-dev`, `libaom-dev`, `libopus-dev`, `libmp3lame-dev`, `libwebp-dev`, `libfreetype-dev`, `libharfbuzz-dev`, `libfribidi-dev`, `libass-dev`, plus `libx264-dev` / `libx265-dev` for GPL).
-
-The iOS arm64 and arm64-simulator builds do not use those desktop packages. They use the shared
-STANDARD software-playback profile, `--disable-autodetect`, SDK zlib and the selected Apple SDK.
-There is no iOS GPL task and no VideoToolbox addition in this profile.
+**3. That is the whole list.** Every profile is portable (2026-08-22): no third-party encoder or
+text library is linked on any target, so configure never asks the host package manager for one.
+Apple targets use SDK zlib plus VideoToolbox/AudioToolbox from the SDK; Linux and Windows use
+konan's own sysroot; Android uses the NDK. There are no GPL tasks.
 
 **Path safety.** A checkout or final output path may contain `#`. Configure, make and install run
 only in a unique hash-free workspace under `java.io.tmpdir`; source copying excludes `.git` and

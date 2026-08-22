@@ -6,193 +6,84 @@ package io.github.yuroyami.kitecodec.buildtools
  *
  * `ffmpeg.def` names only the six libav* libraries. That is enough for a shared/system FFmpeg,
  * whose dylibs resolve their own dependencies at load time, but a static `libavcodec.a` resolves
- * nothing. Every symbol it draws from the third-party encoder and text stack (svt-av1, vpx, aom,
- * opus, mp3lame, webp, freetype/harfbuzz/fribidi/ass, plus x264/x265 under GPL) has to be satisfied
- * by naming that archive explicitly, or the link dies with pages of `symbol(s) not found`.
+ * nothing: every symbol it draws from outside itself must be named at the consumer's link.
  *
- * Two halves, and both matter:
- *  - [thirdPartyArchives]: the `.a` files [BuildFFmpegTask] copies into the vendored tree, so
- *    `native-libs/<license>/<target>/lib` is self-contained and has the same layout as the
- *    published release zip.
- *  - [forTarget]: the `-l` flags naming those archives plus the handful the OS/SDK provides.
+ * Since the portable profiles (owner decision 2026-08-22) every target's needs are platform
+ * services plus at most ONE third-party archive, the optional cross-built dav1d:
+ *  - Apple (macOS and iOS): SDK zlib plus the media frameworks the VideoToolbox/AudioToolbox
+ *    codecs reference.
+ *  - Linux: zlib, maths, dynamic loader, pthreads (all from the konan sysroot / OS).
+ *  - Windows (mingw): zlib, iconv (both from the msys2 sysroot) plus the sockets/media/COM APIs
+ *    FFmpeg's network and mpegts code reaches for.
+ *  - Android: nothing (MediaCodec is a platform service; zlib is a platform library named by
+ *    the def file's linker opts).
  *
- * KEEP IN SYNC with `PrebuiltLinkFlags.kt` in `kitecodec-gradle-plugin` and the bundling step in
- * `.github/scripts/package-ffmpeg.sh`, which solve the identical problem for consumers of the
- * published artifact. The three cannot share code (separate classpaths, and one is bash), so they
- * are deliberately kept structurally identical instead.
+ * KEEP IN SYNC with `PrebuiltLinkFlags.kt` in `kitecodec-gradle-plugin`, which solves the same
+ * problem for consumers of the published zips. The two cannot share code (separate classpaths),
+ * so they are deliberately kept structurally identical instead.
  */
 object StaticLinkFlags {
 
-    /**
-     * Shared desktop LGPL set, dependents before dependencies (GNU ld resolves static archives
-     * left→right). webp is split across three archives since libwebp 1.3 (libwebpmux backs
-     * FFmpeg's anim encoder; libsharpyuv is libwebp's own dependency).
-     */
-    private val DESKTOP_LGPL = listOf(
-        // No SvtAv1Enc: the desktop profile stopped passing --enable-libsvtav1 on 2026-08-21
-        // (FFmpeg n8.0 and current SVT-AV1 disagree about EbSvtAv1EncConfiguration), so demanding
-        // its archive made every self-contained desktop build fail on a library nothing links.
-        "vpx", "aom", "opus", "mp3lame",
-        "webpmux", "webp", "sharpyuv",
-        "ass", "harfbuzz", "freetype", "fribidi",
-        // Transitive dependencies of the text stack, and they must come AFTER it: freetype's
-        // embedded-PNG bitmap support calls into libpng, harfbuzz's shaping backend into graphite2.
-        // A shared FFmpeg hides these; a static one fails with `_png_set_tRNS_to_alpha` and `_gr_*`.
-        "png16", "graphite2",
+    private val APPLE_TARGETS = setOf(
+        TargetTriple.MacosArm64, TargetTriple.MacosX64,
+        TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64, TargetTriple.IosX64,
     )
-
-    /** GPL flavour adds the x264/x265 archives (x265 is C++; see the runtime flags below). */
-    private val DESKTOP_GPL_EXTRA = listOf("x264", "x265")
-
-    /**
-     * Whether this (target, source) combination links a static third-party stack at all.
-     *
-     * Android's profile links no third-party libraries (MediaCodec is a platform service), and
-     * `mingw-x64` is populated from BtbN's shared build: import libraries that already carry their
-     * own dependencies.
-     */
-    private fun needsStaticStack(target: TargetTriple, isStaticVendored: Boolean): Boolean {
-        if (!isStaticVendored) return false
-        return when (target) {
-            TargetTriple.MacosArm64, TargetTriple.MacosX64 -> true
-            // Mobile Apple uses only FFmpeg's shared software profile and SDK zlib.
-            TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64, TargetTriple.IosX64,
-            // Linux and Windows build the REDUCED desktop profile (KPKMP.md 17.13, decision
-            // W-D4): no third-party encoder or text stack is cross-built for them, so naming
-            // those archives here would fail every link with `unable to find library -lass`.
-            // The list must follow the configure profile, which is why this row moved when the
-            // profile did.
-            TargetTriple.LinuxX64, TargetTriple.LinuxArm64, TargetTriple.MingwX64,
-            TargetTriple.AndroidArm64, TargetTriple.AndroidArm32, TargetTriple.AndroidX64,
-            -> false
-        }
-    }
 
     /**
      * Archive FILENAMES to bundle into the vendored tree's `lib/`, so it is self-contained.
-     * OS/SDK-provided libraries (zlib, bz2, iconv, the C++ runtime) are deliberately excluded. They
-     * must come from the platform, not from a copy.
+     * OS/SDK-provided libraries (zlib, iconv) are deliberately excluded: they must come from the
+     * platform, not from a copy. Since the portable profiles this is the optional dav1d only.
      */
-    fun thirdPartyArchives(target: TargetTriple, license: FFmpegLicense, dav1d: Boolean = false): List<String> {
-        val names = buildList {
-            if (needsStaticStack(target, isStaticVendored = true)) {
-                addAll(DESKTOP_LGPL)
-                if (license == FFmpegLicense.GPL) {
-                    addAll(DESKTOP_GPL_EXTRA)
-                    // x265's Linux builds link libnuma; bundle it so the tree stays self-contained.
-                    if (target == TargetTriple.LinuxX64 || target == TargetTriple.LinuxArm64) add("numa")
-                }
-            }
-            // The optional dav1d switch (D-7) rides EVERY profile that asked for it, mobile
-            // included: the deps cross-build is what makes the tree self-contained there.
-            if (dav1d) add("dav1d")
-        }
-        return names.map { "lib$it.a" }
-    }
+    fun thirdPartyArchives(target: TargetTriple, license: FFmpegLicense, dav1d: Boolean = false): List<String> =
+        if (dav1d) listOf("libdav1d.a") else emptyList()
 
     /**
-     * Extra `-L` search paths for a LOCAL vendored build, appended after the vendored `lib/`.
-     *
-     * [BuildFFmpegTask] copies the third-party archives into the tree, but a package manager that
-     * only ships some of them shared (Homebrew's svt-av1 today) leaves gaps. On a developer machine
-     * resolving those from the host prefix is exactly right; a release build closes the gap instead
-     * by refusing to produce a tree that is not self-contained
-     * (`-Pkitecodec.ffmpeg.selfContained=true`). Ordering matters: the vendored `lib/` is searched
-     * first, so a bundled archive always wins over the host's copy.
+     * Extra `-L` search paths for a LOCAL vendored build. Since the portable profiles no target
+     * resolves anything from a host package manager, so this is always empty. The signature stays
+     * because `kitecodec-core/build.gradle.kts` wires it per target, and a future profile that
+     * reintroduces a host dependency changes this ONE function instead of that script.
      */
     fun hostFallbackSearchFlags(
         target: TargetTriple,
         hostPrefix: String,
         isStaticVendored: Boolean,
-    ): List<String> = when {
-        !needsStaticStack(target, isStaticVendored) -> emptyList()
-        target == TargetTriple.MacosArm64 || target == TargetTriple.MacosX64 -> listOf("-L$hostPrefix/lib")
-        target == TargetTriple.LinuxX64 -> listOf("-L/usr/lib/x86_64-linux-gnu", "-L/usr/lib", "-L/usr/local/lib")
-        target == TargetTriple.LinuxArm64 -> listOf("-L/usr/lib/aarch64-linux-gnu", "-L/usr/lib", "-L/usr/local/lib")
-        // Mobile Apple deliberately has no desktop stack or host fallback.
-        else -> emptyList()
-    }
+    ): List<String> = emptyList()
 
-    /** The `-l` flags the final link needs, third-party archives first, then platform basics. */
+    /** The `-l` flags the final link needs: dav1d first when carried, then platform basics. */
     fun forTarget(
         target: TargetTriple,
         license: FFmpegLicense,
         isStaticVendored: Boolean,
         dav1d: Boolean = false,
     ): List<String> {
-        // dav1d first when the tree carries it: libavcodec draws from it, and GNU ld resolves
-        // static archives left to right.
-        val dav1dFlags = if (dav1d && isStaticVendored) listOf("-ldav1d") else emptyList()
-        if (
-            isStaticVendored &&
-            target in setOf(TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64, TargetTriple.IosX64)
-        ) {
-            // The mobile profile gained VideoToolbox DECODE at the S2.a window, so the static
-            // FFmpeg archives now carry undefined references into the media frameworks on iOS
-            // too, exactly as the desktop encoder note below explains for macOS.
-            return dav1dFlags + listOf(
+        if (!isStaticVendored) return emptyList()
+        // dav1d first: libavcodec draws from it, and GNU ld resolves static archives left to right.
+        val dav1dFlags = if (dav1d) listOf("-ldav1d") else emptyList()
+        return dav1dFlags + when {
+            target in APPLE_TARGETS -> listOf(
                 "-lz",
+                // Every Apple profile enables VideoToolbox (decode everywhere, encode outside the
+                // simulators) and AudioToolbox, so the static archives carry undefined references
+                // into the media frameworks. A shared build resolved these through its own dylib
+                // dependencies; a static one must name them.
                 "-framework", "CoreFoundation",
                 "-framework", "CoreMedia",
                 "-framework", "CoreVideo",
                 "-framework", "VideoToolbox",
+                "-framework", "AudioToolbox",
             )
-        }
-        if (isStaticVendored && target.isPortableDesktop) {
-            // The reduced profile links no third-party stack, but a static libav* still draws on
-            // the platform: zlib (asked for on linux, absent on mingw), the maths and dynamic
-            // loader libraries on linux, and the Windows sockets, media and time APIs that
-            // FFmpeg's network and mpegts code reaches for on mingw.
-            return dav1dFlags + when (target) {
-                // iconv is autodetected out of the msys2 sysroot by FFmpeg's mingw configure
-                // (it backs the subtitle charset conversion), so the link has to name it too.
-                TargetTriple.MingwX64 -> listOf(
-                    "-lz", "-liconv",
-                    "-lws2_32", "-lbcrypt", "-lsecur32", "-lmfplat", "-lole32", "-lstrmiids", "-luuid",
-                )
-                else -> listOf("-lz", "-lm", "-ldl", "-lpthread")
-            }
-        }
-        if (!needsStaticStack(target, isStaticVendored)) return dav1dFlags
-
-        val isApple = target == TargetTriple.MacosArm64 || target == TargetTriple.MacosX64
-        return buildList {
-            addAll(dav1dFlags)
-            addAll(DESKTOP_LGPL.map { "-l$it" })
-            if (license == FFmpegLicense.GPL) addAll(DESKTOP_GPL_EXTRA.map { "-l$it" })
-            // Platform basics, from the OS/SDK rather than the vendored tree.
-            add("-lz")
-            add("-lbz2")
-            // The wide read profile compiled the tiff decoder, whose LZMA strips resolve from
-            // the SDK's liblzma rather than the vendored tree (drift caught 2026-08-16).
-            add("-llzma")
-            if (isApple) {
-                add("-liconv")
-                // harfbuzz's CoreText shaping backend and libass' CoreGraphics rasterisation are
-                // compiled into the static archives, and FFmpeg's videotoolbox encoders need the
-                // media frameworks. A shared build resolved these through its own dylib
-                // dependencies; a static one has to name them.
-                addAll(
-                    listOf(
-                        "-framework", "CoreGraphics",
-                        "-framework", "CoreText",
-                        "-framework", "CoreFoundation",
-                        "-framework", "CoreMedia",
-                        "-framework", "CoreVideo",
-                        "-framework", "VideoToolbox",
-                        "-framework", "AudioToolbox",
-                    ),
-                )
-                // x265 is C++; so is harfbuzz, which every flavour links.
-                add("-lc++")
-            } else {
-                // NOTE: the Linux text stack may additionally want fontconfig/expat/libunibreak
-                // behind libass. There is no vendored-static Linux job yet to prove it either
-                // way. When one is added, read the undefined symbols and extend this list and
-                // [thirdPartyArchives] together, exactly as the Apple entries above were derived.
-                add("-lstdc++")
-                if (license == FFmpegLicense.GPL) add("-lnuma")
-            }
+            // iconv backs FFmpeg's subtitle charset conversion and msys2's sysroot has it, so the
+            // mingw configure autodetects it and the link must name it, along with the Windows
+            // sockets, media and time APIs FFmpeg's network and mpegts code reaches for.
+            target == TargetTriple.MingwX64 -> listOf(
+                "-lz", "-liconv",
+                "-lws2_32", "-lbcrypt", "-lsecur32", "-lmfplat", "-lole32", "-lstrmiids", "-luuid",
+            )
+            target == TargetTriple.LinuxX64 || target == TargetTriple.LinuxArm64 -> listOf(
+                "-lz", "-lm", "-ldl", "-lpthread",
+            )
+            // Android: the def file already names zlib; MediaCodec is a platform service.
+            else -> emptyList()
         }
     }
 }

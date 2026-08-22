@@ -30,6 +30,24 @@ was private and unpublished.
 
 The library is source-only for now. Nothing has been published, not `kitecodec-core`, not the Gradle plugin, and not the FFmpeg Release assets the plugin's `FFmpegSource.Prebuilt` default downloads. Release state and the per-target table live in the [README](https://github.com/yuroyami/KiteCodec#release-status) rather than being restated here.
 
+### Changed
+- **Every FFmpeg profile is now PORTABLE, macOS included.** The fat macOS desktop profile
+  (vpx/aom/opus/lame/webp encoders, the freetype/harfbuzz/fribidi/libass text stack, drawtext)
+  is gone. Every one of those libraries had to come from Homebrew, Homebrew ships graphite2
+  shared-only, and a Release asset that only links on a machine with Homebrew is not an asset.
+  macOS now builds exactly like iOS (SDK zlib, VideoToolbox, AudioToolbox) plus the VideoToolbox
+  encoders and the native aac encoder. Decoding is untouched: the read side is wide by class,
+  and software AV1 is the dav1d flavour's job. A consumer's macOS link set shrinks to
+  `-lz` plus the five media frameworks; an old fat Local tree reads as stale in
+  `checkFFmpegRecipes` and rebakes portable.
+- **Release assets moved to the KiteCodec version tag.** Prebuilts now live on `v<version>`
+  (`v0.1.0`), not on `ffmpeg-<ffversion>`. The plugin's new `ffmpeg.releaseTag` property
+  defaults to the plugin's OWN version tag through a generated constant, so a plugin version
+  always fetches the assets released with it. Every KiteCodec release ships the FULL set:
+  11 triples x 2 flavours (plain and dav1d) = 22 zips, built by `release-binaries.yml`.
+- **`BuildDav1dTask` covers all 11 triples.** android-arm32, ios-x64 and macos-x64 gained
+  cross files (all three proven on this machine), so every triple has a dav1d flavour.
+
 ### Added
 - **`checkFFmpegRecipes`, and `-Pkitecodec.ffmpeg.autoBake=true`.** A vendored FFmpeg tree is a dead artifact: nothing rebuilt it and nothing compared it, so a recipe change in `buildSrc` and the `.a` files on disk drifted apart in silence. Measured: `av1_videotoolbox` was pinned into the Apple hwaccel list on 2026-08-19 and every Apple tree still lacked it a day later with no check red anywhere. Every bake already stamped its exact configure line into the tree; nobody read it. `checkFFmpegRecipes` now reads it and names the capability flags that moved, with the task to re-run. `-Pkitecodec.ffmpeg.autoBake=true` is the automatic half: the compile tasks depend on the bake, so Gradle re-bakes exactly when its inputs moved and skips it as UP-TO-DATE when they did not. Opt-in, because a first bake is tens of minutes. Machine-specific flags (`--prefix`, `--cc`, SDK paths) are excluded so an Xcode update never reads as drift, and the dav1d toggle is excluded because the plugin's dav1d contract already guards it in both directions.
 

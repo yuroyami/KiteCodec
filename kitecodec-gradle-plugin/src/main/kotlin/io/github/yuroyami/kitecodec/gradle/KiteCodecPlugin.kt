@@ -48,6 +48,9 @@ class KiteCodecPlugin : Plugin<Project> {
         // license has NO convention on purpose: the flavor decides the consumer's legal obligations,
         // so they must pick one themselves. Validated in validateLicenseChoice() after evaluation.
         ext.ffmpeg.repo.convention(DEFAULT_RELEASE_REPO)
+        // Every KiteCodec release ships its full prebuilt set on its own version tag, so the
+        // plugin's own version names the tag its assets live under (generated constant).
+        ext.ffmpeg.releaseTag.convention("v$KITECODEC_PLUGIN_VERSION")
         ext.ffmpeg.pinnedSha256.convention(emptyMap())
         ext.cleanCacheOnClean.convention(false)
 
@@ -375,8 +378,8 @@ class KiteCodecPlugin : Plugin<Project> {
             val flavour = if (dav1d) "-dav1d" else ""
             "ffmpeg-$v-${l.id}$flavour-${triple.triple}.zip"
         }
-        val downloadUrl = ext.ffmpeg.repo.zip(versionAndLicense) { repo, (v, _) ->
-            "https://github.com/$repo/releases/download/ffmpeg-$v/"
+        val downloadUrl = ext.ffmpeg.repo.zip(ext.ffmpeg.releaseTag) { repo, tag ->
+            "https://github.com/$repo/releases/download/$tag/"
         }.zip(assetName) { base, asset -> base + asset }
         // Keyed by flavour as well: without it, switching `dav1d` would silently reuse the other
         // flavour's unpacked tree and the link would contradict the build script.
@@ -509,29 +512,11 @@ class KiteCodecPlugin : Plugin<Project> {
                         )
                     }
                 }
-                if (source.get() == FFmpegSource.Local) {
-                    if (triple == KiteCodecTarget.MacosArm64 || triple == KiteCodecTarget.MacosX64) {
-                        val defaultPrefix = if (triple == KiteCodecTarget.MacosArm64) "/opt/homebrew" else "/usr/local"
-                        val hostLib = File(homebrewPrefix.orNull ?: defaultPrefix, "lib")
-                        binary.linkerOpts("-L${hostLib.absolutePath}")
-                        binary.linkerOpts(PrebuiltLinkFlags.extraLinkerOpts(triple, license.get()))
-                    } else if (triple in IOS_TARGETS) {
-                        // The mobile trees carry VideoToolbox DECODE since the S2.a window, so a
-                        // static iOS link must name the media frameworks the archives reference.
-                        binary.linkerOpts(
-                            "-lz",
-                            "-framework", "CoreFoundation",
-                            "-framework", "CoreMedia",
-                            "-framework", "CoreVideo",
-                            "-framework", "VideoToolbox",
-                        )
-                    } else {
-                        binary.linkerOpts(PrebuiltLinkFlags.extraLinkerOpts(triple, license.get()))
-                    }
-                } else if (source.get() == FFmpegSource.Prebuilt) {
-                    // Desktop prebuilt zips bundle the third-party static encoder/text libs; the
-                    // final link must name them explicitly (the klib's .def only names libav*).
-                    binary.linkerOpts(PrebuiltLinkFlags.extraLinkerOpts(triple, license.get()))
+                // One flag list per triple, whatever the tree's origin: since the portable
+                // profiles a Local tree and a Prebuilt zip are the same shape, and the flags name
+                // only platform libraries and frameworks (the klib's .def only names libav*).
+                if (source.get() == FFmpegSource.Local || source.get() == FFmpegSource.Prebuilt) {
+                    binary.linkerOpts(PrebuiltLinkFlags.extraLinkerOpts(triple))
                 }
             }
         }

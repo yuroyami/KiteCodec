@@ -176,7 +176,6 @@ class BuildFFmpegTaskTest {
     @Test
     fun iosProfilesUseTheExactStandardCoreZlibAndCrossArguments() {
         val task = ProjectBuilder.builder().build().tasks.create("ffmpeg", BuildFFmpegTask::class.java)
-        task.hostPrefix.set("/host")
 
         val device = task.configureArguments(
             target = TargetTriple.IosArm64,
@@ -251,7 +250,6 @@ class BuildFFmpegTaskTest {
     @Test
     fun onlyX8664TargetsMayDisableAsm() {
         val task = ProjectBuilder.builder().build().tasks.create("ffmpeg", BuildFFmpegTask::class.java)
-        task.hostPrefix.set("/host")
 
         listOf(TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64).forEach { target ->
             val args = task.configureArguments(
@@ -349,26 +347,32 @@ class BuildFFmpegTaskTest {
             "--enable-libass", "--enable-filter=drawtext", "--enable-gpl",
         )
         listOf(TargetTriple.LinuxX64, TargetTriple.LinuxArm64, TargetTriple.MingwX64).forEach { target ->
-            // Both licences, because W-D4 reduces the profile whatever was asked for: the GPL
-            // desktop stack is the consumer plugin's job, not this cross build's.
-            FFmpegLicense.entries.forEach { license ->
-                val arguments = task.configureArguments(
+            val arguments = task.configureArguments(
+                target = target,
+                license = FFmpegLicense.LGPL,
+                installPrefix = "/scratch/install",
+                konanBin = ::fakeKonanTools,
+            )
+            forbidden.forEach { flag ->
+                assertFalse(flag in arguments, "$flag came back for $target")
+            }
+            // Compression is per sysroot, measured: all three carry zlib and none carries
+            // bzlib or lzma. configure REFUSES a library it cannot find, so asking for one
+            // more here would fail the build. zlib is asked for rather than autodetected so
+            // the consumer link line, written from this same list, learns to name -lz.
+            assertTrue("--enable-zlib" in arguments, "zlib is in every sysroot here ($target)")
+            assertFalse("--enable-bzlib" in arguments, "no sysroot here carries bzlib ($target)")
+            assertFalse("--enable-lzma" in arguments, "no sysroot here carries lzma ($target)")
+            // GPL is refused everywhere since 2026-08-21: this project bakes LGPL only.
+            val refusal = assertFailsWith<IllegalArgumentException> {
+                task.configureArguments(
                     target = target,
-                    license = license,
+                    license = FFmpegLicense.GPL,
                     installPrefix = "/scratch/install",
                     konanBin = ::fakeKonanTools,
                 )
-                forbidden.forEach { flag ->
-                    assertFalse(flag in arguments, "$flag came back for $target ($license)")
-                }
-                // Compression is per sysroot, measured: all three carry zlib and none carries
-                // bzlib or lzma. configure REFUSES a library it cannot find, so asking for one
-                // more here would fail the build. zlib is asked for rather than autodetected so
-                // the consumer link line, written from this same list, learns to name -lz.
-                assertTrue("--enable-zlib" in arguments, "zlib is in every sysroot here ($target)")
-                assertFalse("--enable-bzlib" in arguments, "no sysroot here carries bzlib ($target)")
-                assertFalse("--enable-lzma" in arguments, "no sysroot here carries lzma ($target)")
             }
+            assertEquals(LGPL_ONLY_REFUSAL, refusal.message)
         }
     }
 
@@ -458,25 +462,23 @@ class BuildFFmpegTaskTest {
      */
     @Test
     fun dav1dSupportsExactlyTheTargetsItRegisters() {
-        assertEquals(
-            setOf(
-                TargetTriple.MacosArm64,
-                TargetTriple.AndroidArm64, TargetTriple.AndroidX64,
-                TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64,
-                TargetTriple.LinuxX64, TargetTriple.LinuxArm64, TargetTriple.MingwX64,
-            ),
-            BuildDav1dTask.SUPPORTED_TARGETS,
-        )
+        // Every triple since the full-coverage release (2026-08-22): the release workflow ships a
+        // dav1d flavour for all 11, so the task must write a cross file for all 11.
+        assertEquals(TargetTriple.entries.toSet(), BuildDav1dTask.SUPPORTED_TARGETS)
     }
 
     @Test
-    fun iosStaticLinkSetsAreExactlyZlib() {
-        listOf(TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64).forEach { target ->
+    fun appleStaticLinkSetsAreExactlyZlibPlusTheMediaFrameworks() {
+        // macOS joined the same portable Apple profile as iOS (2026-08-22), so ALL five Apple
+        // triples share one link set: zlib plus the media frameworks. AudioToolbox is named
+        // because every Apple profile requests --enable-audiotoolbox, so the static archives
+        // hold undefined references into it exactly as they do into VideoToolbox since S2.a.
+        listOf(
+            TargetTriple.IosArm64, TargetTriple.IosSimulatorArm64, TargetTriple.IosX64,
+            TargetTriple.MacosArm64, TargetTriple.MacosX64,
+        ).forEach { target ->
             assertEquals(emptyList(), StaticLinkFlags.thirdPartyArchives(target, FFmpegLicense.LGPL))
             assertEquals(emptyList(), StaticLinkFlags.hostFallbackSearchFlags(target, "/host", true))
-            // zlib is still the ONLY library iOS links: no third-party static stack, no host
-            // fallback. The four frameworks came with VideoToolbox decode (S2.a), because the
-            // static archives now hold undefined references into the media frameworks.
             assertEquals(
                 listOf(
                     "-lz",
@@ -484,6 +486,7 @@ class BuildFFmpegTaskTest {
                     "-framework", "CoreMedia",
                     "-framework", "CoreVideo",
                     "-framework", "VideoToolbox",
+                    "-framework", "AudioToolbox",
                 ),
                 StaticLinkFlags.forTarget(target, FFmpegLicense.LGPL, true),
             )

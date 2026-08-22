@@ -1,40 +1,25 @@
-# Builds the vendored static FFmpeg per (target x licence) and publishes each as a Release asset that
-# the `io.github.yuroyami.kitecodec` Gradle plugin fetches. Assets are named
-# `ffmpeg-<version>-<license>-<triple>.zip` (+ `.sha256`) and attached to the `ffmpeg-<version>` tag.
+# Builds the vendored static FFmpeg for EVERY supported target, in both flavours (plain and
+# dav1d), and publishes the zips as assets of the KiteCodec release tag (v<version>). The
+# `io.github.yuroyami.kitecodec` Gradle plugin downloads them from exactly that tag: its default
+# release tag is its own version, so plugin 0.1.0 fetches from v0.1.0. Assets are named
+# `ffmpeg-<ffversion>-<license>[-dav1d]-<triple>.zip` (+ `.sha256`).
 #
-# Structure: every build job uploads its zips as workflow artifacts; the single `publish` job at the
-# end downloads them all, attests build provenance, and creates/updates the release exactly once
-# (avoids the race of several jobs mutating the same release tag concurrently).
+# Structure: every build job uploads its zips as workflow artifacts; the single `publish` job at
+# the end downloads them all, attests build provenance, and creates/updates the release exactly
+# once (avoids the race of several jobs mutating the same release tag concurrently).
 #
-# COVERAGE IS PARTIAL ON PURPOSE. This builds the targets that are self-contained or whose build
-# dependencies install cleanly on a stock runner:
-#   - android arm64 / arm32 / x64 (lgpl): the Android profile pulls in NO third-party libs, so these
-#     are fully self-contained today (same build the CI workflow already runs).
-#   - macos-arm64 and linux-x64 (lgpl + gpl): desktop profiles that need the encoder stack
-#     (x264/x265/svt-av1/...) installed on the runner.
-# ios-arm64 and ios-simulator-arm64 LGPL are locally buildable with the standard software-playback
-# profile, but this workflow has no job for either and makes no release claim for them. ios-x64
-# remains unqualified, and there are no iOS GPL build tasks or release assets.
-#
-# Desktop zips must be SELF-CONTAINED: BuildFFmpegTask copies the static third-party archives into
-# the tree and package-ffmpeg.sh zips them alongside lib/LINK-FLAGS.txt. Both hard-fail naming any
-# archive the runner only ships shared, so a zip that is not link-anywhere never gets published.
-# Keep three lists in sync: StaticLinkFlags.kt (buildSrc), PrebuiltLinkFlags.kt (the plugin), and
-# the bundle list in package-ffmpeg.sh.
-#
-# KNOWN BLOCKER, the desktop jobs below cannot pass yet:
-#   Homebrew ships svt-av1 and graphite2 SHARED ONLY, so -Pkitecodec.ffmpeg.selfContained=true fails
-#   on macOS naming exactly those two. Fixing it means building them statically from source in this
-#   workflow (or dropping libsvtav1 and harfbuzz's graphite2 backend from the desktop profile).
-#   This is deliberately a loud failure rather than a zip that breaks on a consumer's machine.
-#
-# KNOWN FOLLOW-UPS (left as TODO jobs below, intentionally not faked):
-#   - Desktop cross targets (macos-x64, linux-arm64, mingw-x64) need a CROSS-COMPILED third-party
-#     dependency stack; that is a FFmpegKit-grade build chain and lands later. ios-x64 remains
-#     unqualified separately; the two locally buildable arm64 iOS LGPL trees are not releases.
-#   - The Linux text stack may additionally need fontconfig/expat/libunibreak behind libass. There
-#     is no vendored-static Linux job yet to prove it; when one exists, read the undefined symbols
-#     and extend all three lists together.
+# FULL COVERAGE BY CONSTRUCTION (owner decision 2026-08-22). Every profile is portable: the
+# shared software playback core plus platform services, no third-party desktop stack, so every
+# triple builds on a stock runner:
+#   - android arm64 / arm32 / x64: NDK clang, MediaCodec. Self-contained by profile.
+#   - ios-arm64 / ios-simulator-arm64 / ios-x64, macos-arm64 / macos-x64: Xcode clang,
+#     VideoToolbox/AudioToolbox from the SDK. macOS additionally gets the VideoToolbox encoders.
+#   - linux-x64 / linux-arm64 / mingw-x64: konan's own clang over konan's own sysroot (decision
+#     W-D3), which is the toolchain the consumer's Kotlin/Native link uses. The konan warmup step
+#     is what drops that toolchain into ~/.konan/dependencies.
+# The dav1d flavour cross-builds dav1d first (meson/ninja/nasm) and bakes it into libavcodec.
+# Both flavours ship per triple because the plugin's dav1d contract needs a matching asset for
+# either value of the consumer's `dav1d` toggle.
 #
 # Manual trigger only: this is a release pipeline, not a per-push check.
 name: Release FFmpeg binaries
@@ -42,6 +27,10 @@ name: Release FFmpeg binaries
 on:
   workflow_dispatch:
     inputs:
+      release_tag:
+        description: "KiteCodec release tag to attach assets to (e.g. v0.1.0)"
+        required: true
+        default: "v0.1.0"
       ffmpeg_version:
         description: "FFmpeg source tag to build (e.g. n8.0)"
         required: true
@@ -55,17 +44,19 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-ffmpeg-${{ github.event.inputs.ffmpeg_version }}
+  group: release-ffmpeg-${{ github.event.inputs.release_tag }}
   cancel-in-progress: false
 
 jobs:
   android:
-    name: android ${{ matrix.abi }} (lgpl)
+    name: android ${{ matrix.abi }} (lgpl${{ matrix.dav1d && '+dav1d' || '' }})
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
+        abi: [arm64, arm32, x64]
+        dav1d: [false, true]
         include:
           - { abi: arm64, triple: android-arm64, task: AndroidArm64 }
           - { abi: arm32, triple: android-arm32, task: AndroidArm32 }
@@ -77,94 +68,56 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
+      # meson + ninja + nasm are dav1d's build system and assembler (nasm for the x64 ABI).
+      - name: Install dav1d build deps
+        if: matrix.dav1d
+        run: sudo apt-get update && sudo apt-get install -y meson ninja-build nasm
       - name: Clone FFmpeg ${{ github.event.inputs.ffmpeg_version }}
         run: git clone --depth 1 --branch ${{ github.event.inputs.ffmpeg_version }} https://github.com/FFmpeg/FFmpeg.git vendor/ffmpeg
+      - name: Clone dav1d ${{ github.event.inputs.dav1d_version }}
+        if: matrix.dav1d
+        run: git clone --depth 1 --branch ${{ github.event.inputs.dav1d_version }} https://code.videolan.org/videolan/dav1d.git vendor/dav1d
+      - name: Build dav1d (NDK)
+        if: matrix.dav1d
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"
+          ./gradlew :kitecodec-core:buildDav1dFor${{ matrix.task }} --stacktrace
       - name: Build FFmpeg (NDK)
         run: |
           export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"
           ./gradlew :kitecodec-core:buildFFmpegFor${{ matrix.task }} \
-            -Pkitecodec.ffmpeg.selfContained=true --stacktrace
+            -Pkitecodec.ffmpeg.selfContained=true \
+            ${{ matrix.dav1d && '-Pkitecodec.ffmpeg.dav1d=true' || '' }} --stacktrace
       - name: Package
-        run: bash .github/scripts/package-ffmpeg.sh "${{ github.event.inputs.ffmpeg_version }}" lgpl ${{ matrix.triple }}
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ffmpeg-lgpl-${{ matrix.triple }}
-          path: |
-            dist/*.zip
-            dist/*.sha256
-          if-no-files-found: error
-          retention-days: 7
-
-  macos-desktop:
-    name: macos-arm64 (${{ matrix.license }})
-    runs-on: macos-latest
-    timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        license: [lgpl]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 21
-      - uses: gradle/actions/setup-gradle@v4
-      # The desktop profile links these software encoders + the text/subtitle stack. x264/x265 are
-      # only consumed by the gpl flavour but are harmless to have installed for lgpl. Tune per runner.
-      # No svt-av1: FFmpeg n8.0's libavcodec/libsvtav1.c:241 references
-      # enable_adaptive_quantization, which current SVT-AV1 removed from
-      # EbSvtAv1EncConfiguration, and the build dies at make. Desktop AV1 ENCODING is the only
-      # loss; AV1 decoding is dav1d's job and is unaffected. No x264/x265 either: this project
-      # publishes no GPL flavour as of 0.1.0.
-      - name: Install build deps
-        run: brew install nasm aom libvpx opus lame webp freetype harfbuzz fribidi libass
-      - name: Clone FFmpeg ${{ github.event.inputs.ffmpeg_version }}
-        run: git clone --depth 1 --branch ${{ github.event.inputs.ffmpeg_version }} https://github.com/FFmpeg/FFmpeg.git vendor/ffmpeg
-      # -Pkitecodec.ffmpeg.selfContained=true: a Release asset must link on a machine that has
-      # none of these libraries installed, so a dependency the runner only ships SHARED is a hard
-      # failure here rather than a broken zip discovered by a consumer.
-      # KNOWN BLOCKER: Homebrew ships svt-av1 and graphite2 shared-only, so this job cannot pass
-      # until both are built statically from source (or dropped from the desktop profile).
-      - name: Build FFmpeg
         run: |
-          ./gradlew :kitecodec-core:buildFFmpegForMacosArm64 \
-            -Pkitecodec.ffmpeg.selfContained=true --stacktrace
-      - name: Package
-        run: bash .github/scripts/package-ffmpeg.sh "${{ github.event.inputs.ffmpeg_version }}" ${{ matrix.license }} macos-arm64
+          bash .github/scripts/package-ffmpeg.sh \
+            "${{ github.event.inputs.ffmpeg_version }}" lgpl ${{ matrix.triple }} \
+            vendor/ffmpeg ${{ matrix.dav1d && 'dav1d' || '' }}
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ffmpeg-${{ matrix.license }}-macos-arm64
+          name: ffmpeg-lgpl-${{ matrix.triple }}${{ matrix.dav1d && '-dav1d' || '' }}
           path: |
             dist/*.zip
             dist/*.sha256
           if-no-files-found: error
           retention-days: 7
 
-  # iOS, which had NO job at all until 2026-08-21. The build tasks always existed and always ran
-  # locally; nothing ever ran them in CI, so every iOS consumer was forced onto a hand-baked Local
-  # tree. That was the single largest hole in this project's provisioning story.
-  #
-  # Both flavours are published per triple. dav1d is an OPTIONAL library, and the plugin's dav1d
-  # contract requires a consumer to declare which one they link, so publishing only one flavour
-  # would make `dav1d = true` unsatisfiable from a Release, which is exactly the message the
-  # plugin used to print: "no prebuilt dav1d flavour is published yet".
-  ios:
+  apple:
     name: ${{ matrix.triple }} (lgpl${{ matrix.dav1d && '+dav1d' || '' }})
     runs-on: macos-latest
     timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
-        triple: [ios-arm64, ios-simulator-arm64]
+        triple: [ios-arm64, ios-simulator-arm64, ios-x64, macos-arm64, macos-x64]
         dav1d: [false, true]
         include:
-          - triple: ios-arm64
-            task: IosArm64
-          - triple: ios-simulator-arm64
-            task: IosSimulatorArm64
+          - { triple: ios-arm64,            task: IosArm64 }
+          - { triple: ios-simulator-arm64,  task: IosSimulatorArm64 }
+          - { triple: ios-x64,              task: IosX64 }
+          - { triple: macos-arm64,          task: MacosArm64 }
+          - { triple: macos-x64,            task: MacosX64 }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -172,10 +125,9 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
-      # meson + nasm are dav1d's build system and assembler. cmake is not needed: the mobile Apple
-      # profile is the standard software-playback set with no third-party encoder stack.
+      # meson/ninja are dav1d's build system; nasm assembles the x86_64 asm for BOTH dav1d and
+      # FFmpeg on the two Intel triples, so it is installed unconditionally.
       - name: Install build deps
-        if: matrix.dav1d
         run: brew install meson ninja nasm
       - name: Clone FFmpeg ${{ github.event.inputs.ffmpeg_version }}
         run: git clone --depth 1 --branch ${{ github.event.inputs.ffmpeg_version }} https://github.com/FFmpeg/FFmpeg.git vendor/ffmpeg
@@ -183,6 +135,68 @@ jobs:
         if: matrix.dav1d
         run: git clone --depth 1 --branch ${{ github.event.inputs.dav1d_version }} https://code.videolan.org/videolan/dav1d.git vendor/dav1d
       - name: Build dav1d
+        if: matrix.dav1d
+        run: ./gradlew :kitecodec-core:buildDav1dFor${{ matrix.task }} --stacktrace
+      # -Pkitecodec.ffmpeg.selfContained=true: a Release asset must link on a machine that has
+      # nothing installed; with the portable profile the only bundleable archive is dav1d itself.
+      - name: Build FFmpeg
+        run: |
+          ./gradlew :kitecodec-core:buildFFmpegFor${{ matrix.task }} \
+            -Pkitecodec.ffmpeg.selfContained=true \
+            ${{ matrix.dav1d && '-Pkitecodec.ffmpeg.dav1d=true' || '' }} --stacktrace
+      - name: Package
+        run: |
+          bash .github/scripts/package-ffmpeg.sh \
+            "${{ github.event.inputs.ffmpeg_version }}" lgpl ${{ matrix.triple }} \
+            vendor/ffmpeg ${{ matrix.dav1d && 'dav1d' || '' }}
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-lgpl-${{ matrix.triple }}${{ matrix.dav1d && '-dav1d' || '' }}
+          path: |
+            dist/*.zip
+            dist/*.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+  # linux-x64, linux-arm64 and mingw-x64 all cross-build with konan's clang over konan's sysroot
+  # (decision W-D3), so one ubuntu job family covers all three. The warmup compile is what
+  # downloads that toolchain into ~/.konan/dependencies; it may itself fail (no FFmpeg tree yet,
+  # chicken-and-egg), which is fine, the dependencies land before the compiler runs.
+  linux-portable:
+    name: ${{ matrix.triple }} (lgpl${{ matrix.dav1d && '+dav1d' || '' }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        triple: [linux-x64, linux-arm64, mingw-x64]
+        dav1d: [false, true]
+        include:
+          - { triple: linux-x64,   task: LinuxX64 }
+          - { triple: linux-arm64, task: LinuxArm64 }
+          - { triple: mingw-x64,   task: MingwX64 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      # nasm assembles FFmpeg's and dav1d's x86 asm; meson/ninja are dav1d's build system.
+      # clang is the --host-cc that compiles configure's host-side probe tools.
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y nasm clang meson ninja-build
+      - name: Clone FFmpeg ${{ github.event.inputs.ffmpeg_version }}
+        run: git clone --depth 1 --branch ${{ github.event.inputs.ffmpeg_version }} https://github.com/FFmpeg/FFmpeg.git vendor/ffmpeg
+      - name: Clone dav1d ${{ github.event.inputs.dav1d_version }}
+        if: matrix.dav1d
+        run: git clone --depth 1 --branch ${{ github.event.inputs.dav1d_version }} https://code.videolan.org/videolan/dav1d.git vendor/dav1d
+      - name: Warm the Kotlin/Native toolchain
+        run: ./gradlew :kitecodec-core:compileKotlin${{ matrix.task }} --stacktrace || true
+      - name: Build dav1d (konan cross)
         if: matrix.dav1d
         run: ./gradlew :kitecodec-core:buildDav1dFor${{ matrix.task }} --stacktrace
       - name: Build FFmpeg
@@ -205,63 +219,15 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  linux-desktop:
-    name: linux-x64 (${{ matrix.license }})
-    runs-on: ubuntu-24.04
-    timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        license: [lgpl]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 21
-      - uses: gradle/actions/setup-gradle@v4
-      # Package names target ubuntu-24.04; svt-av1 / x265 may need tuning on other images.
-      - name: Install build deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y nasm yasm \
-            libx264-dev libx265-dev libnuma-dev \
-            libsvtav1-dev libaom-dev libvpx-dev libopus-dev libmp3lame-dev libwebp-dev \
-            libfreetype-dev libharfbuzz-dev libfribidi-dev libass-dev
-      - name: Clone FFmpeg ${{ github.event.inputs.ffmpeg_version }}
-        run: git clone --depth 1 --branch ${{ github.event.inputs.ffmpeg_version }} https://github.com/FFmpeg/FFmpeg.git vendor/ffmpeg
-      # The desktop profile configures FFmpeg with konan's cross toolchain, which only lands in
-      # ~/.konan/dependencies once a Kotlin/Native compile has run. Building FFmpeg first failed
-      # with "No konan dependencies at /home/runner/.konan/dependencies" on the 2026-08-21 run.
-      - name: Warm the Kotlin/Native toolchain
-        run: ./gradlew :kitecodec-core:compileKotlinLinuxX64 --stacktrace || true
-      - name: Build FFmpeg
-        run: |
-          ./gradlew :kitecodec-core:buildFFmpegForLinuxX64 \
-            -Pkitecodec.ffmpeg.selfContained=true --stacktrace
-      - name: Package
-        run: bash .github/scripts/package-ffmpeg.sh "${{ github.event.inputs.ffmpeg_version }}" ${{ matrix.license }} linux-x64
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ffmpeg-${{ matrix.license }}-linux-x64
-          path: |
-            dist/*.zip
-            dist/*.sha256
-          if-no-files-found: error
-          retention-days: 7
-
   # Single point of release creation: downloading every build artifact here and publishing once
-  # avoids three jobs racing to create/update the same release tag.
-  # `if: always()` plus a needs-list is deliberate, and it is the difference between a release and
-  # nothing. Homebrew ships svt-av1 and graphite2 SHARED ONLY, so the macOS job fails against
-  # -Pkitecodec.ffmpeg.selfContained=true, and a plain `needs:` made that one failure cancel the
-  # publish and throw away the three Android zips that had already built. Publish what succeeded;
-  # a partially covered release is exactly what the plugin's per-triple asset table describes.
+  # avoids jobs racing to create/update the same release tag. `if: always()` is deliberate during
+  # iteration: publish whatever succeeded, then re-run the failed jobs and this one; softprops
+  # updates the existing release, so the missing assets join the same tag. A release only counts
+  # as COMPLETE when all 22 zips (11 triples x 2 flavours) are present.
   publish:
     name: publish release
-    needs: [android, ios, macos-desktop, linux-desktop]
-    if: always() && needs.android.result == 'success'
+    needs: [android, apple, linux-portable]
+    if: always() && !cancelled()
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -276,11 +242,10 @@ jobs:
           path: dist
           merge-multiple: true
         continue-on-error: true
-      # LGPL/GPL source offer: the offer must stay valid for as long as the binaries are
-      # distributed, so the exact FFmpeg source is attached to the same release instead of only
-      # pointing at ffmpeg.org/GitHub (a URL we don't control). BUILD-INFO.txt inside each zip
-      # references this asset. NOTE: once desktop zips start static-bundling the LGPL third-party
-      # libs (mp3lame, fribidi), their sources must be attached here too.
+      # LGPL source offer: the offer must stay valid for as long as the binaries are distributed,
+      # so the exact FFmpeg source is attached to the same release instead of only pointing at a
+      # URL we don't control. BUILD-INFO.txt inside each zip references this asset. dav1d is
+      # BSD-2-Clause and carries no source obligation; its ref is this workflow's pinned input.
       - name: Fetch FFmpeg source tarball (source offer)
         run: |
           curl -fL --retry 3 \
@@ -294,20 +259,13 @@ jobs:
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: dist/*.zip
-      - name: Publish to the ffmpeg-${{ github.event.inputs.ffmpeg_version }} release
+      - name: Publish to the ${{ github.event.inputs.release_tag }} release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
-          tag_name: ffmpeg-${{ github.event.inputs.ffmpeg_version }}
-          name: FFmpeg binaries ${{ github.event.inputs.ffmpeg_version }}
+          tag_name: ${{ github.event.inputs.release_tag }}
+          name: KiteCodec ${{ github.event.inputs.release_tag }}
           fail_on_unmatched_files: true
           files: |
             dist/*.zip
             dist/*.tar.gz
             dist/*.sha256
-
-  # TODO desktop cross targets, each needs a cross-compiled x264/x265/svt-av1/... stack before its
-  # buildFFmpegFor<Target>[Gpl] task can succeed in CI. ios-x64 remains unqualified; ios-arm64 and
-  # ios-simulator-arm64 have local LGPL producers but no release job, and no iOS GPL tasks exist:
-  #   - macos-x64    (cross from arm64; Kotlin 2.4 still links it)
-  #   - linux-arm64  (aarch64-linux-gnu cross toolchain)
-  #   - mingw-x64    (x86_64-w64-mingw32 cross toolchain)

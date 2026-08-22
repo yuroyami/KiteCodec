@@ -11,6 +11,25 @@ kotlin {
     jvmToolchain(21)
 }
 
+// The plugin derives its default release tag (v<version>) from its OWN version at runtime, so the
+// version is generated into a constant instead of being hand-copied and drifting.
+val generatePluginVersion = tasks.register("generatePluginVersion") {
+    val pluginVersion = version.toString()
+    val outDir = layout.buildDirectory.dir("generated/kitecodec-version/kotlin")
+    inputs.property("version", pluginVersion)
+    outputs.dir(outDir)
+    doLast {
+        val file = outDir.get().file("io/github/yuroyami/kitecodec/gradle/KiteCodecPluginVersion.kt").asFile
+        file.parentFile.mkdirs()
+        file.writeText(
+            "package io.github.yuroyami.kitecodec.gradle\n\n" +
+                "/** This plugin build's own version, generated from the Gradle project version. */\n" +
+                "internal const val KITECODEC_PLUGIN_VERSION: String = \"$pluginVersion\"\n",
+        )
+    }
+}
+kotlin.sourceSets.named("main") { kotlin.srcDir(generatePluginVersion) }
+
 dependencies {
     // The Kotlin Gradle plugin types (KotlinMultiplatformExtension, KotlinNativeTarget) are present
     // in the consumer's build at apply time, so compile against them but do not bundle them.

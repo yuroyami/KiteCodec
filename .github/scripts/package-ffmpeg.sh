@@ -5,7 +5,9 @@
 #
 # Zips the {include,lib} tree at native-libs/<license>/<triple> (NOT the parent dir, so the archive
 # root is {include,lib}, exactly what the kitecodec Gradle plugin's unzip expects) into
-# dist/ffmpeg-<version>-<license>-<triple>.zip plus a matching .sha256.
+# dist/ffmpeg-<version>-<license>[-<flavour>]-<triple>.zip plus a matching .sha256. Every profile
+# is portable (2026-08-22): nothing is bundled from the runner; the optional dav1d archive is
+# already inside the tree, put there by BuildFFmpegTask.
 #
 # LGPL compliance: every zip additionally carries, at the archive root,
 #   - COPYING.LGPLv2.1 (always) and COPYING.GPLv2 + COPYING.GPLv3 (gpl profile),
@@ -112,121 +114,20 @@ code for this build is available at the source-code URL above, at the exact tag 
 recorded in this file.
 EOF
 
-# --- desktop only: bundle third-party static libs + LINK-FLAGS.txt ---------------------------
-# The six libav* .a files reference symbols from the third-party encoder/text stack (svt-av1,
-# vpx, aom, opus, mp3lame, webp, freetype/harfbuzz/fribidi/ass, see BuildFFmpegTask's
-# desktopBaseArgs/desktopGplArgs), which on the build runner come from brew/apt SHARED installs.
-# A consumer on a clean machine would hit undefined symbols at final link, so bundle the STATIC
-# (.a) versions of those libs into the zip's lib/ dir and write lib/LINK-FLAGS.txt (one linker
-# flag per line) describing the extra -l set that (triple, flavour) needs.
-#
-# KEEP IN SYNC with PrebuiltLinkFlags.kt in kitecodec-gradle-plugin. The plugin hardcodes the
-# same per-(platform, flavour) flag list because linkerOpts are fixed at configuration time,
-# before this zip (and its LINK-FLAGS.txt) has been fetched.
-#
-# HONESTY NOTE, this block is CI-verified, not locally verifiable:
-#   - Some brew formulas / apt -dev packages may ship only shared libs. The hard-fail below names
-#     every missing .a so a CI run surfaces the gap; the fix is building that dep statically from
-#     source in release-binaries.yml. Do NOT silently fall back to the shared lib.
-#   - Transitive static deps are a known follow-up: freetype may pull libpng/brotli, harfbuzz
-#     graphite2, libass fontconfig/libunibreak (Linux). If a consumer link reports undefined
-#     symbols from those, extend BOTH this bundle/flag list and PrebuiltLinkFlags.kt.
-# Android is skipped: its profile links no third-party libs (MediaCodec is a platform service).
-case "${triple}" in
-  macos-*|linux-*)
-    mkdir -p "${stage}/lib"
-
-    # Static archives to bundle. webp is split across three archives since libwebp 1.3
-    # (libwebp + libwebpmux for FFmpeg's anim encoder + libsharpyuv, which libwebp depends on).
-    static_libs=(
-      libSvtAv1Enc.a libvpx.a libaom.a libopus.a libmp3lame.a
-      libwebpmux.a libwebp.a libsharpyuv.a
-      libass.a libharfbuzz.a libfreetype.a libfribidi.a
-      # Transitive deps of the text stack, and they must come after it: freetype's
-      # embedded-PNG bitmaps call into libpng, harfbuzz's shaping backend into graphite2.
-      libpng16.a libgraphite2.a
-    )
-    if [ "${license}" = "gpl" ]; then
-      static_libs+=(libx264.a libx265.a)
-      if [ "${triple%%-*}" = "linux" ]; then
-        static_libs+=(libnuma.a)  # x265's Ubuntu build links libnuma
-      fi
-    fi
-
-    # Search roots, per the runner's package manager layout.
-    search_dirs=()
-    case "${triple}" in
-      macos-*)
-        for formula in svt-av1 libvpx aom opus lame webp freetype harfbuzz fribidi libass x264 x265; do
-          prefix="$(brew --prefix "${formula}" 2>/dev/null || true)"
-          if [ -n "${prefix}" ] && [ -d "${prefix}/lib" ]; then
-            search_dirs+=("${prefix}/lib")
-          fi
-        done
-        ;;
-      linux-*)
-        for dir in /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu /usr/lib /usr/local/lib; do
-          if [ -d "${dir}" ]; then
-            search_dirs+=("${dir}")
-          fi
-        done
-        ;;
-    esac
-
-    missing=()
-    for lib in "${static_libs[@]}"; do
-      found=""
-      for dir in ${search_dirs[@]+"${search_dirs[@]}"}; do
-        if [ -f "${dir}/${lib}" ]; then
-          found="${dir}/${lib}"
-          break
-        fi
-      done
-      if [ -n "${found}" ]; then
-        cp "${found}" "${stage}/lib/"
-      else
-        missing+=("${lib}")
-      fi
-    done
-    if [ "${#missing[@]}" -gt 0 ]; then
-      echo "::error::static third-party libs missing on this runner for ${triple}/${license}: ${missing[*]}" >&2
-      echo "::error::the zip would NOT be link-anywhere: build/install the static variants before packaging (see release-binaries.yml)" >&2
-      exit 1
-    fi
-
-    # One linker flag per line, naming the extra -l set a consumer's final link needs for this
-    # (triple, flavour). Dependents before dependencies (GNU ld resolves archives left→right).
-    # -lz/-lbz2 (and -liconv on macOS) come from the OS/SDK; the C++ runtime backs x265.
-    {
-      printf '%s\n' -lSvtAv1Enc -lvpx -laom -lopus -lmp3lame \
-        -lwebpmux -lwebp -lsharpyuv \
-        -lass -lharfbuzz -lfreetype -lfribidi \
-        -lpng16 -lgraphite2
-      if [ "${license}" = "gpl" ]; then
-        printf '%s\n' -lx264 -lx265
-      fi
-      printf '%s\n' -lz -lbz2
-      case "${triple}" in
-        macos-*)
-          # harfbuzz's CoreText backend and libass' CoreGraphics rasterisation are compiled into
-          # the static archives, and the videotoolbox encoders need the media frameworks. A shared
-          # build resolved these through its own dylib dependencies; a static one must name them.
-          printf '%s\n' -liconv -lc++ \
-            -framework CoreGraphics -framework CoreText -framework CoreFoundation \
-            -framework CoreMedia -framework CoreVideo -framework VideoToolbox \
-            -framework AudioToolbox
-          ;;
-        linux-*)
-          if [ "${license}" = "gpl" ]; then
-            printf '%s\n' -lnuma -lstdc++
-          fi
-          ;;
-      esac
-    } > "${stage}/lib/LINK-FLAGS.txt"
-
-    echo "bundled third-party static libs: ${static_libs[*]} (+ lib/LINK-FLAGS.txt)"
-    ;;
-esac
+# --- self-containment check -----------------------------------------------------------------
+# Every profile is PORTABLE (2026-08-22): no third-party stack is linked on any target, so there
+# is nothing to bundle from the runner. The one optional third-party archive, the cross-built
+# dav1d, is copied into the tree's lib/ by BuildFFmpegTask itself. Verify the flavour and the
+# tree agree, both ways: a dav1d-flavoured zip without libdav1d.a would 404 the plugin's dav1d
+# contract at the consumer's link, and a plain zip WITH it would violate it in reverse.
+if [ "${flavour}" = "dav1d" ] && [ ! -f "${src}/lib/libdav1d.a" ]; then
+  echo "::error::flavour is dav1d but ${src}/lib/libdav1d.a is missing (was the tree baked with -Pkitecodec.ffmpeg.dav1d=true?)" >&2
+  exit 1
+fi
+if [ "${flavour}" != "dav1d" ] && [ -f "${src}/lib/libdav1d.a" ]; then
+  echo "::error::flavour is plain but ${src}/lib/libdav1d.a is present; package it as the dav1d flavour or rebake without the switch" >&2
+  exit 1
+fi
 
 # --- zip + checksum -------------------------------------------------------------------------
 mkdir -p dist
@@ -236,10 +137,6 @@ rm -f "${dist_abs}/${asset}"
 
 ( cd "${src}" && zip -r -q "${dist_abs}/${asset}" include lib )
 ( cd "${stage}" && zip -q "${dist_abs}/${asset}" "${legal_files[@]}" BUILD-INFO.txt )
-# Desktop only: merge the staged third-party static libs + LINK-FLAGS.txt into the zip's lib/.
-if [ -d "${stage}/lib" ]; then
-  ( cd "${stage}" && zip -r -q "${dist_abs}/${asset}" lib )
-fi
 ( cd dist && { sha256sum "${asset}" 2>/dev/null || shasum -a 256 "${asset}"; } > "${asset}.sha256" )
 
 echo "packaged dist/${asset} (+ ${legal_files[*]} BUILD-INFO.txt)"

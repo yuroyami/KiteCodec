@@ -31,15 +31,16 @@ private val TargetTriple.isIos: Boolean
  * resulting static archives + headers into `native-libs/<license>/<target.dirName>/{include,lib}`.
  * The Kotlin cinterop step picks them up via [FFmpegPaths].
  *
- * Desktop targets (macOS / Linux / mingw) build in one of two licence flavours:
+ * Every profile is LGPL and PORTABLE (owner decision 2026-08-22): the shared software playback
+ * core plus platform services only, no third-party desktop stack. macOS gets SDK zlib and
+ * VideoToolbox/AudioToolbox exactly like iOS (plus the VideoToolbox encoders, which do not exist
+ * on the simulator); Linux and Windows get the reduced W-D4 profile. The fat macOS profile
+ * (vpx/aom/opus/lame/webp encoders, freetype/harfbuzz/fribidi/libass, drawtext) is GONE: every
+ * one of those had to come from Homebrew, Homebrew ships graphite2 shared-only, and a Release
+ * asset that only links on a machine with Homebrew is not an asset. Decoding is untouched; the
+ * read side is wide by class in [sharedCoreArgs]. Software AV1 is the dav1d switch's job.
  *
- *   - [FFmpegLicense.LGPL] (default): no `--enable-gpl`, no x264 / x265. VideoToolbox hardware
- *     encode plus a permissive software stack (svtav1, vpx, aom, mp3lame, opus, webp, freetype /
- *     harfbuzz / fribidi / ass). App-Store and closed-source safe.
- *   - [FFmpegLicense.GPL]: the LGPL stack plus libx264 / libx265 (`--enable-gpl`). Quality-focused
- *     software encode; open-source / server use only.
- *
- * The **Android** profile is always LGPL regardless of [license]: nothing GPL, nothing external;
+ * The **Android** profile: nothing GPL, nothing external;
  * hardware video encode/decode via MediaCodec (`h264_mediacodec`, `hevc_mediacodec`) plus FFmpeg's
  * native software decoders and aac encoder. Cross-compiled with the NDK toolchain (env
  * `ANDROID_NDK_HOME` / `ANDROID_NDK_ROOT` / `ANDROID_NDK_LATEST_HOME`, falling back to the SDK's
@@ -94,17 +95,6 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
     abstract val sourcePatches: org.gradle.api.file.ConfigurableFileCollection
 
     /**
-     * Where the host package manager installed the third-party encoder/text libraries the desktop
-     * macOS profile links (Homebrew's prefix: `/opt/homebrew` on Apple silicon, `/usr/local` on
-     * Intel). Override with the `kitecodec.macos.homebrew.prefix` Gradle property. Unused on Linux
-     * (system paths are already searched) and on the cross targets, which need their own
-     * cross-built dependency stack rather than the host's.
-     */
-    @get:Input
-    @get:Optional
-    abstract val hostPrefix: Property<String>
-
-    /**
      * Whether the produced tree must be fully self-contained: every third-party archive FFmpeg
      * links present as a `.a` inside it. False (the default) for local development, where linking
      * a dependency from the host is fine. True for anything that becomes a Release asset, where a
@@ -143,12 +133,8 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
         val sourceDir = sourceDir.get().asFile
         val outputDir = outputDir.get().asFile
 
-        require(!(target.isAndroid && license == FFmpegLicense.GPL)) {
-            "Android uses the LGPL MediaCodec profile only; there is no GPL Android build " +
-                "(libx264 / libx265 are not part of the Android profile)."
-        }
-        require(!(target.isIos && license == FFmpegLicense.GPL)) {
-            IOS_GPL_REFUSAL
+        require(license != FFmpegLicense.GPL) {
+            if (target.isIos) IOS_GPL_REFUSAL else LGPL_ONLY_REFUSAL
         }
         require(sourceDir.exists()) {
             "FFmpeg source not found at $sourceDir. Run:\n" +
@@ -279,15 +265,15 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
         dav1dRoot: File? = null,
         konanBin: (TargetTriple) -> KonanTools = ::konanCrossTools,
     ): List<String> {
-        require(!(target.isAndroid && license == FFmpegLicense.GPL))
-        require(!(target.isIos && license == FFmpegLicense.GPL)) { IOS_GPL_REFUSAL }
+        require(license != FFmpegLicense.GPL) {
+            if (target.isIos) IOS_GPL_REFUSAL else LGPL_ONLY_REFUSAL
+        }
         val profileArgs = when {
             target.isAndroid -> androidArgs(target, ndkToolchainBin())
             target.isIos -> mobileAppleArgs(target, sdkPath)
             target.isPortableDesktop -> portableDesktopArgs(target) + desktopTargetArgs(target, konanBin)
-            else -> desktopBaseArgs() +
-                (if (license == FFmpegLicense.GPL) desktopGplArgs() else emptyList()) +
-                desktopTargetArgs(target, konanBin)
+            // macOS desktop: the portable Apple profile plus VideoToolbox encode.
+            else -> desktopAppleArgs() + desktopTargetArgs(target, konanBin)
         }
         // The optional dav1d switch (D-7). configure discovers dav1d ONLY through pkg-config,
         // so the host pkg-config is forced even on cross builds; configureEnv points it at the
@@ -317,11 +303,10 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
      * `lib/`, so `native-libs/<license>/<target>` is self-contained and has exactly the layout the
      * published release zip does.
      *
-     * `make install` only installs FFmpeg's own libraries. The static `libavcodec.a` it leaves
-     * behind still carries undefined references to svt-av1, vpx, aom, opus, mp3lame, webp and the
-     * text stack, which on the build machine live in the package manager's prefix. Without this the
-     * tree links only on a machine that happens to have all of them installed. Vendoring exists to
-     * avoid exactly that.
+     * Since the portable profiles this means exactly one optional archive: the cross-built
+     * `libdav1d.a` from the deps tree, when the dav1d switch is on. `make install` only installs
+     * FFmpeg's own libraries, so without this copy the tree links only on the machine that baked
+     * the dav1d build.
      */
     private fun bundleThirdPartyArchives(target: TargetTriple, license: FFmpegLicense, outputDir: File) {
         val wanted = StaticLinkFlags.thirdPartyArchives(target, license, dav1d = enableDav1d.getOrElse(false))
@@ -371,12 +356,6 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
         outputDir.get().asFile.parentFile.parentFile.resolve("deps/${target.dirName}/dav1d/lib")
             .takeIf { enableDav1d.getOrElse(false) },
     ) + when (target) {
-        TargetTriple.MacosArm64, TargetTriple.MacosX64 -> {
-            val prefix = File(hostPrefix.getOrElse(DEFAULT_HOMEBREW_PREFIX))
-            // Homebrew symlinks into <prefix>/lib, but keg-only formulas stay under opt/<name>/lib.
-            listOf(prefix.resolve("lib")) +
-                (prefix.resolve("opt").listFiles()?.map { it.resolve("lib") }?.sortedBy { it.path } ?: emptyList())
-        }
         TargetTriple.LinuxX64 -> listOf(
             File("/usr/lib/x86_64-linux-gnu"), File("/usr/lib"), File("/usr/local/lib"),
         )
@@ -387,37 +366,14 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
     }
 
     /**
-     * Environment for configure/make. Only macOS needs anything: Homebrew installs under a prefix
-     * that is NOT on the compiler's default search path, and while FFmpeg finds most dependencies
-     * through pkg-config, some (libmp3lame above all) are probed with a bare compile-and-link test
-     * that has no way to learn the prefix. Exporting PKG_CONFIG_PATH covers the first group and
-     * [macosPrefixArgs] the second.
+     * Environment for configure/make. PKG_CONFIG_LIBDIR (not PATH) so the host's own .pc files
+     * can never leak into any target's link, macOS included: since the portable Apple profile the
+     * only pkg-config lookup any profile makes is the optional dav1d, and its deps tree is the
+     * whole pkg-config universe.
      */
     private fun configureEnv(target: TargetTriple, dav1dRoot: File? = null): Map<String, String> {
         val dav1dPkg = dav1dRoot?.resolve("lib/pkgconfig")?.absolutePath
-        if (target == TargetTriple.MacosArm64 || target == TargetTriple.MacosX64) {
-            val prefix = hostPrefix.getOrElse(DEFAULT_HOMEBREW_PREFIX)
-            val existing = System.getenv("PKG_CONFIG_PATH").orEmpty()
-            val paths = listOfNotNull(dav1dPkg) + listOf("$prefix/lib/pkgconfig", "$prefix/share/pkgconfig")
-                .plus(if (existing.isNotEmpty()) listOf(existing) else emptyList())
-            return mapOf("PKG_CONFIG_PATH" to paths.joinToString(":"))
-        }
-        // Cross targets: PKG_CONFIG_LIBDIR (not PATH) so the host's own .pc files can never
-        // leak into an Android or iOS link. The deps tree is the whole pkg-config universe.
         return if (dav1dPkg != null) mapOf("PKG_CONFIG_LIBDIR" to dav1dPkg) else emptyMap()
-    }
-
-    /**
-     * `--extra-cflags` / `--extra-ldflags` pointing at the Homebrew prefix. Without these the
-     * desktop macOS build cannot configure at all. It dies on `ERROR: libmp3lame >= 3.98.3 not
-     * found` even with `brew install lame` done, because lame ships no pkg-config file.
-     */
-    private fun macosPrefixArgs(): List<String> {
-        val prefix = hostPrefix.getOrElse(DEFAULT_HOMEBREW_PREFIX)
-        return listOf(
-            "--extra-cflags=-I$prefix/include",
-            "--extra-ldflags=-L$prefix/lib",
-        )
     }
 
     /** The codec/filter core both profiles share. */
@@ -497,43 +453,22 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
     )
 
     /**
-     * Desktop LGPL stack: permissive software encoders + the text/subtitle rendering libs. No
-     * `--enable-gpl`, no x264 / x265. The default flavour.
+     * macOS desktop profile: the portable Apple set (owner decision 2026-08-22).
+     *
+     * Structurally [mobileAppleArgs] plus VideoToolbox ENCODE, which the simulator lacks. No
+     * Homebrew stack at all: the old fat profile (vpx/aom/opus/lame/webp encoders, the
+     * freetype/harfbuzz/fribidi/libass text stack, drawtext) could never produce a
+     * self-contained Release asset because Homebrew ships graphite2 shared-only, and KitePlayer
+     * renders subtitles through its own libass chain anyway. Decoding is untouched: the read
+     * side is wide by class in [sharedCoreArgs], and software AV1 is the dav1d switch's job.
+     * aac stays because the NATIVE encoder is dependency-free and the old profile carried it.
      */
-    private fun desktopBaseArgs(): List<String> = listOf(
-        // Extends the dependency-free set in sharedCoreArgs: configure accumulates --enable-encoder.
-        // No libsvtav1. FFmpeg n8.0's libavcodec/libsvtav1.c:241 reads
-        // `enable_adaptive_quantization`, which current SVT-AV1 removed from
-        // EbSvtAv1EncConfiguration, so the desktop build dies at `make` against any recent
-        // release (measured on the 2026-08-21 CI run). The loss is desktop AV1 ENCODING only:
-        // AV1 DECODING is dav1d's job and is untouched. Restore this pair once FFmpeg and
-        // SVT-AV1 agree about that struct again.
-        "--enable-encoder=aac,libmp3lame,libopus",
-        "--enable-libvpx", "--enable-libaom",
-        "--enable-libmp3lame", "--enable-libopus",
-        "--enable-libwebp",
-        "--enable-libfreetype", "--enable-libharfbuzz", "--enable-libfribidi",
-        "--enable-libass",
-        // Needs the text stack above, so it is desktop-only (see the note in sharedCoreArgs).
-        "--enable-filter=drawtext",
-        "--enable-zlib", "--enable-bzlib",
-    )
-
-    /**
-     * Desktop GPL add-on: libx264 / libx265 software encoders. Layered on top of [desktopBaseArgs]
-     * only when [license] is [FFmpegLicense.GPL]. FFmpeg's configure accumulates repeated
-     * `--enable-encoder` flags, so this extends rather than replaces the base encoder list.
-     */
-    private fun desktopGplArgs(): List<String> = listOf(
-        "--enable-gpl", "--enable-version3",
-        "--enable-encoder=libx264,libx265",
-        "--enable-libx264", "--enable-libx265",
-        // FFmpeg marks these `deps="gpl"`, so they exist ONLY in this flavour. They were listed in
-        // the shared set for a long time, where configure silently dropped them, which is how
-        // `eq=brightness=…`, the filter every example reaches for, ended up unavailable in the
-        // LGPL build the project actually ships.
-        "--enable-filter=eq,boxblur",
-    )
+    private fun desktopAppleArgs(): List<String> = listOf(
+        "--disable-autodetect",
+        "--enable-zlib",
+        "--enable-audiotoolbox",
+        "--enable-encoder=aac",
+    ) + appleHardwareArgs()
 
     /**
      * VideoToolbox hardware encode on macOS desktop targets.
@@ -662,12 +597,12 @@ abstract class BuildFFmpegTask @Inject constructor() : DefaultTask() {
             "--arch=arm64", "--target-os=darwin",
             "--cc=clang -arch arm64",
             "--enable-cross-compile",
-        ) + appleHardwareArgs() + macosPrefixArgs()
+        )
         TargetTriple.MacosX64 -> listOf(
             "--arch=x86_64", "--target-os=darwin",
             "--cc=clang -arch x86_64",
             "--enable-cross-compile",
-        ) + appleHardwareArgs() + macosPrefixArgs()
+        )
         // Linux and Windows cross-build with the SAME toolchain Kotlin/Native links against:
         // konan's own clang, aimed by -target, over the sysroot konan ships for that triple
         // (KPKMP.md 17.13, decision W-D3). This is not a preference. FFmpeg built by any other

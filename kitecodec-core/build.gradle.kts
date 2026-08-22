@@ -682,12 +682,6 @@ fun registerBuildFFmpeg(triple: TargetTriple, flavour: FFmpegLicense) = register
         sourceRef = BuildFFmpegTask.DEFAULT_SOURCE_REF
         // Committed source patches, applied to the scratch copy before configure (window 2c).
         sourcePatches.from(fileTree(rootDir.resolve("native/patches/ffmpeg")) { include("*.patch") })
-        // Where the desktop macOS profile's third-party libs live. Several of them (lame above all)
-        // ship no pkg-config file, so configure cannot find them without an explicit -I/-L.
-        hostPrefix.set(
-            providers.gradleProperty("kitecodec.macos.homebrew.prefix")
-                .orElse(BuildFFmpegTask.DEFAULT_HOMEBREW_PREFIX),
-        )
         // Release builds must produce a tree that links on a machine with none of these installed.
         requireSelfContained.set(
             providers.gradleProperty("kitecodec.ffmpeg.selfContained").map { it.toBoolean() }.orElse(false),
