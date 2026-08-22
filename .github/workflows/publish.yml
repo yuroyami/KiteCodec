@@ -3,19 +3,19 @@
 # klibs, so the fetch step below unpacks ALL 11 triples' zips (dav1d inside every one) into
 # native-libs/ before publishing, and cinterop embeds them.
 #
-# THIS WORKFLOW CANNOT RUN YET, and that is a repository-settings fact rather than a bug in the
-# file: `gh secret list` on this repository returns NOTHING, so all four secrets below are
-# missing and every job here would fail at the publish step. 0.1.0 was therefore published from
-# the maintainer's own machine, where the same credentials already live in ~/.gradle/
-# gradle.properties (mavenCentralUsername/Password, signingInMemoryKey/KeyId/KeyPassword), with:
+# ON DEMAND ONLY (owner order 2026-08-22): workflow_dispatch is the single trigger; pushing a
+# v-tag no longer publishes anything by itself. The five repository secrets below were set on
+# 2026-08-22, so this workflow IS runnable; publishing from the maintainer's machine remains
+# equally valid (same credentials in ~/.gradle/gradle.properties):
 #   ./gradlew :kitecodec-core:publishAllPublicationsToMavenCentralRepository --no-configuration-cache
-# To make CI the publisher instead, add the four secrets in repository settings; nothing else
-# below needs to change.
+# Either path leaves the deployment staged as USER_MANAGED on the Central Portal; the final
+# Publish click stays human.
 #
-# PREREQUISITES (all must exist before running this workflow):
-#   Secrets:
+# PREREQUISITES:
+#   Secrets (set 2026-08-22):
 #     MAVEN_CENTRAL_USERNAME / MAVEN_CENTRAL_PASSWORD: Central Portal user token
-#     SIGNING_IN_MEMORY_KEY / SIGNING_IN_MEMORY_KEY_PASSWORD: ASCII-armored GPG key + passphrase
+#     SIGNING_IN_MEMORY_KEY / SIGNING_IN_MEMORY_KEY_ID / SIGNING_IN_MEMORY_KEY_PASSWORD:
+#       ASCII-armored GPG key, its key id, and the passphrase
 #   Release assets:
 #     The `v<VERSION>` release (created by release-binaries.yml) must exist with all 11 LGPL
 #     zips + .sha256 files: ffmpeg-<ffversion>-lgpl-<triple>.zip for every supported triple.
@@ -32,8 +32,6 @@
 name: Publish release
 
 on:
-  push:
-    tags: ["v*"]
   workflow_dispatch:
     inputs:
       version:
@@ -122,8 +120,11 @@ jobs:
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
           ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_IN_MEMORY_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.SIGNING_IN_MEMORY_KEY_ID }}
           ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_IN_MEMORY_KEY_PASSWORD }}
         run: |
+          # The Android AAR's JNI libraries link with the NDK (KC-ANDROID).
+          export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"
           ./gradlew :kitecodec-core:publishAllPublicationsToMavenCentralRepository \
             --no-configuration-cache \
             --stacktrace
