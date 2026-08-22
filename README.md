@@ -85,7 +85,7 @@ linker configuration.
 kotlin {
     macosArm64()          // any supported target; see the table below
     sourceSets.commonMain.dependencies {
-        implementation("io.github.yuroyami:kitecodec-core:0.1.0")
+        implementation("io.github.yuroyami:kitecodec-core:0.1.1")
     }
 }
 ```
@@ -106,8 +106,8 @@ Stated exactly, because rounding this up is how people lose an afternoon.
 
 | Thing | Status |
 |---|---|
-| `kitecodec-core` with embedded FFmpeg, all 11 native targets + JVM | **published to mavenLocal** at 0.1.0; a public Maven repository is the one remaining distribution step |
-| FFmpeg zips, ALL 11 triples (dav1d inside every one) | **published** on the `v0.1.0` release |
+| `kitecodec-core` with embedded FFmpeg: all 11 native targets, JVM and the Android AAR | **on Maven Central** at **0.1.1** |
+| FFmpeg zips, ALL 11 triples (dav1d inside every one) | **published** on the matching `v0.1.1` release |
 
 **KC-EMBED, 2026-08-22.** The Gradle plugin is deleted and dav1d is mandatory.
 Each native target's cinterop klib embeds the six libav\* archives plus
@@ -330,7 +330,7 @@ MediaCodec is reached only by asking FFmpeg for a named decoder such as
 | Hardware decode, and zero-copy hwframes | Hardware *encode* does work. `h264_videotoolbox` is verified on macOS arm64. Pass `allow_sw` on VMs and CI runners, where the encoder exists but the hardware block does not. |
 | Direct MediaCodec or Android UI integration | The Android loader attaches its `JavaVM`, then callers may select an FFmpeg-owned named decoder. There is no direct `MediaCodec` API, Compose component, Android View, Android playback or physical-device qualification here. |
 | `https` in the vendored profile | It needs a TLS backend cross-compiled per target. Use `http`, a local file, or link a system FFmpeg. |
-| A stable API | 0.1.0 is pre-1.0, so a minor version may still break you. `explicitApi()` is on, every public declaration states its visibility and return type, and there is now a committed klib dump under `kitecodec-core/api/` that `apiCheck` verifies in every local gate (a macOS CI job is configured to run it too, and has not run yet), so an accidental signature change fails a build. That is a change being visible, not a promise that it will not happen. |
+| A stable API | 0.1.x is pre-1.0. The version policy is deliberate: the minor stays frozen and only the patch digit moves, each bump owner-approved, so 0.1.x is the series to depend on. `explicitApi()` is on, every public declaration states its visibility and return type, and there is now a committed klib dump under `kitecodec-core/api/` that `apiCheck` verifies in every local gate (a macOS CI job is configured to run it too, and has not run yet), so an accidental signature change fails a build. That is a change being visible, not a promise that it will not happen. |
 
 ## Build and test it here
 

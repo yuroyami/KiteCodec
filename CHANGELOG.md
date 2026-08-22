@@ -28,7 +28,14 @@ was private and unpublished.
 
 ## [Unreleased]
 
-The Maven artifacts (`kitecodec-core`, the Gradle plugin) are still source-only: nothing is on Maven Central. The FFmpeg Release assets ARE published: the `v0.1.0` GitHub release carries the full 22-zip companion set. Release state and the per-target table live in the [README](https://github.com/yuroyami/KiteCodec#release-status) rather than being restated here.
+Nothing yet.
+
+## [0.1.1] - 2026-08-22
+
+**The first release on Maven Central**, and the first anyone can consume with one dependency line. 0.1.0 existed only as source and local artifacts; everything below shipped publicly for the first time in 0.1.1, alongside the `v0.1.1` GitHub release carrying the 11 FFmpeg companion zips (build evidence and the LGPL source offer; consumers need none of them).
+
+### Added
+- **The Android AAR is a first-class published artifact** (`kitecodec-core-android`): self-contained `libkitecodec_jni.so` for `arm64-v8a` and `x86_64` with FFmpeg + dav1d statically inside, the LGPL licence payload under `META-INF/licenses/`, and consumer keep rules. Before this, an `androidTarget` consumer resolved the JVM artifact and failed at first load.
 
 ### Changed
 - **KC-EMBED: FFmpeg now lives INSIDE the published klibs, and the Gradle plugin is gone.**
