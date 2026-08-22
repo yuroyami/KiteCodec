@@ -125,7 +125,7 @@ jobs:
         run: scripts/e2e.sh kitecodec-sample/build/bin/macosArm64/debugExecutable/kitecodec-sample.kexe
       - name: Upload build reports
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: reports-macos-arm64
           path: |
@@ -189,7 +189,7 @@ jobs:
           ./gradlew :buildSrc:test --stacktrace
       - name: Upload build reports
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: reports-ffmpeg-identity-gate
           path: |
@@ -229,7 +229,7 @@ jobs:
         run: scripts/e2e.sh kitecodec-sample/build/bin/linuxX64/debugExecutable/kitecodec-sample.kexe
       - name: Upload build reports
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: reports-linux-x64
           path: |
@@ -295,7 +295,7 @@ jobs:
       # makes after reading the new inputs, never a side effect of CI.
       - name: Upload crash artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fuzz-artifacts
           path: fuzz-artifacts/**
@@ -388,7 +388,7 @@ jobs:
         run: scripts/e2e.sh kitecodec-sample/build/bin/macosArm64/debugExecutable/kitecodec-sample.kexe
       - name: Upload build reports
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: reports-vendored-lgpl
           path: |
@@ -438,7 +438,7 @@ jobs:
         run: ./gradlew :kitecodec-core:compileKotlin${{ matrix.kotlinTarget }} --stacktrace
       - name: Upload build reports
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: reports-android-${{ matrix.abi }}
           path: |
@@ -567,7 +567,7 @@ jobs:
           echo "$out" | grep -q "KITECODEC_SMOKE avutil="
       - name: Upload build reports
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: reports-consumer-e2e-${{ matrix.label }}
           path: |
@@ -648,7 +648,7 @@ jobs:
         run: scripts/e2e.sh kitecodec-sample/build/bin/mingwX64/debugExecutable/kitecodec-sample.exe ffmpeg ffprobe
       - name: Upload build reports
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: reports-windows-x64
           path: |
