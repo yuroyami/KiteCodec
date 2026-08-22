@@ -8,7 +8,7 @@ Note that many such issues are FFmpeg bugs, not KiteCodec bugs. Vulnerabilities 
 
 ## Reporting a vulnerability
 
-Please **do not open a public issue** for suspected vulnerabilities (crashes on malformed input, memory corruption, out-of-bounds reads/writes, checksum-bypass in the Gradle plugin's FFmpeg fetching, etc.).
+Please **do not open a public issue** for suspected vulnerabilities (crashes on malformed input, memory corruption, out-of-bounds reads/writes, etc.).
 
 Instead, use **GitHub private vulnerability reporting**: [github.com/yuroyami/KiteCodec/security/advisories/new](https://github.com/yuroyami/KiteCodec/security/advisories/new) ("Report a vulnerability" on the repository's Security tab).
 
@@ -31,7 +31,6 @@ KiteCodec is pre-1.0 and not yet published to a public repository; there are no 
 
 ## Hardening notes for integrators
 
-- Prefer the pinned **vendored FFmpeg builds** (`n8.0`, minimal codec/filter set) over an arbitrary system FFmpeg. A smaller demuxer/decoder surface is less to exploit, and the pin makes your exposure auditable.
-- Keep the FFmpeg pin fresh: FFmpeg regularly fixes parsing CVEs.
-- The Gradle plugin verifies SHA-256 checksums of downloaded FFmpeg archives; treat a checksum warning (missing `.sha256` asset) as a red flag when using a non-default `repo`.
+- The published artifacts EMBED a pinned FFmpeg (`n8.0`, minimal codec/filter set) plus dav1d, so your exposure is exactly what the artifact version names and is auditable from it. There is no download step and no checksum for a consumer to verify or bypass.
+- Keep the KiteCodec version fresh: FFmpeg regularly fixes parsing CVEs, and since FFmpeg ships inside the artifact, picking up such a fix means bumping KiteCodec.
 - Sandbox or isolate the process that parses fully untrusted input where your platform allows it.
