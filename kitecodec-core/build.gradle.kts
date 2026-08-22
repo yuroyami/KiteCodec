@@ -37,11 +37,16 @@ plugins {
 }
 
 // The AGP KMP library plugin always creates an Android target and requires compileSdk, even when
-// no Android DSL block is present. Apply it only for the local phone/AAR proof scope; portable
-// JVM/JS/Wasm and host-native publications must remain configurable without an Android SDK.
+// no Android DSL block is present.
 val phoneTargetsOnly = providers.gradleProperty("kitecodec.phoneTargetsOnly")
     .map { it.toBoolean() }.getOrElse(false)
-if (phoneTargetsOnly) {
+// KC-ANDROID (2026-08-22, owner order): the Android AAR is a FIRST-CLASS published artifact, so
+// the Android plugin applies by default. It needs an Android SDK at configuration time; every
+// GitHub runner and dev machine here has one, and -Pkitecodec.noAndroid=true is the escape
+// hatch for a host that does not (that host then publishes nothing).
+val withAndroid = !providers.gradleProperty("kitecodec.noAndroid")
+    .map { it.toBoolean() }.getOrElse(false)
+if (withAndroid) {
     apply(plugin = "com.android.kotlin.multiplatform.library")
 }
 
@@ -204,8 +209,7 @@ kotlin {
         nodejs()
     }
 
-    if (phoneTargetsOnly) {
-        requireArm64Mac("kitecodec.phoneTargetsOnly")
+    if (withAndroid) {
         val androidTarget = (this as ExtensionAware).extensions.getByName("android")
             as KotlinMultiplatformAndroidLibraryTarget
         androidTarget.apply {
@@ -564,6 +568,9 @@ kotlin {
         // scope because the source set used to be created there.
         getByName("macosArm64Test").dependsOn(codecContractTest)
 
+        if (withAndroid) {
+            getByName("androidMain").dependsOn(jvmAndAndroidMain)
+        }
         if (phoneTargetsOnly) {
             // A custom JVM compilation belongs to its own source-set tree, so it cannot legally
             // depend on the published main/test trees. Mirror their source directories into an
@@ -584,7 +591,6 @@ kotlin {
                 dependsOn(jniHarnessPlatformMain)
             }
             checkNotNull(jniJvmCompilation).defaultSourceSet.dependsOn(jniJvmMain)
-            getByName("androidMain").dependsOn(jvmAndAndroidMain)
 
             val jniHarnessCommonTest = maybeCreate("jniHarnessCommonTest").apply {
                 kotlin.srcDir("src/commonTest/kotlin")
@@ -1146,6 +1152,9 @@ run {
             macosArm64Transcript.set(macosTranscriptFile)
         }
 
+    }
+
+    if (withAndroid) {
         extensions.configure<KotlinMultiplatformAndroidComponentsExtension> {
             onVariants { variant ->
                 val jniLibs = checkNotNull(variant.sources.jniLibs) {
